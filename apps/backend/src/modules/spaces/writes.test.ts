@@ -105,6 +105,9 @@ function ldapRest(refuse?: Error) {
       return refuse ? Promise.reject(refuse) : Promise.resolve()
     }
   const directory: SpaceDirectory = {
+    list: () => Promise.resolve([]),
+    members: () => Promise.resolve([]),
+    exists: () => Promise.resolve(true),
     person: (_org, by, value) =>
       Promise.resolve(
         people.find(p => (by === 'id' ? p.uuid : p[by]) === value)
