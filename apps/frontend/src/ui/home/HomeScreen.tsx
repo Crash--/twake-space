@@ -74,7 +74,7 @@ export function HomeScreen(): ReactElement {
           >
             {t('spaces.pinned')}
           </Typography>
-          <CardGrid>
+          <CardGrid maxColumns={4}>
             {pinned.map(space => (
               <SpaceItem key={space.id} space={space} pinned />
             ))}

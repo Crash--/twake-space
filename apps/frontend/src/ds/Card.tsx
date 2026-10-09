@@ -14,13 +14,26 @@ import { NameAvatar } from '@/ds/AppFrame'
 
 const RADIUS = '20px'
 
-export function CardGrid({ children }: { children: ReactNode }): ReactElement {
+// `maxColumns` caps the columns of a wide screen: no card is narrower than
+// its share of the row, the 16px gaps left out, less a pixel so that
+// rounding never drops a column.
+export function CardGrid({
+  maxColumns,
+  children
+}: {
+  maxColumns?: number
+  children: ReactNode
+}): ReactElement {
+  const min =
+    maxColumns === undefined
+      ? '200px'
+      : `max(200px, calc((100% - ${String(maxColumns - 1)} * 16px) / ${String(maxColumns)} - 1px))`
   return (
     <Box
       component="ul"
       sx={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+        gridTemplateColumns: `repeat(auto-fill, minmax(${min}, 1fr))`,
         gap: 2,
         m: 0,
         p: 0,
