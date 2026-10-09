@@ -34,6 +34,45 @@ describe('MembersPanel', () => {
     expect(screen.getByText('2 members')).toBeInTheDocument()
   })
 
+  it('names a member in full in a tooltip, within reach of the keyboard', async () => {
+    renderPanel()
+    const alice = await screen.findByRole('listitem', { name: 'Alice Martin' })
+    expect(alice).toHaveAttribute('tabindex', '0')
+
+    fireEvent.mouseOver(alice)
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Alice Martin')
+  })
+
+  it('is one stop of the keyboard, moved through with the arrows, Home and End', async () => {
+    renderPanel({
+      members: [
+        'Alice Martin',
+        'Bob Durand',
+        'Carol Petit',
+        'Dave Moreau',
+        'Eve Roux'
+      ].map((name, index) => ({ id: `u${String(index)}`, name }))
+    })
+    const item = (name: string) => screen.getByRole('listitem', { name })
+    const alice = await screen.findByRole('listitem', { name: 'Alice Martin' })
+    expect(alice).toHaveAttribute('tabindex', '0')
+    expect(item('Bob Durand')).toHaveAttribute('tabindex', '-1')
+
+    alice.focus()
+    fireEvent.keyDown(alice, { key: 'ArrowRight' })
+    expect(item('Bob Durand')).toHaveFocus()
+    expect(item('Bob Durand')).toHaveAttribute('tabindex', '0')
+    expect(alice).toHaveAttribute('tabindex', '-1')
+
+    fireEvent.keyDown(item('Bob Durand'), { key: 'ArrowDown' })
+    expect(item('Eve Roux')).toHaveFocus()
+    fireEvent.keyDown(item('Eve Roux'), { key: 'Home' })
+    expect(alice).toHaveFocus()
+    fireEvent.keyDown(alice, { key: 'End' })
+    expect(item('Eve Roux')).toHaveFocus()
+  })
+
   it('keeps the members whose name has what is typed', async () => {
     renderPanel()
     fireEvent.change(
