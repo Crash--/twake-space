@@ -151,7 +151,7 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Handover' })).toBe(null)
   })
 
-  it('shows Pinned and Recent with a hint while they are empty', async () => {
+  it('hides Pinned while nothing is pinned, and shows Recent with a hint while it is empty', async () => {
     const service = fakeSpaces([
       {
         id: 'space-3',
@@ -168,15 +168,11 @@ describe('AppShell', () => {
     renderRoute('/', { spaces: service })
 
     expect(
-      within(await screen.findByRole('list', { name: 'Pinned' })).getByText(
-        'Pin a space from its menu'
-      )
-    ).toBeInTheDocument()
-    expect(
-      within(screen.getByRole('list', { name: 'Recent' })).getByText(
+      within(await screen.findByRole('list', { name: 'Recent' })).getByText(
         'The spaces you open show here'
       )
     ).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Pinned' })).toBe(null)
   })
 
   it('searches every space by name from the sidebar', async () => {

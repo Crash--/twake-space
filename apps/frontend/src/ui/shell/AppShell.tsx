@@ -217,14 +217,15 @@ function SpaceList({ query }: { query: string }): ReactElement | null {
     )
   }
 
-  // Shown even empty, with a hint, so people learn both exist.
+  // Recent shows even empty, with a hint, so people learn it exists.
   const { pinned, recent } = pinnedAndRecent(spaces)
   return (
     <>
-      <SidebarSection label={t('shell.pinned')}>
-        {pinned.length === 0 && <Hint text={t('shell.noPinned')} />}
-        <SpaceLinks spaces={pinned} totals={totals} />
-      </SidebarSection>
+      {pinned.length > 0 && (
+        <SidebarSection label={t('shell.pinned')}>
+          <SpaceLinks spaces={pinned} totals={totals} />
+        </SidebarSection>
+      )}
       <SidebarSection label={t('shell.recent')}>
         {recent.length === 0 && <Hint text={t('shell.noRecent')} />}
         <SpaceLinks spaces={recent} totals={totals} />
