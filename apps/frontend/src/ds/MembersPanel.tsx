@@ -42,14 +42,10 @@ export function MembersPanel({
 }): ReactElement {
   const [query, setQuery] = useState('')
   const panel = useRef<HTMLElement>(null)
-  // The panel covers the feed on a narrow screen: focus goes in when it opens
-  // and back to the button that opened it when it closes.
+  // The panel covers the feed on a narrow screen: focus goes in when it
+  // opens, and the toolbar takes it back when it closes.
   useEffect(() => {
-    const opener = document.activeElement
     panel.current?.focus()
-    return () => {
-      if (opener instanceof HTMLElement) opener.focus()
-    }
   }, [])
   const needle = query.trim().toLowerCase()
   const shown = members.filter(m => m.name.toLowerCase().includes(needle))

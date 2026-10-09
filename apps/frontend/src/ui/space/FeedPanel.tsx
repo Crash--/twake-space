@@ -240,12 +240,10 @@ export function FeedPanel({ space }: { space: Space }): ReactElement {
       <FeedLayout
         toolbar={
           <FeedToolbar
-            panelLabel={t(
-              membersOpen ? 'feed.members.hide' : 'feed.members.show'
-            )}
+            panelLabel={t('feed.members.show')}
             panelOpen={membersOpen}
             onPanel={() => {
-              setMembersOpen(open => !open)
+              setMembersOpen(true)
             }}
           >
             {/* Nothing to filter in a feed with nothing in it. */}

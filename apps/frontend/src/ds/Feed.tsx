@@ -288,7 +288,8 @@ export function FeedWithSide({
   )
 }
 
-/** The button of the members panel, beside the filter. */
+/** The button of the members panel, beside the filter. Gone while the panel
+ * is open, which has its own close button; takes the focus back on close. */
 export function FeedToolbar({
   panelLabel,
   panelOpen,
@@ -300,17 +301,30 @@ export function FeedToolbar({
   onPanel: () => void
   children: ReactNode
 }): ReactElement {
+  const button = useRef<HTMLButtonElement>(null)
+  const wasOpen = useRef(panelOpen)
+  useEffect(() => {
+    if (wasOpen.current && !panelOpen) button.current?.focus()
+    wasOpen.current = panelOpen
+  }, [panelOpen])
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <IconButton
-        size="small"
-        aria-label={panelLabel}
-        aria-pressed={panelOpen}
-        onClick={onPanel}
-        sx={{ width: 34, height: 32, borderRadius: 100, color: 'text.primary' }}
-      >
-        <Icon icon={SidePanelIcon} size={20} />
-      </IconButton>
+      {!panelOpen && (
+        <IconButton
+          ref={button}
+          size="small"
+          aria-label={panelLabel}
+          onClick={onPanel}
+          sx={{
+            width: 34,
+            height: 32,
+            borderRadius: 100,
+            color: 'text.primary'
+          }}
+        >
+          <Icon icon={SidePanelIcon} size={20} />
+        </IconButton>
+      )}
       {children}
     </Box>
   )

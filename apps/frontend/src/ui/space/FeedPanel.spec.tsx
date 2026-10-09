@@ -570,6 +570,9 @@ describe('FeedPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show the members' }))
     const panel = screen.getByRole('complementary', { name: 'Space members' })
     expect(within(panel).getByText('Bob')).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', { name: 'Hide the members' })
+    ).toHaveLength(1)
 
     fireEvent.click(
       within(panel).getByRole('button', { name: 'Hide the members' })
