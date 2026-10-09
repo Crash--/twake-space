@@ -147,15 +147,17 @@ export interface AvatarMember {
 }
 
 // The first members of a space side by side, the rest counted. Each avatar
-// is 24px, with a ring of the card's color that cuts into the one before it.
+// has a ring of the card's color that cuts into the one before it.
 // Hovering or focusing the count lists the members it stands for; it sits
 // above a card's stretched link so the pointer reaches it.
 export function MemberAvatars({
   members,
-  max = 5
+  max = 5,
+  size = 's'
 }: {
   members: AvatarMember[]
   max?: number
+  size?: 's' | 'm'
 }): ReactElement {
   const shown = members.length > max ? members.slice(0, max - 1) : members
   const hidden = members.slice(shown.length)
@@ -166,9 +168,7 @@ export function MemberAvatars({
       sx={{
         display: 'flex',
         '& .MuiAvatar-root': {
-          width: 24,
-          height: 24,
-          typography: 'overline',
+          ...(size === 's' && { typography: 'overline' }),
           boxShadow: theme => `0 0 0 2px ${theme.vars.palette.background.paper}`
         }
       }}
@@ -178,7 +178,7 @@ export function MemberAvatars({
           key={member.id}
           name={member.name}
           label={member.name}
-          size="s"
+          size={size}
           src={member.src}
         />
       ))}
@@ -199,7 +199,7 @@ export function MemberAvatars({
             sx={{ position: 'relative', zIndex: 1, display: 'flex' }}
           >
             <Avatar
-              size="s"
+              size={size}
               aria-hidden
               sx={{
                 bgcolor: 'background.paper',

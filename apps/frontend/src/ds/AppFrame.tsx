@@ -9,6 +9,7 @@ import {
   Nav,
   nameToColor,
   Sidebar,
+  Tooltip,
   Typography,
   getInitials,
   styled
@@ -238,9 +239,9 @@ export function SidebarSection({
   )
 }
 
-// `label` names the person for assistive technology; without it the avatar
-// is decoration next to the name it stands for. The initials show when there
-// is no picture or it fails to load.
+// `label` names the person, in a tooltip and for assistive technology;
+// without it the avatar is decoration next to the name it stands for. The
+// initials show when there is no picture or it fails to load.
 export function NameAvatar({
   name,
   size,
@@ -254,18 +255,21 @@ export function NameAvatar({
   label?: string
   src?: string | null
 }): ReactElement {
-  return (
+  const avatar = (
     <Avatar
       size={size}
       color={color ?? nameToColor(name) ?? 'sunrise'}
       src={src ?? undefined}
       alt=""
       aria-hidden={label === undefined}
-      aria-label={label}
-      title={label}
     >
       {getInitials(name, '')}
     </Avatar>
+  )
+  return label === undefined ? (
+    avatar
+  ) : (
+    <Tooltip title={label}>{avatar}</Tooltip>
   )
 }
 

@@ -26,6 +26,16 @@ describe('MemberAvatars', () => {
     expect(screen.getByText('+3')).toBeInTheDocument()
   })
 
+  it('names a member in a tooltip on hover, at the size it is given', async () => {
+    renderWithProviders(<MemberAvatars members={people(2)} size="m" />)
+    const avatar = await screen.findByLabelText('Member 1')
+    expect(avatar).toHaveClass('size-m')
+
+    fireEvent.mouseOver(avatar)
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Member 1')
+  })
+
   it('lists the members it leaves out on hover', async () => {
     renderWithProviders(<MemberAvatars members={people(7)} />)
 
