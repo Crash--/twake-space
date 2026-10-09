@@ -447,7 +447,8 @@ function BubbleTail(): ReactElement {
   )
 }
 
-/** A 36px round tile with an app's icon, for cards an app sends. */
+/** A 36px round tile with an app's icon in its colour on the neutral grey,
+ * for cards an app sends. */
 export function AppAvatar({
   icon,
   label,
@@ -463,8 +464,8 @@ export function AppAvatar({
       aria-label={label}
       title={label}
       sx={theme => ({
-        bgcolor: theme.space.appColors[app],
-        color: 'common.white'
+        bgcolor: 'background.default',
+        color: theme.space.appColors[app]
       })}
     >
       <Icon icon={icon} size={18} />
