@@ -10,12 +10,17 @@ const Row = styled('span')({
 
 // The badge sits after the label instead of over its corner, which the
 // scrollable tabs would clip. It is no taller than the label's line, so a
-// count never changes the height of the row.
+// count never changes the height of the row. Neutral grey like the sidebar's
+// badge, which twake-mui does not export.
 const Count = styled(Badge)(({ theme }) => ({
   marginLeft: theme.spacing(0.5),
   [`& .${badgeClasses.badge}`]: {
     position: 'static',
-    transform: 'none'
+    transform: 'none',
+    border: 'none',
+    backgroundColor: theme.vars.palette.action.selected,
+    color: theme.vars.palette.text.primary,
+    fontWeight: 500
   }
 }))
 
@@ -31,7 +36,7 @@ export function CountedLabel({
   return (
     <Row>
       {label}
-      {count !== null && <Count color="primary" badgeContent={count} />}
+      {count !== null && <Count badgeContent={count} />}
     </Row>
   )
 }
