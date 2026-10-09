@@ -70,8 +70,9 @@ export function MembersPanel({
         flex: '0 0 300px',
         width: { xs: 'auto', md: 300 },
         bgcolor: 'background.paper',
+        // In the same media query as the border, which resets its colour
         borderLeft: { md: 1 },
-        borderColor: 'divider',
+        borderLeftColor: { md: 'divider' },
         p: 2,
         display: 'flex',
         flexDirection: 'column',
