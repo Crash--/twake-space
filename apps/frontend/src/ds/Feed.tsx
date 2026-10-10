@@ -902,7 +902,12 @@ export function ReactionPicker({
         onClose={() => {
           setAnchor(null)
         }}
-        sx={{ '& .MuiList-root': { display: 'flex' } }}
+        // The composer's 44px cells, so that the row fits the menus' 320px.
+        sx={{
+          '& .MuiPaper-root': { borderRadius: 100 },
+          '& .MuiList-root': { display: 'flex', px: 1 },
+          '& .MuiMenuItem-root': { width: 44, minWidth: 0, px: 0 }
+        }}
       >
         {emojis.map(emoji => (
           <MenuItem
@@ -912,7 +917,7 @@ export function ReactionPicker({
               setAnchor(null)
               onPick(emoji)
             }}
-            sx={{ fontSize: 20 }}
+            sx={{ fontSize: 20, justifyContent: 'center' }}
           >
             {emoji}
           </MenuItem>
