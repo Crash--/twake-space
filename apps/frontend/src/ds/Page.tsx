@@ -250,7 +250,8 @@ export function SpaceHeader({
           <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>{actions}</Box>
         )}
       </Box>
-      <Divider />
+      {/* 16px from the card's edges, as in the mockup, out of the page's 24px */}
+      <Divider sx={{ mx: { lg: -1 } }} />
     </Box>
   )
 }
