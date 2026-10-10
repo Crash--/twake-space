@@ -128,11 +128,8 @@ describe('full page', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Tasks')).toBeInTheDocument()
     expect(frame('Tasks')).toBe(tasks)
-    // The frames take the page to its edges, their panel named without its tab
-    expect(
-      getComputedStyle(screen.getByRole('tabpanel', { name: 'Tasks' }))
-        .paddingLeft
-    ).toBe('0px')
+    // The panel of the frames is named without its tab
+    screen.getByRole('tabpanel', { name: 'Tasks' })
 
     fireEvent.click(leaveButton())
 

@@ -346,7 +346,6 @@ export function EmbeddedApps(): ReactElement | null {
     <KeptAliveStack
       active={shown !== null}
       reachable={floating !== null}
-      flush={filled}
       role="tabpanel"
       id={shown ? `panel-${shown.app}` : undefined}
       // Without its tab, on a page given to it, the panel names itself
