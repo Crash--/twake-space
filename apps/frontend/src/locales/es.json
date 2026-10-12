@@ -151,10 +151,10 @@
   "shelves": {
     "archives": "Archivados",
     "archivesIntro": "Los espacios archivados salen de las listas de sus miembros. Restaura uno para recuperarlo.",
-    "noArchives": "Ningún espacio archivado.",
+    "noArchives": "No hay espacios archivados",
     "bin": "Papelera",
     "binIntro": "Los espacios de la papelera siguen en Chat, Drive y las demás aplicaciones hasta que se eliminan definitivamente.",
-    "binIsEmpty": "La papelera está vacía.",
+    "binIsEmpty": "Tu papelera está vacía",
     "emptyTheBin": "Vaciar la papelera",
     "restore": "Restaurar",
     "moveToBin": "Mover a la papelera",

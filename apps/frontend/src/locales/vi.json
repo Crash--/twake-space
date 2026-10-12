@@ -151,10 +151,10 @@
   "shelves": {
     "archives": "Lưu trữ",
     "archivesIntro": "Các không gian đã lưu trữ rời khỏi danh sách của thành viên. Khôi phục một không gian để đưa nó trở lại.",
-    "noArchives": "Không có không gian nào đã lưu trữ.",
+    "noArchives": "Không có không gian nào được lưu trữ",
     "bin": "Thùng rác",
     "binIntro": "Các không gian trong thùng rác vẫn còn trong Chat, Drive và các ứng dụng khác cho đến khi bị xóa vĩnh viễn.",
-    "binIsEmpty": "Thùng rác trống.",
+    "binIsEmpty": "Thùng rác của bạn đang trống",
     "emptyTheBin": "Dọn sạch thùng rác",
     "restore": "Khôi phục",
     "moveToBin": "Chuyển vào thùng rác",

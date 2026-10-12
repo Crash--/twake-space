@@ -24,6 +24,14 @@ function renderShelf(path: '/archives' | '/bin', shelved = [launch]) {
   return spaces
 }
 
+const expectIconsHidden = () => {
+  const icons = screen.getByRole('main').querySelectorAll('svg')
+  expect(icons.length).toBeGreaterThan(0)
+  icons.forEach(icon => {
+    expect(icon.closest('[aria-hidden="true"]')).not.toBeNull()
+  })
+}
+
 const openMenu = async () => {
   fireEvent.click(
     await screen.findByRole('button', { name: 'More actions for Launch 2025' })
@@ -107,10 +115,28 @@ describe('ShelfScreen', () => {
     })
   })
 
-  it('says so when nothing is there, with nothing to empty', async () => {
+  it('says so when the Bin is empty, with nothing to empty', async () => {
     renderShelf('/bin', [])
 
-    expect(await screen.findByText('The Bin is empty.')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Your Bin is empty'
+      })
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Empty the Bin' })).toBe(null)
+    expectIconsHidden()
+  })
+
+  it('says so when nothing is archived', async () => {
+    renderShelf('/archives', [])
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'No archived spaces'
+      })
+    ).toBeInTheDocument()
+    expectIconsHidden()
   })
 })

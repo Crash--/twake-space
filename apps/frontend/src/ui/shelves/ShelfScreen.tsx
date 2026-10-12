@@ -1,4 +1,4 @@
-import { Dots, Icon, Restore, Trash } from '@linagora/twake-icons'
+import { Archive, Dots, Icon, Restore, Trash } from '@linagora/twake-icons'
 import {
   Alert,
   Button,
@@ -19,7 +19,7 @@ import { NameAvatar } from '@/ds/AppFrame'
 import { CardGrid, MemberAvatars, SpaceCard } from '@/ds/Card'
 import { DialogHeader } from '@/ds/Dialog'
 import { MenuEntry } from '@/ds/Menu'
-import { LoadingRows, Page } from '@/ds/Page'
+import { IconEmpty, LoadingRows, Page } from '@/ds/Page'
 import { useI18n } from '@/ui/i18n/useI18n'
 import { DeleteDialog, useShelve } from '@/ui/space/SpaceMenu'
 import { WriteError } from '@/ui/space/WriteError'
@@ -30,12 +30,14 @@ const TEXTS = {
   archived: {
     title: 'shelves.archives',
     intro: 'shelves.archivesIntro',
-    empty: 'shelves.noArchives'
+    empty: 'shelves.noArchives',
+    emptyIcon: Archive
   },
   trashed: {
     title: 'shelves.bin',
     intro: 'shelves.binIntro',
-    empty: 'shelves.binIsEmpty'
+    empty: 'shelves.binIsEmpty',
+    emptyIcon: Trash
   }
 } as const
 
@@ -77,7 +79,7 @@ export function ShelfScreen({ state }: { state: ShelfState }): ReactElement {
         <Alert severity="error">{t('spaces.loadFailed')}</Alert>
       )}
       {spaces.data?.length === 0 && (
-        <Typography color="textSecondary">{t(texts.empty)}</Typography>
+        <IconEmpty icon={texts.emptyIcon} title={t(texts.empty)} />
       )}
       {spaces.data && spaces.data.length > 0 && (
         <CardGrid>

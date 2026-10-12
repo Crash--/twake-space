@@ -7,6 +7,7 @@ import {
   Typography,
   type EmptyProps
 } from '@linagora/twake-mui'
+import { Icon, type IconProps } from '@linagora/twake-icons'
 import type { ReactElement, ReactNode } from 'react'
 
 import coverArt from '@/assets/space-cover.png'
@@ -354,4 +355,39 @@ export function LoadingRows({
 // Empty sizes its icon for 128px illustrations; an app tile is 64px.
 export function TileEmpty(props: EmptyProps): ReactElement {
   return <Empty {...props} sx={{ '& .Empty-icon': { height: 64, mb: 3 } }} />
+}
+
+export function IconEmpty({
+  icon,
+  title
+}: {
+  icon: IconProps['icon']
+  title: string
+}): ReactElement {
+  return (
+    <Empty
+      icon={
+        <Box aria-hidden>
+          <Icon icon={icon} size={124} />
+        </Box>
+      }
+      title={title}
+      componentsProps={{ title: { component: 'h2' } }}
+      sx={{
+        '& .Empty-icon': {
+          width: 200,
+          height: 200,
+          mb: 5,
+          display: 'grid',
+          placeItems: 'center',
+          borderRadius: '33%',
+          bgcolor: 'action.selected',
+          color: 'background.paper'
+        },
+        '& .Empty-icon svg': {
+          filter: 'drop-shadow(0 2px 10px rgb(0 0 0 / 10%))'
+        }
+      }}
+    />
+  )
 }

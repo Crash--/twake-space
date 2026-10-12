@@ -151,10 +151,10 @@
   "shelves": {
     "archives": "Archives",
     "archivesIntro": "Archived spaces leave the lists of their members. Restore one to bring it back.",
-    "noArchives": "No archived space.",
+    "noArchives": "No archived spaces",
     "bin": "Bin",
     "binIntro": "Spaces in the Bin stay in Chat, Drive and the other apps until they are deleted forever.",
-    "binIsEmpty": "The Bin is empty.",
+    "binIsEmpty": "Your Bin is empty",
     "emptyTheBin": "Empty the Bin",
     "restore": "Restore",
     "moveToBin": "Move to Bin",

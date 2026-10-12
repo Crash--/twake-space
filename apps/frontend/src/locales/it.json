@@ -151,10 +151,10 @@
   "shelves": {
     "archives": "Archivio",
     "archivesIntro": "Gli spazi archiviati escono dagli elenchi dei loro membri. Ripristinane uno per riportarlo indietro.",
-    "noArchives": "Nessuno spazio archiviato.",
+    "noArchives": "Nessuno spazio archiviato",
     "bin": "Cestino",
     "binIntro": "Gli spazi nel cestino restano in Chat, Drive e nelle altre app finché non vengono eliminati definitivamente.",
-    "binIsEmpty": "Il cestino è vuoto.",
+    "binIsEmpty": "Il tuo cestino è vuoto",
     "emptyTheBin": "Svuota il cestino",
     "restore": "Ripristina",
     "moveToBin": "Sposta nel cestino",

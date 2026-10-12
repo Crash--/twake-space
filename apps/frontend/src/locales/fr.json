@@ -151,10 +151,10 @@
   "shelves": {
     "archives": "Archives",
     "archivesIntro": "Les espaces archivés quittent les listes de leurs membres. Restaurez-en un pour le faire revenir.",
-    "noArchives": "Aucun espace archivé.",
+    "noArchives": "Aucun espace archivé",
     "bin": "Corbeille",
     "binIntro": "Les espaces de la corbeille restent dans Chat, Drive et les autres applications jusqu’à leur suppression définitive.",
-    "binIsEmpty": "La corbeille est vide.",
+    "binIsEmpty": "Votre corbeille est vide",
     "emptyTheBin": "Vider la corbeille",
     "restore": "Restaurer",
     "moveToBin": "Mettre à la corbeille",
