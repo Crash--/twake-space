@@ -189,10 +189,14 @@ export function SidebarSearch({
 }
 
 const sidebarBadge = {
+  // One digit is a 16px circle, longer counts a pill, whatever box model and
+  // radius the theme gives badges.
   '& .MuiBadge-badge': {
+    boxSizing: 'border-box',
     minWidth: 16,
     height: 16,
     px: '4.5px',
+    borderRadius: '8px',
     fontSize: 11,
     fontWeight: 500,
     lineHeight: '16px',
