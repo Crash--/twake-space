@@ -1,5 +1,6 @@
 import {
   useInfiniteQuery,
+  useQueries,
   useQuery,
   useQueryClient,
   type InfiniteData,
@@ -50,12 +51,43 @@ export function useFeedReadAt(spaceId: string) {
 }
 
 // Kept apart from `feedKey`: live changes write into every query under it.
+const searchQuery = (
+  feed: FeedService,
+  spaceId: string,
+  q: string,
+  limit: number
+) => ({
+  queryKey: ['feedSearch', spaceId, q, limit],
+  queryFn: () => feed.list(spaceId, { q, limit }),
+  enabled: q !== ''
+})
+
 export function useFeedSearch(spaceId: string, q: string, limit: number) {
   const { feed } = useServices()
-  return useQuery({
-    queryKey: ['feedSearch', spaceId, q, limit],
-    queryFn: () => feed.list(spaceId, { q, limit }),
-    enabled: q !== ''
+  return useQuery(searchQuery(feed, spaceId, q, limit))
+}
+
+/** The matches of every space, newest first. A failed space is left out. */
+export function useFeedSearchAll(
+  spaceIds: string[],
+  q: string,
+  limit: number
+): { items: { spaceId: string; item: FeedItem }[]; isFetching: boolean } {
+  const { feed } = useServices()
+  return useQueries({
+    queries: spaceIds.map(id => searchQuery(feed, id, q, limit)),
+    combine: results => ({
+      items: results
+        .flatMap((result, index) =>
+          (result.data?.items ?? []).map(item => ({
+            spaceId: spaceIds[index] ?? '',
+            item
+          }))
+        )
+        .sort((a, b) => b.item.time.localeCompare(a.item.time))
+        .slice(0, limit),
+      isFetching: results.some(result => result.isFetching)
+    })
   })
 }
 

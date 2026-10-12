@@ -39,6 +39,22 @@ export function useSpace(id: string): UseQueryResult<Space> {
   })
 }
 
+/**
+ * Reads a space in full, from the cache `useSpace` shares while it is recent
+ * and not invalidated by a live change.
+ */
+export function useFetchSpace(): (id: string) => Promise<Space> {
+  const { spaces } = useServices()
+  const queryClient = useQueryClient()
+  return id =>
+    queryClient.query({
+      queryKey: [...SPACES, id],
+      queryFn: () => spaces.get(id),
+      staleTime: 30_000,
+      retry: false
+    })
+}
+
 // The spaces of the list in full, from the cache `useSpace` shares. Read
 // only when `enabled`.
 export function useSpaces(
