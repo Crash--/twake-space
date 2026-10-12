@@ -51,7 +51,7 @@ import { useI18n } from '@/ui/i18n/useI18n'
 import { useSession } from '@/ui/session/SessionGate'
 import { AddPeopleRow } from '@/ui/space/PeopleDialog'
 import { RoleMenu } from '@/ui/space/RoleMenu'
-import { EditDialog, useShelve } from '@/ui/space/SpaceMenu'
+import { EditDialog, useConfirmedShelve } from '@/ui/space/SpaceMenu'
 import { WriteError } from '@/ui/space/WriteError'
 import { AppIcon } from '@/ui/spaces/AppPicker'
 import {
@@ -126,7 +126,7 @@ export function SpaceSettingsScreen(): ReactElement {
 
 function Settings({ space }: { space: Space }): ReactElement {
   const { t } = useI18n()
-  const { shelve, notice } = useShelve(space.id)
+  const { ask, notice } = useConfirmedShelve(space)
   const [dialog, setDialog] = useState<'edit' | 'add' | null>(null)
   const closeDialog = (): void => {
     setDialog(null)
@@ -167,7 +167,7 @@ function Settings({ space }: { space: Space }): ReactElement {
             variant="outlined"
             startIcon={<Icon icon={Archive} />}
             onClick={() => {
-              shelve('archived')
+              ask('archived')
             }}
           >
             {t('settings.archive')}
@@ -176,7 +176,7 @@ function Settings({ space }: { space: Space }): ReactElement {
             variant="outlined"
             startIcon={<Icon icon={Trash} />}
             onClick={() => {
-              shelve('trashed')
+              ask('trashed')
             }}
           >
             {t('common.delete')}
@@ -251,7 +251,7 @@ function Settings({ space }: { space: Space }): ReactElement {
               variant="outlined"
               className="u-flex-none u-ml-1"
               onClick={() => {
-                shelve('archived')
+                ask('archived')
               }}
             >
               {t('settings.archive')}
@@ -270,7 +270,7 @@ function Settings({ space }: { space: Space }): ReactElement {
               color="error"
               className="u-flex-none u-ml-1"
               onClick={() => {
-                shelve('trashed')
+                ask('trashed')
               }}
             >
               {t('common.delete')}

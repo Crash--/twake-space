@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Modifica lo spazio",
     "delete": "Elimina lo spazio",
+    "archiveTitle": "Archiviare %{name}?",
+    "trashTitle": "Spostare %{name} nel cestino?",
     "deleteTitle": "Eliminare %{name} definitivamente?",
     "deleteHint": "Esce da tutte le app, con chat, file e attività. Non si può annullare."
   },

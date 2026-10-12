@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Editar el espacio",
     "delete": "Eliminar el espacio",
+    "archiveTitle": "¿Archivar %{name}?",
+    "trashTitle": "¿Mover %{name} a la papelera?",
     "deleteTitle": "¿Eliminar %{name} definitivamente?",
     "deleteHint": "Sale de todas las aplicaciones, con sus chats, archivos y tareas. No se puede deshacer."
   },

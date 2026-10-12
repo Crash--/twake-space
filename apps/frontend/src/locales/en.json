@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Edit space",
     "delete": "Delete space",
+    "archiveTitle": "Archive %{name}?",
+    "trashTitle": "Move %{name} to the Bin?",
     "deleteTitle": "Delete %{name} forever?",
     "deleteHint": "It leaves every app, with its chats, files and tasks. This cannot be undone."
   },

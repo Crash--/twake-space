@@ -105,7 +105,7 @@ export function SpaceMenu({
   const { t } = useI18n()
   const navigate = useNavigate()
   const setPinned = useSetPinned(space.id)
-  const { shelve, notice: shelveNotice } = useShelve(space.id)
+  const { ask, notice: shelveNotice } = useConfirmedShelve(space)
   const pinned = space.pinnedAt !== null
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [people, setPeople] = useState(false)
@@ -179,7 +179,7 @@ export function SpaceMenu({
         {space.manages &&
           item('archive', Archive, t('spaceMenu.archive'), () => {
             close()
-            shelve('archived')
+            ask('archived')
           })}
         {space.manages && <Divider />}
         {space.manages &&
@@ -189,7 +189,7 @@ export function SpaceMenu({
             t('spaceActions.delete'),
             () => {
               close()
-              shelve('trashed')
+              ask('trashed')
             },
             true
           )}
@@ -208,7 +208,8 @@ export function SpaceMenu({
 // Archives a space, moves it to the Bin or restores it. Out of reach, it
 // leaves its pages; a failure says so for a moment.
 export function useShelve(id: string): {
-  shelve: (state: ShelfState | 'active') => void
+  shelve: (state: ShelfState | 'active', settled?: () => void) => void
+  pending: boolean
   notice: ReactElement
 } {
   const { t } = useI18n()
@@ -218,17 +219,20 @@ export function useShelve(id: string): {
   const [failed, setFailed] = useState(false)
   return {
     // Not mutate's own callbacks: they are dropped once the page unmounts.
-    shelve: state => {
+    shelve: (state, settled) => {
       void setState.mutateAsync(state).then(
         () => {
+          settled?.()
           if (inside && state !== 'active')
             void navigate('/', { replace: true })
         },
         () => {
+          settled?.()
           setFailed(true)
         }
       )
     },
+    pending: setState.isPending,
     notice: (
       <Snackbar
         open={failed}
@@ -238,6 +242,70 @@ export function useShelve(id: string): {
         }}
         message={t('shelves.moveFailed')}
       />
+    )
+  }
+}
+
+export function useConfirmedShelve(space: Named): {
+  ask: (state: ShelfState) => void
+  notice: ReactElement
+} {
+  const { t } = useI18n()
+  const titleId = useId()
+  const { shelve, pending, notice } = useShelve(space.id)
+  // The state outlives the dialog's open flag, so its exit fade keeps its text.
+  const [asked, setAsked] = useState<ShelfState>('archived')
+  const [open, setOpen] = useState(false)
+  const close = (): void => {
+    setOpen(false)
+  }
+  const archiving = asked === 'archived'
+  return {
+    ask: state => {
+      setAsked(state)
+      setOpen(true)
+    },
+    notice: (
+      <>
+        {notice}
+        <Dialog
+          open={open}
+          onClose={close}
+          aria-labelledby={titleId}
+          size="small"
+        >
+          <DialogHeader
+            id={titleId}
+            title={t(
+              archiving
+                ? 'spaceActions.archiveTitle'
+                : 'spaceActions.trashTitle',
+              { name: space.name }
+            )}
+            close={{ label: t('common.close'), onClick: close }}
+          />
+          <DialogContent>
+            <Typography>
+              {t(archiving ? 'settings.archiveHint' : 'settings.deleteHint')}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button variant="text" onClick={close}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="contained"
+              color={archiving ? 'primary' : 'error'}
+              disabled={pending}
+              onClick={() => {
+                shelve(asked, close)
+              }}
+            >
+              {t(archiving ? 'settings.archive' : 'shelves.moveToBin')}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </>
     )
   }
 }

@@ -241,15 +241,17 @@ describe('SpaceSettingsScreen', () => {
   })
 
   it.each([
-    ['Delete', 'trashed'],
-    ['Archive', 'archived']
+    ['Delete', 'Move Roadmap to the Bin?', 'Move to Bin', 'trashed'],
+    ['Archive', 'Archive Roadmap?', 'Archive', 'archived']
   ])(
-    'moves the space out from the danger zone with %s, and goes home',
-    async (button, state) => {
+    'moves the space out from the danger zone with %s once confirmed, and goes home',
+    async (button, title, confirm, state) => {
       const spaces = renderSettings(space)
 
       const zone = await screen.findByRole('region', { name: 'Danger zone' })
       fireEvent.click(within(zone).getByRole('button', { name: button }))
+      const dialog = await screen.findByRole('dialog', { name: title })
+      fireEvent.click(within(dialog).getByRole('button', { name: confirm }))
 
       await waitFor(() => {
         expect(screen.getByLabelText('path')).toHaveTextContent(/^\/$/)

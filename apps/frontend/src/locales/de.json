@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Space bearbeiten",
     "delete": "Space löschen",
+    "archiveTitle": "%{name} archivieren?",
+    "trashTitle": "%{name} in den Papierkorb verschieben?",
     "deleteTitle": "%{name} endgültig löschen?",
     "deleteHint": "Er verschwindet aus allen Apps, mit seinen Chats, Dateien und Aufgaben. Dies kann nicht rückgängig gemacht werden."
   },

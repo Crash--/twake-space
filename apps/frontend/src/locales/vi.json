@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Chỉnh sửa không gian",
     "delete": "Xóa không gian",
+    "archiveTitle": "Lưu trữ %{name}?",
+    "trashTitle": "Chuyển %{name} vào thùng rác?",
     "deleteTitle": "Xóa vĩnh viễn %{name}?",
     "deleteHint": "Nó sẽ rời khỏi mọi ứng dụng, cùng với trò chuyện, tệp và nhiệm vụ. Không thể hoàn tác."
   },

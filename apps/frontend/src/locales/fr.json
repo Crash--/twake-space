@@ -113,6 +113,8 @@
   "spaceActions": {
     "edit": "Modifier l'espace",
     "delete": "Supprimer l'espace",
+    "archiveTitle": "Archiver %{name} ?",
+    "trashTitle": "Mettre %{name} à la corbeille ?",
     "deleteTitle": "Supprimer %{name} définitivement ?",
     "deleteHint": "Il quitte toutes les applications, avec ses discussions, fichiers et tâches. C’est irréversible."
   },

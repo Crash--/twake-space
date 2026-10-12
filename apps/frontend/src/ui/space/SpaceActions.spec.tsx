@@ -147,14 +147,30 @@ describe('SpaceActions', () => {
   })
 
   it.each([
-    ['Delete space', 'trashed'],
-    ['Archive', 'archived']
+    [
+      'Delete space',
+      'Move Roadmap to the Bin?',
+      'Move it to the Bin. You can restore it from there.',
+      'Move to Bin',
+      'trashed'
+    ],
+    [
+      'Archive',
+      'Archive Roadmap?',
+      'Hide it from the lists of every member. You can restore it from Archives.',
+      'Archive',
+      'archived'
+    ]
   ])(
-    'moves the space out with %s, and goes to the space list',
-    async (entry, state) => {
+    'moves the space out with %s once confirmed, and goes to the space list',
+    async (entry, title, hint, confirm, state) => {
       const spaces = renderActions(space)
 
       fireEvent.click((await openMenu()).getByRole('menuitem', { name: entry }))
+      const dialog = await screen.findByRole('dialog', { name: title })
+      expect(within(dialog).getByText(hint)).toBeInTheDocument()
+      expect(spaces.setState).not.toHaveBeenCalled()
+      fireEvent.click(within(dialog).getByRole('button', { name: confirm }))
 
       await waitFor(() => {
         expect(screen.getByLabelText('path')).toHaveTextContent(/^\/$/)
@@ -163,6 +179,24 @@ describe('SpaceActions', () => {
       expect(spaces.remove).not.toHaveBeenCalled()
     }
   )
+
+  it('keeps the space when the user cancels', async () => {
+    const spaces = renderActions(space)
+
+    fireEvent.click(
+      (await openMenu()).getByRole('menuitem', { name: 'Delete space' })
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Move Roadmap to the Bin?'
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(spaces.setState).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('path')).toHaveTextContent('/spaces/a1')
+  })
 
   it('leaves archiving and deleting to the people who manage the space', async () => {
     renderActions({ ...space, manages: false })
