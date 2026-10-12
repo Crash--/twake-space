@@ -132,13 +132,17 @@ function path(): HTMLElement {
   return screen.getByLabelText('path')
 }
 
-function frame(title = 'Tasks'): HTMLIFrameElement {
+function frame(title = 'Projects and tasks'): HTMLIFrameElement {
   const element = screen.getByTitle(title)
   if (!(element instanceof HTMLIFrameElement)) throw new Error('no frame')
   return element
 }
 
-function postFromFrame(data: unknown, origin = TASKS, title = 'Tasks') {
+function postFromFrame(
+  data: unknown,
+  origin = TASKS,
+  title = 'Projects and tasks'
+) {
   act(() => {
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -174,7 +178,7 @@ async function reported(data: unknown, expected: string) {
   })
 }
 
-function spyOnFrame(title = 'Tasks') {
+function spyOnFrame(title = 'Projects and tasks') {
   const contentWindow = frame(title).contentWindow
   if (!contentWindow) throw new Error('no frame window')
   return vi.spyOn(contentWindow, 'postMessage')
@@ -184,7 +188,7 @@ describe('EmbeddedApps', () => {
   it("frames the app's embed for the space's resource, at the URL's path", async () => {
     renderAt('/spaces/a1/tasks/boards/b1?task=T-1')
 
-    expect(await screen.findByTitle('Tasks')).toHaveAttribute(
+    expect(await screen.findByTitle('Projects and tasks')).toHaveAttribute(
       'src',
       `${TASKS}/embed/projects/p1/boards/b1?task=T-1`
     )
@@ -194,7 +198,7 @@ describe('EmbeddedApps', () => {
   it('frames the embed route when the path leaves it', async () => {
     renderAt('/spaces/a1/tasks/..%2F..%2Fadmin')
 
-    expect(await screen.findByTitle('Tasks')).toHaveAttribute(
+    expect(await screen.findByTitle('Projects and tasks')).toHaveAttribute(
       'src',
       `${TASKS}/embed/projects/p1`
     )
@@ -203,7 +207,7 @@ describe('EmbeddedApps', () => {
 
   it("writes the frame's path in the URL, pushed when the user moved", async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
 
     await reported(
       embedPath('p1', '/boards/b2?task=T-9', false),
@@ -219,7 +223,7 @@ describe('EmbeddedApps', () => {
 
   it("replaces the URL with the frame's path when the app replaced it", async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
 
     await reported(
       embedPath('p1', '/boards/b2', true),
@@ -234,7 +238,7 @@ describe('EmbeddedApps', () => {
 
   it("keeps Tasks' legacy path message as a replace", async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
 
     await reported(
       { type: 'twake-tasks:path', path: '/embed/projects/p1/boards/b2' },
@@ -246,7 +250,7 @@ describe('EmbeddedApps', () => {
 
   it('moves the frame on Back, within the resource', async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     await reported(
       embedPath('p1', '/boards/b1', false),
       '/spaces/a1/tasks/boards/b1'
@@ -277,7 +281,7 @@ describe('EmbeddedApps', () => {
 
   it('keeps the frame across spaces and loads the other resource in it', async () => {
     renderAt('/spaces/a1/tasks')
-    const first = await screen.findByTitle('Tasks')
+    const first = await screen.findByTitle('Projects and tasks')
     await reported(
       embedPath('p1', '/boards/b1', false),
       '/spaces/a1/tasks/boards/b1'
@@ -291,9 +295,9 @@ describe('EmbeddedApps', () => {
         TASKS
       )
     })
-    expect(screen.getByTitle('Tasks')).toBe(first)
+    expect(screen.getByTitle('Projects and tasks')).toBe(first)
     expect(first).toHaveAttribute('src', `${TASKS}/embed/projects/p1`)
-    expect(screen.getAllByTitle('Tasks')).toHaveLength(1)
+    expect(screen.getAllByTitle('Projects and tasks')).toHaveLength(1)
 
     go(-1)
     await waitFor(() => {
@@ -302,12 +306,12 @@ describe('EmbeddedApps', () => {
         TASKS
       )
     })
-    expect(screen.getByTitle('Tasks')).toBe(first)
+    expect(screen.getByTitle('Projects and tasks')).toBe(first)
   })
 
   it('replaces the frame of an app that cannot load another resource', async () => {
     renderAt('/spaces/a1/tasks')
-    const first = await screen.findByTitle('Tasks')
+    const first = await screen.findByTitle('Projects and tasks')
     await reported(
       { type: 'twake-tasks:path', path: '/embed/projects/p1/boards/b1' },
       '/spaces/a1/tasks/boards/b1'
@@ -315,22 +319,22 @@ describe('EmbeddedApps', () => {
 
     go('/spaces/b2/tasks')
     await waitFor(() => {
-      expect(screen.getByTitle('Tasks')).toHaveAttribute(
+      expect(screen.getByTitle('Projects and tasks')).toHaveAttribute(
         'src',
         `${TASKS}/embed/projects/p2`
       )
     })
     expect(first).not.toBeInTheDocument()
-    expect(screen.getAllByTitle('Tasks')).toHaveLength(1)
+    expect(screen.getAllByTitle('Projects and tasks')).toHaveLength(1)
   })
 
   it('replaces a frame that never spoke for another resource', async () => {
     renderAt('/spaces/a1/tasks')
-    const first = await screen.findByTitle('Tasks')
+    const first = await screen.findByTitle('Projects and tasks')
 
     go('/spaces/b2/tasks')
     await waitFor(() => {
-      expect(screen.getByTitle('Tasks')).toHaveAttribute(
+      expect(screen.getByTitle('Projects and tasks')).toHaveAttribute(
         'src',
         `${TASKS}/embed/projects/p2`
       )
@@ -340,7 +344,7 @@ describe('EmbeddedApps', () => {
 
   it('loads the resource again in a frame that reports another one', async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     await reported(embedPath('p1', '', true), '/spaces/a1/tasks')
     const post = spyOnFrame()
     go('/spaces/b2/tasks')
@@ -364,7 +368,7 @@ describe('EmbeddedApps', () => {
 
   it('keeps the frame, hidden, off the space and brings it back', async () => {
     renderAt('/spaces/a1/tasks')
-    const first = await screen.findByTitle('Tasks')
+    const first = await screen.findByTitle('Projects and tasks')
     await reported(
       embedPath('p1', '/boards/b1', false),
       '/spaces/a1/tasks/boards/b1'
@@ -372,20 +376,20 @@ describe('EmbeddedApps', () => {
 
     go('/')
     expect(await screen.findByText('Home')).toBeInTheDocument()
-    expect(screen.getByTitle('Tasks')).toBe(first)
+    expect(screen.getByTitle('Projects and tasks')).toBe(first)
     expect(first.closest('[aria-hidden="true"]')).not.toBeNull()
 
     go('/spaces/a1/tasks')
     await waitFor(() => {
       expect(path()).toHaveTextContent('/spaces/a1/tasks/boards/b1')
     })
-    expect(screen.getByTitle('Tasks')).toBe(first)
+    expect(screen.getByTitle('Projects and tasks')).toBe(first)
     expect(first.closest('[aria-hidden="true"]')).toBeNull()
   })
 
   it('writes the path of a hidden frame once its tab shows again', async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     fireEvent.click(screen.getByRole('tab', { name: 'Feed' }))
     await screen.findByRole('tab', { name: 'Feed', selected: true })
 
@@ -393,7 +397,7 @@ describe('EmbeddedApps', () => {
       postFromFrame(embedPath('p1', '/boards/b9', false))
       expect(path()).toHaveTextContent('/spaces/a1/feed')
     })
-    fireEvent.click(screen.getByRole('tab', { name: 'Tasks' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Projects and tasks' }))
 
     await waitFor(() => {
       expect(path()).toHaveTextContent('/spaces/a1/tasks/boards/b9')
@@ -406,7 +410,7 @@ describe('EmbeddedApps', () => {
     const spaces = fakeSpaces()
     vi.mocked(spaces.get).mockResolvedValue(roadmap)
     const { router } = renderRoute('/spaces/a1/tasks', { spaces })
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     const post = spyOnFrame()
 
     await waitFor(() => {
@@ -512,7 +516,10 @@ describe('EmbeddedApps', () => {
     const post = spyOnFrame('Chat')
 
     go('/spaces/b2/tasks')
-    await screen.findByRole('tab', { name: 'Tasks', selected: true })
+    await screen.findByRole('tab', {
+      name: 'Projects and tasks',
+      selected: true
+    })
     expect(post).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'twake-embed:load' }),
       CHAT
@@ -538,7 +545,7 @@ describe('EmbeddedApps', () => {
 
   it('does not let Tasks cover the page', async () => {
     renderAt('/spaces/a1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
 
     postFromFrame({ type: 'twake-embed:fill-page', fill: true })
     await act(() => Promise.resolve())
@@ -594,17 +601,17 @@ describe('EmbeddedApps', () => {
     expect(
       await screen.findByText('Tasks is not set up for TwakeSpace.')
     ).toBeInTheDocument()
-    expect(screen.queryByTitle('Tasks')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Projects and tasks')).not.toBeInTheDocument()
   })
 
   describe('with every ready frame mounted up front', () => {
     it("mounts a frame for each app of the space that is ready, only the tab's shown", async () => {
       renderAt('/spaces/a1/tasks')
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
       const isHidden = (title: string) =>
         frame(title).closest('[aria-hidden="true"]') !== null
-      expect(isHidden('Tasks')).toBe(false)
+      expect(isHidden('Projects and tasks')).toBe(false)
       for (const title of ['Chat', 'Drive', 'Mail']) {
         expect(isHidden(title)).toBe(true)
       }
@@ -622,7 +629,7 @@ describe('EmbeddedApps', () => {
       renderAt('/spaces/a1/mail', null, { template: null, fqdn: null })
       await screen.findByTitle('Mail')
 
-      expect(screen.queryByTitle('Tasks')).not.toBeInTheDocument()
+      expect(screen.queryByTitle('Projects and tasks')).not.toBeInTheDocument()
       expect(screen.queryByTitle('Drive')).not.toBeInTheDocument()
       expect(screen.getByTitle('Chat')).toBeInTheDocument()
     })
@@ -631,7 +638,7 @@ describe('EmbeddedApps', () => {
       renderAt('/spaces/a1/feed')
 
       expect(await screen.findByTitle('Mail')).toBeInTheDocument()
-      expect(screen.getByTitle('Tasks')).toBeInTheDocument()
+      expect(screen.getByTitle('Projects and tasks')).toBeInTheDocument()
     })
 
     it('moves the hidden frames to the new space, without touching the history', async () => {

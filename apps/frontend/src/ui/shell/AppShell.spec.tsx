@@ -251,7 +251,7 @@ describe('AppShell', () => {
     it('adds up, per space, the counts of its resources across the apps', async () => {
       renderWithCounts()
       await screen.findByRole('link', { name: 'Design' })
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
       // An app's snapshot covers every space the user has
       await waitFor(() => {
@@ -262,7 +262,7 @@ describe('AppShell', () => {
             { resourceId: 'launch@acme', count: 120 }
           ]
         })
-        postFromFrame('Tasks', 'https://tasks.test', {
+        postFromFrame('Projects and tasks', 'https://tasks.test', {
           type: 'twake-embed:badges',
           badges: [
             { resourceId: 'project-space-1', count: 2 },

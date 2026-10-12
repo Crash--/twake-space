@@ -258,7 +258,7 @@ describe('HomeScreen', () => {
       (await within(dialog).findAllByRole('checkbox')).map(
         box => box.closest('label')?.textContent
       )
-    ).toEqual(['Files', 'Chat', 'Tasks', 'Calendar', 'Mail'])
+    ).toEqual(['Files', 'Chat', 'Projects and tasks', 'Calendar', 'Mail'])
     expect(
       within(dialog).queryByRole('button', { name: 'Add shortcut' })
     ).not.toBeInTheDocument()
@@ -282,7 +282,7 @@ describe('HomeScreen', () => {
       (await within(dialog).findAllByRole('checkbox')).map(
         box => box.closest('label')?.textContent
       )
-    ).toEqual(['Tasks', 'Mail'])
+    ).toEqual(['Projects and tasks', 'Mail'])
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
 
     await waitFor(() => {

@@ -45,7 +45,7 @@
         "open": "Mở tệp"
       },
       "tasks": {
-        "name": "Công việc",
+        "name": "Dự án và công việc",
         "description": "Bảng để lên kế hoạch và theo dõi công việc của nhóm",
         "open": "Mở công việc"
       }
@@ -173,7 +173,7 @@
     "app": {
       "drive": "Tệp",
       "chat": "Trò chuyện",
-      "tasks": "Công việc",
+      "tasks": "Dự án và công việc",
       "calendar": "Lịch",
       "mail": "Thư"
     }
@@ -182,7 +182,7 @@
     "home": "Trang chủ",
     "feed": "Bảng tin",
     "chat": "Trò chuyện",
-    "tasks": "Công việc",
+    "tasks": "Dự án và công việc",
     "drive": "Drive",
     "mail": "Thư",
     "calendar": "Lịch",

@@ -159,7 +159,7 @@ describe('SpaceScreen', () => {
   it('frames the board a Tasks link points at', async () => {
     renderAt('/spaces/a1/tasks/boards/b1?task=T-1')
 
-    expect(await screen.findByTitle('Tasks')).toHaveAttribute(
+    expect(await screen.findByTitle('Projects and tasks')).toHaveAttribute(
       'src',
       'https://tasks.test/embed/projects/project-1/boards/b1?task=T-1'
     )
@@ -442,7 +442,9 @@ describe('SpaceScreen', () => {
       resources: roadmap.resources.filter(r => r.kind !== 'drive')
     })
 
-    expect(await screen.findByRole('tab', { name: 'Tasks' })).toBeVisible()
+    expect(
+      await screen.findByRole('tab', { name: 'Projects and tasks' })
+    ).toBeVisible()
     expect(screen.queryByRole('tab', { name: 'Drive' })).not.toBeInTheDocument()
   })
 
@@ -476,12 +478,12 @@ describe('SpaceScreen', () => {
 
   it('keeps the Tasks and Mail frames of the space side by side', async () => {
     renderAt('/spaces/a1/tasks')
-    const tasks = await screen.findByTitle('Tasks')
+    const tasks = await screen.findByTitle('Projects and tasks')
 
     openTab('Mail')
     const mail = await screen.findByTitle('Mail')
 
-    expect(screen.getByTitle('Tasks')).toBe(tasks)
+    expect(screen.getByTitle('Projects and tasks')).toBe(tasks)
     expect(isHidden(tasks)).toBe(true)
     expect(isHidden(mail)).toBe(false)
   })
@@ -491,7 +493,7 @@ describe('SpaceScreen', () => {
     await screen.findByRole('tab', { name: 'Feed', selected: true })
 
     const mail = await screen.findByTitle('Mail')
-    const tasks = await screen.findByTitle('Tasks')
+    const tasks = await screen.findByTitle('Projects and tasks')
     expect(isHidden(mail)).toBe(true)
     expect(isHidden(tasks)).toBe(true)
     // Chat is off and Drive still preparing: no frame for either
@@ -537,9 +539,9 @@ describe('SpaceScreen', () => {
 
       const tab = screen.getByRole('tab', { name: 'Mail, 3 new' })
       expect(tab).toHaveTextContent('Mail3')
-      expect(screen.getByRole('tab', { name: 'Tasks' })).toHaveTextContent(
-        /^Tasks$/
-      )
+      expect(
+        screen.getByRole('tab', { name: 'Projects and tasks' })
+      ).toHaveTextContent(/^Projects and tasks$/)
     })
 
     it("shows the same count on the app's card of the home", async () => {
@@ -611,7 +613,7 @@ describe('SpaceScreen', () => {
         { resourceId: 'roadmap@acme', count: 3 }
       ])
       // Tasks' frame is not Mail's
-      postBadges('Tasks', 'https://mail.test', [
+      postBadges('Projects and tasks', 'https://mail.test', [
         { resourceId: 'roadmap@acme', count: 3 }
       ])
       await act(() => Promise.resolve())
@@ -653,14 +655,14 @@ describe('SpaceScreen', () => {
 
     it('waits for the apps, then shows what they report', async () => {
       renderAt('/spaces/a1/home')
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
       expect(figure('Tasks completed')).toHaveAttribute('aria-busy', 'true')
       expect(figure('Upcoming events')).toHaveAttribute('aria-busy', 'true')
       // The space's drive is still being prepared
       expect(figure('Shared files')).toHaveAttribute('aria-busy', 'true')
 
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:metadata',
         metadata: [
           { resourceId: 'project-1', name: 'tasks.done', value: 21 },
@@ -676,7 +678,7 @@ describe('SpaceScreen', () => {
       expect(figure('Tasks completed')).toHaveTextContent('84%Tasks completed')
       expect(figure('Upcoming events')).toHaveTextContent('3Upcoming events')
       expect(
-        screen.getByRole('tab', { name: 'Tasks, 2 new' })
+        screen.getByRole('tab', { name: 'Projects and tasks, 2 new' })
       ).toBeInTheDocument()
     })
 
@@ -684,7 +686,7 @@ describe('SpaceScreen', () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       try {
         renderAt('/spaces/a1/home')
-        await screen.findByTitle('Tasks')
+        await screen.findByTitle('Projects and tasks')
 
         act(() => {
           vi.advanceTimersByTime(10_000)
@@ -698,9 +700,9 @@ describe('SpaceScreen', () => {
 
     it('shows no share of an empty project', async () => {
       renderAt('/spaces/a1/home')
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:metadata',
         metadata: [
           { resourceId: 'project-1', name: 'tasks.done', value: 0 },
@@ -713,37 +715,37 @@ describe('SpaceScreen', () => {
 
     it('takes the counts from the metadata of an app that sends both', async () => {
       renderAt('/spaces/a1/home')
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:metadata',
         metadata: [{ resourceId: 'project-1', name: 'badge', value: 2 }]
       })
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:badges',
         badges: [{ resourceId: 'project-1', count: 5 }]
       })
 
       expect(
-        screen.getByRole('tab', { name: 'Tasks, 2 new' })
+        screen.getByRole('tab', { name: 'Projects and tasks, 2 new' })
       ).toBeInTheDocument()
     })
 
     it('keeps the badges of an app whose metadata has no counts', async () => {
       renderAt('/spaces/a1/home')
-      await screen.findByTitle('Tasks')
+      await screen.findByTitle('Projects and tasks')
 
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:badges',
         badges: [{ resourceId: 'project-1', count: 5 }]
       })
-      postMetadata('Tasks', 'https://tasks.test', {
+      postMetadata('Projects and tasks', 'https://tasks.test', {
         type: 'twake-embed:metadata',
         metadata: [{ resourceId: 'project-1', name: 'tasks.total', value: 0 }]
       })
 
       expect(
-        screen.getByRole('tab', { name: 'Tasks, 5 new' })
+        screen.getByRole('tab', { name: 'Projects and tasks, 5 new' })
       ).toBeInTheDocument()
     })
 

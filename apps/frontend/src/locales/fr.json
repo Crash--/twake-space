@@ -45,7 +45,7 @@
         "open": "Ouvrir les fichiers"
       },
       "tasks": {
-        "name": "Tâches",
+        "name": "Projets et tâches",
         "description": "Des tableaux pour planifier le travail de l'équipe et le suivre",
         "open": "Ouvrir les tâches"
       }
@@ -173,7 +173,7 @@
     "app": {
       "drive": "Fichiers",
       "chat": "Chat",
-      "tasks": "Tâches",
+      "tasks": "Projets et tâches",
       "calendar": "Agenda",
       "mail": "Mail"
     }
@@ -182,7 +182,7 @@
     "home": "Accueil",
     "feed": "Fil",
     "chat": "Chat",
-    "tasks": "Tâches",
+    "tasks": "Projets et tâches",
     "drive": "Drive",
     "mail": "Mail",
     "calendar": "Agenda",

@@ -45,7 +45,7 @@
         "open": "Dateien öffnen"
       },
       "tasks": {
-        "name": "Aufgaben",
+        "name": "Projekte und Aufgaben",
         "description": "Boards, um die Arbeit des Teams zu planen und zu verfolgen",
         "open": "Aufgaben öffnen"
       }
@@ -173,7 +173,7 @@
     "app": {
       "drive": "Dateien",
       "chat": "Chat",
-      "tasks": "Aufgaben",
+      "tasks": "Projekte und Aufgaben",
       "calendar": "Kalender",
       "mail": "Mail"
     }
@@ -182,7 +182,7 @@
     "home": "Start",
     "feed": "Feed",
     "chat": "Chat",
-    "tasks": "Aufgaben",
+    "tasks": "Projekte und Aufgaben",
     "drive": "Drive",
     "mail": "Mail",
     "calendar": "Kalender",

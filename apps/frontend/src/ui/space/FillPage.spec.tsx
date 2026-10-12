@@ -115,8 +115,8 @@ function expectChrome(shown: boolean) {
 describe('full page', () => {
   it("gives the whole page to the tab's app, without loading its frame again", async () => {
     renderAt('/spaces/space-1/tasks')
-    await screen.findByTitle('Tasks')
-    const tasks = frame('Tasks')
+    await screen.findByTitle('Projects and tasks')
+    const tasks = frame('Projects and tasks')
     const loads = vi.fn()
     tasks.addEventListener('load', loads)
 
@@ -126,21 +126,21 @@ describe('full page', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Design' })
     ).toBeInTheDocument()
-    expect(screen.getByText('Tasks')).toBeInTheDocument()
-    expect(frame('Tasks')).toBe(tasks)
+    expect(screen.getByText('Projects and tasks')).toBeInTheDocument()
+    expect(frame('Projects and tasks')).toBe(tasks)
     // The panel of the frames is named without its tab
-    screen.getByRole('tabpanel', { name: 'Tasks' })
+    screen.getByRole('tabpanel', { name: 'Projects and tasks' })
 
     fireEvent.click(leaveButton())
 
     expectChrome(true)
-    expect(frame('Tasks')).toBe(tasks)
+    expect(frame('Projects and tasks')).toBe(tasks)
     expect(loads).not.toHaveBeenCalled()
   })
 
   it('moves the focus onto the way back, and back onto the button', async () => {
     renderAt('/spaces/space-1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
 
     fireEvent.click(fillButton())
     await waitFor(() => {
@@ -155,7 +155,7 @@ describe('full page', () => {
 
   it('gives the page back on Escape from TwakeSpace', async () => {
     renderAt('/spaces/space-1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     fireEvent.click(fillButton())
 
     fireEvent.keyDown(leaveButton(), { key: 'Escape' })
@@ -223,7 +223,7 @@ describe('full page', () => {
 
   it('gives the page back when another space opens, or the space settings', async () => {
     const { router } = renderAt('/spaces/space-1/tasks')
-    await screen.findByTitle('Tasks')
+    await screen.findByTitle('Projects and tasks')
     fireEvent.click(fillButton())
 
     await act(() => router.navigate('/spaces/space-2/tasks'))

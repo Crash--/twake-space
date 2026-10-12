@@ -45,7 +45,7 @@
         "open": "Apri i file"
       },
       "tasks": {
-        "name": "Attività",
+        "name": "Progetti e attività",
         "description": "Bacheche per pianificare il lavoro del team e seguirlo",
         "open": "Apri le attività"
       }
@@ -173,7 +173,7 @@
     "app": {
       "drive": "File",
       "chat": "Chat",
-      "tasks": "Attività",
+      "tasks": "Progetti e attività",
       "calendar": "Calendario",
       "mail": "Mail"
     }
@@ -182,7 +182,7 @@
     "home": "Home",
     "feed": "Feed",
     "chat": "Chat",
-    "tasks": "Attività",
+    "tasks": "Progetti e attività",
     "drive": "Drive",
     "mail": "Mail",
     "calendar": "Calendario",
