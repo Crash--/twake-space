@@ -18,6 +18,12 @@ const Count = styled(Badge)(({ theme }) => ({
     position: 'static',
     transform: 'none',
     border: 'none',
+    // One character is a 14px circle, longer counts a pill
+    boxSizing: 'border-box',
+    height: 14,
+    minWidth: 14,
+    padding: '0 2px',
+    borderRadius: '7px',
     backgroundColor: theme.vars.palette.action.selected,
     color: theme.vars.palette.text.primary,
     fontWeight: 500
