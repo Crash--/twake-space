@@ -1,5 +1,5 @@
-import { fireEvent, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { MemberAvatars } from '@/ds/Card'
 import { renderWithProviders } from '@/testing/renderWithProviders'
@@ -46,5 +46,22 @@ describe('MemberAvatars', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
       'Member 4Member 5Member 6'
     )
+  })
+
+  it('lists every member on hover and shows them all on click', async () => {
+    const onShowAll = vi.fn()
+    renderWithProviders(
+      <MemberAvatars members={people(7)} onShowAll={onShowAll} />
+    )
+    const count = await screen.findByRole('button', {
+      name: 'Member 4, Member 5, Member 6'
+    })
+
+    fireEvent.mouseOver(count)
+    const tooltip = await screen.findByRole('tooltip')
+    expect(within(tooltip).getAllByRole('listitem')).toHaveLength(7)
+
+    fireEvent.click(count)
+    expect(onShowAll).toHaveBeenCalledOnce()
   })
 })

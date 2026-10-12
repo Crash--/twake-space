@@ -1,6 +1,7 @@
 import {
   Avatar,
   Box,
+  ButtonBase,
   Card,
   CardActionArea,
   Skeleton,
@@ -8,7 +9,7 @@ import {
   Typography
 } from '@linagora/twake-mui'
 import { Icon, Pin } from '@linagora/twake-icons'
-import { type ReactElement, type ReactNode } from 'react'
+import { useState, type ReactElement, type ReactNode } from 'react'
 
 import { NameAvatar } from '@/ds/AppFrame'
 
@@ -148,20 +149,40 @@ export interface AvatarMember {
 
 // The first members of a space side by side, the rest counted. Each avatar
 // has a ring of the card's color that cuts into the one before it.
-// Hovering or focusing the count lists the members it stands for; it sits
-// above a card's stretched link so the pointer reaches it.
+// Hovering or focusing the count lists the members it stands for, or every
+// member with `onShowAll`, which a click on the count calls. It sits above a
+// card's stretched link so the pointer reaches it.
 export function MemberAvatars({
   members,
   max = 5,
-  size = 's'
+  size = 's',
+  onShowAll
 }: {
   members: AvatarMember[]
   max?: number
   size?: 's' | 'm'
+  onShowAll?: () => void
 }): ReactElement {
   const shown = members.length > max ? members.slice(0, max - 1) : members
   const hidden = members.slice(shown.length)
-  const hiddenNames = hidden.map(member => member.name)
+  // Controlled so that a click closes it: MUI keeps a tooltip above a dialog.
+  const [open, setOpen] = useState(false)
+  const count = (
+    <Avatar
+      size={size}
+      aria-hidden
+      sx={{
+        bgcolor: 'background.paper',
+        color: 'text.secondary',
+        border: 1,
+        borderColor: 'divider'
+      }}
+    >
+      +{hidden.length}
+    </Avatar>
+  )
+  const label = hidden.map(member => member.name).join(', ')
+  const above = { position: 'relative', zIndex: 1, display: 'flex' } as const
 
   return (
     <Box
@@ -184,35 +205,75 @@ export function MemberAvatars({
       ))}
       {hidden.length > 0 && (
         <Tooltip
+          open={open}
+          onOpen={() => {
+            setOpen(true)
+          }}
+          onClose={() => {
+            setOpen(false)
+          }}
           title={
-            <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
-              {hidden.map(member => (
-                <li key={member.id}>{member.name}</li>
-              ))}
-            </Box>
+            onShowAll ? (
+              <MemberList members={members} />
+            ) : (
+              <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+                {hidden.map(member => (
+                  <li key={member.id}>{member.name}</li>
+                ))}
+              </Box>
+            )
           }
         >
-          <Box
-            component="span"
-            tabIndex={0}
-            aria-label={hiddenNames.join(', ')}
-            sx={{ position: 'relative', zIndex: 1, display: 'flex' }}
-          >
-            <Avatar
-              size={size}
-              aria-hidden
-              sx={{
-                bgcolor: 'background.paper',
-                color: 'text.secondary',
-                border: 1,
-                borderColor: 'divider'
+          {onShowAll ? (
+            <ButtonBase
+              aria-label={label}
+              aria-haspopup="dialog"
+              onClick={() => {
+                setOpen(false)
+                onShowAll()
               }}
+              sx={{ ...above, borderRadius: '50%' }}
             >
-              +{hidden.length}
-            </Avatar>
-          </Box>
+              {count}
+            </ButtonBase>
+          ) : (
+            <Box component="span" tabIndex={0} aria-label={label} sx={above}>
+              {count}
+            </Box>
+          )}
         </Tooltip>
       )}
+    </Box>
+  )
+}
+
+function MemberList({ members }: { members: AvatarMember[] }): ReactElement {
+  return (
+    <Box
+      component="ul"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        maxHeight: 320,
+        overflowY: 'auto',
+        m: 0,
+        p: 0,
+        listStyle: 'none'
+      }}
+    >
+      {members.map(member => (
+        <Box
+          component="li"
+          key={member.id}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
+          <NameAvatar name={member.name} size="s" src={member.src} />
+          <Typography variant="body2" noWrap>
+            {member.name}
+          </Typography>
+        </Box>
+      ))}
     </Box>
   )
 }
