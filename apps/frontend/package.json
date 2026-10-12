@@ -21,7 +21,7 @@
     "@linagora/twake-bar": "^1.0.0",
     "@linagora/twake-css": "^1.0.0",
     "@linagora/twake-embed": "^3.5.0",
-    "@linagora/twake-feedback": "^1.1.0",
+    "@linagora/twake-feedback": "^1.1.1",
     "@linagora/twake-icons": "^2.13.2",
     "@linagora/twake-mui": "^10.4.0",
     "@linagora/twake-oidc": "^1.0.0",
