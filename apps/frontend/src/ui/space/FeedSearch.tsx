@@ -5,7 +5,7 @@ import {
   ListItemText,
   SearchBar
 } from '@linagora/twake-mui'
-import { useEffect, useState, type ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router'
 
 import { cardApp, searchedText, type FeedItem } from '@/application/feed'
@@ -17,25 +17,13 @@ import { PageSearch } from '@/ds/Page'
 import { useI18n } from '@/ui/i18n/useI18n'
 import { useFeedSearch } from '@/ui/space/feedQueries'
 import { actorAvatar, APPS, isApp, useActorName } from '@/ui/space/FeedPanel'
+import { useDebounced } from '@/ui/useDebounced'
 
-const MIN_LENGTH = 2
-const RESULTS = 8
-const DEBOUNCE_MS = 300
+export const MIN_LENGTH = 2
+export const RESULTS = 8
+export const DEBOUNCE_MS = 300
 
-function useDebounced(value: string, ms: number): string {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebounced(value)
-    }, ms)
-    return () => {
-      clearTimeout(timer)
-    }
-  }, [value, ms])
-  return debounced
-}
-
-const itemText = (item: FeedItem) => searchedText(item)[0] ?? ''
+export const itemText = (item: FeedItem) => searchedText(item)[0] ?? ''
 
 /** Searches the space's feed as one types; a result opens where it lives. */
 export function FeedSearch({ space }: { space: Space }): ReactElement {
