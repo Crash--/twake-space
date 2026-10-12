@@ -6,6 +6,7 @@ import {
   FeedComposer,
   FeedFilterMenu,
   FeedLayout,
+  FeedMoreButton,
   ReactionPicker
 } from '@/ds/Feed'
 import { renderWithProviders } from '@/testing/renderWithProviders'
@@ -70,6 +71,21 @@ describe('FeedLayout', () => {
     const toolbar = await screen.findByRole('button', { name: 'Toolbar' })
     const list = screen.getByRole('article', { name: 'First' })
     expect(toolbar.parentElement?.parentElement).toContainElement(list)
+  })
+})
+
+describe('FeedMoreButton', () => {
+  it('leaves room for its 16px icon', async () => {
+    renderWithProviders(<FeedMoreButton label="More" onClick={vi.fn()} />)
+    const style = getComputedStyle(
+      await screen.findByRole('button', { name: 'More' })
+    )
+
+    const room =
+      parseFloat(style.width) -
+      parseFloat(style.paddingLeft) -
+      parseFloat(style.paddingRight)
+    expect(room).toBeGreaterThanOrEqual(16)
   })
 })
 

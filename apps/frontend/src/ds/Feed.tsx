@@ -539,7 +539,7 @@ export function FeedMoreButton({
       onClick={event => {
         onClick(event.currentTarget)
       }}
-      sx={{ width: 32, height: 32, m: '-8px', color: 'text.secondary' }}
+      sx={{ width: 32, height: 32, p: 1, m: '-8px', color: 'text.secondary' }}
     >
       <Icon icon={MoreVertIcon} size={16} />
     </IconButton>
