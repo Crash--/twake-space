@@ -149,6 +149,9 @@ export function SpaceHome({
           {members > 0 && (
             <MemberAvatars
               size="m"
+              onShowAll={() => {
+                setManaging(true)
+              }}
               members={space.members.map(member => ({
                 id: member.id,
                 name: member.displayName ?? member.username,
