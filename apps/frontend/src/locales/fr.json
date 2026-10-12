@@ -73,7 +73,7 @@
   },
   "spotSpace": {
     "title": "SpotSpace",
-    "placeholder": "Aller dans un espace",
+    "placeholder": "Rechercher dans les espaces et leurs fils",
     "move": "Naviguer",
     "open": "Ouvrir"
   },
