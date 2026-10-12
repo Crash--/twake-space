@@ -130,8 +130,8 @@ describe('SpaceActions', () => {
     ).toBeInTheDocument()
   })
 
-  it('edits the name of the space', async () => {
-    const spaces = renderActions(space)
+  it('leaves editing the space to its settings page', async () => {
+    renderActions(space)
 
     const menu = await openMenu()
     expect(menu.getAllByRole('menuitem').map(item => item.textContent)).toEqual(
@@ -139,81 +139,11 @@ describe('SpaceActions', () => {
         'Share link',
         'Pin',
         'Manage people',
-        'Edit space',
         'Manage space',
         'Archive',
         'Delete space'
       ]
     )
-    fireEvent.click(menu.getByRole('menuitem', { name: 'Edit space' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Edit space' })
-    const name = within(dialog).getByLabelText('Space name')
-    expect(name).toHaveValue('Roadmap')
-    fireEvent.change(name, { target: { value: ' Plans ' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => {
-      expect(spaces.edit).toHaveBeenCalledWith('a1', { name: 'Plans' })
-    })
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-  })
-
-  it('turns the app tabs of the space on and off', async () => {
-    const spaces = renderActions({ ...space, apps: ['chat', 'drive'] })
-
-    const menu = await openMenu()
-    fireEvent.click(menu.getByRole('menuitem', { name: 'Edit space' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Edit space' })
-    const apps = within(
-      await within(dialog).findByRole('group', { name: 'Apps to enable' })
-    )
-    expect(apps.getByRole('checkbox', { name: 'Chat' })).toBeChecked()
-    expect(apps.getByRole('checkbox', { name: 'Calendar' })).not.toBeChecked()
-    fireEvent.click(apps.getByRole('checkbox', { name: 'Chat' }))
-    fireEvent.click(apps.getByRole('checkbox', { name: 'Calendar' }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => {
-      expect(spaces.edit).toHaveBeenCalledWith('a1', {
-        apps: ['drive', 'calendar']
-      })
-    })
-  })
-
-  it('keeps the apps the deployment no longer provides', async () => {
-    const spaces = fakeSpaces()
-    vi.mocked(spaces.apps).mockResolvedValue(['chat'])
-    renderActions({ ...space, apps: ['chat', 'mail'] }, spaces)
-
-    const menu = await openMenu()
-    fireEvent.click(menu.getByRole('menuitem', { name: 'Edit space' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Edit space' })
-    const chat = await within(dialog).findByRole('checkbox', { name: 'Chat' })
-    expect(
-      within(dialog).queryByRole('checkbox', { name: 'Mail' })
-    ).not.toBeInTheDocument()
-    fireEvent.click(chat)
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => {
-      expect(spaces.edit).toHaveBeenCalledWith('a1', { apps: ['mail'] })
-    })
-  })
-
-  it('saves nothing when nothing changed', async () => {
-    const spaces = renderActions(space)
-
-    const menu = await openMenu()
-    fireEvent.click(menu.getByRole('menuitem', { name: 'Edit space' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Edit space' })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-    expect(spaces.edit).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -241,30 +171,5 @@ describe('SpaceActions', () => {
 
     expect(menu.queryByRole('menuitem', { name: 'Archive' })).toBe(null)
     expect(menu.queryByRole('menuitem', { name: 'Delete space' })).toBe(null)
-  })
-
-  it('shows why an edit was refused', async () => {
-    const spaces = fakeSpaces()
-    vi.mocked(spaces.edit).mockRejectedValue(
-      Object.assign(new Error('refused'), {
-        status: 403,
-        code: 'not_space_admin'
-      })
-    )
-    renderActions(space, spaces)
-
-    const menu = await openMenu()
-    fireEvent.click(menu.getByRole('menuitem', { name: 'Edit space' }))
-    const dialog = await screen.findByRole('dialog')
-    fireEvent.change(within(dialog).getByLabelText('Space name'), {
-      target: { value: 'Plans' }
-    })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
-
-    expect(
-      await within(dialog).findByText(
-        'The change was refused (not_space_admin).'
-      )
-    ).toBeInTheDocument()
   })
 })

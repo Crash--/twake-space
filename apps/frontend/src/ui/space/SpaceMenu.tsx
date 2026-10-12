@@ -4,7 +4,6 @@ import {
   Icon,
   Link,
   People,
-  Pen,
   Pin,
   Settings,
   Trash
@@ -109,18 +108,14 @@ export function SpaceMenu({
   const { shelve, notice: shelveNotice } = useShelve(space.id)
   const pinned = space.pinnedAt !== null
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const [dialog, setDialog] = useState<'people' | 'edit' | null>(null)
+  const [people, setPeople] = useState(false)
   const { share, notice } = useShareLink(space.id)
   const isAdmin = space.role === 'admin'
   const close = (): void => {
     setAnchor(null)
   }
-  const open = (which: 'people' | 'edit') => () => {
-    close()
-    setDialog(which)
-  }
-  const closeDialog = (): void => {
-    setDialog(null)
+  const closePeople = (): void => {
+    setPeople(false)
   }
   const item = (
     key: string,
@@ -171,9 +166,11 @@ export function SpaceMenu({
           'people',
           People,
           t(isAdmin ? 'spaceMenu.managePeople' : 'spaceMenu.members'),
-          open('people')
+          () => {
+            close()
+            setPeople(true)
+          }
         )}
-        {isAdmin && item('edit', Pen, t('spaceActions.edit'), open('edit'))}
         {isAdmin &&
           item('manage', Settings, t('spaceMenu.manage'), () => {
             close()
@@ -199,14 +196,9 @@ export function SpaceMenu({
       </Menu>
       {notice}
       {shelveNotice}
-      {dialog === 'people' && (
-        <WithSpace spaceId={space.id} onClose={closeDialog}>
-          {full => <PeopleDialog space={full} onClose={closeDialog} />}
-        </WithSpace>
-      )}
-      {dialog === 'edit' && (
-        <WithSpace spaceId={space.id} onClose={closeDialog}>
-          {full => <EditDialog space={full} onClose={closeDialog} />}
+      {people && (
+        <WithSpace spaceId={space.id} onClose={closePeople}>
+          {full => <PeopleDialog space={full} onClose={closePeople} />}
         </WithSpace>
       )}
     </>
@@ -250,8 +242,7 @@ export function useShelve(id: string): {
   }
 }
 
-// The people picker needs who is already in, and the app picker the space's
-// apps: read the space first.
+// The people picker needs who is already in: read the space first.
 function WithSpace({
   spaceId,
   onClose,

@@ -124,6 +124,101 @@ describe('SpaceSettingsScreen', () => {
     })
   })
 
+  const openEdit = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    return screen.findByRole('dialog', { name: 'Edit space' })
+  }
+
+  it('edits the name of the space', async () => {
+    const spaces = renderSettings(space)
+
+    const dialog = await openEdit()
+    const name = within(dialog).getByLabelText('Space name')
+    expect(name).toHaveValue('Roadmap')
+    fireEvent.change(name, { target: { value: ' Plans ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(spaces.edit).toHaveBeenCalledWith('a1', { name: 'Plans' })
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('turns the app tabs of the space on and off from the edit dialog', async () => {
+    const spaces = renderSettings(space)
+
+    const dialog = await openEdit()
+    const apps = within(
+      await within(dialog).findByRole('group', { name: 'Apps to enable' })
+    )
+    expect(apps.getByRole('checkbox', { name: 'Chat' })).toBeChecked()
+    expect(apps.getByRole('checkbox', { name: 'Calendar' })).not.toBeChecked()
+    fireEvent.click(apps.getByRole('checkbox', { name: 'Chat' }))
+    fireEvent.click(apps.getByRole('checkbox', { name: 'Calendar' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(spaces.edit).toHaveBeenCalledWith('a1', {
+        apps: ['drive', 'calendar']
+      })
+    })
+  })
+
+  it('keeps the apps the deployment no longer provides', async () => {
+    const spaces = fakeSpaces()
+    vi.mocked(spaces.apps).mockResolvedValue(['chat'])
+    renderSettings({ ...space, apps: ['chat', 'mail'] }, spaces)
+
+    const dialog = await openEdit()
+    const chat = await within(dialog).findByRole('checkbox', { name: 'Chat' })
+    expect(
+      within(dialog).queryByRole('checkbox', { name: 'Mail' })
+    ).not.toBeInTheDocument()
+    fireEvent.click(chat)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(spaces.edit).toHaveBeenCalledWith('a1', { apps: ['mail'] })
+    })
+  })
+
+  it('saves nothing when nothing changed', async () => {
+    const spaces = renderSettings(space)
+
+    const dialog = await openEdit()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(spaces.edit).not.toHaveBeenCalled()
+  })
+
+  it('shows why an edit was refused', async () => {
+    const spaces = fakeSpaces()
+    vi.mocked(spaces.edit).mockRejectedValue(
+      Object.assign(new Error('refused'), {
+        status: 403,
+        code: 'not_space_admin'
+      })
+    )
+    renderSettings(space, spaces)
+
+    const dialog = await openEdit()
+    fireEvent.change(within(dialog).getByLabelText('Space name'), {
+      target: { value: 'Plans' }
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    expect(
+      await within(dialog).findByText(
+        'The change was refused (not_space_admin).'
+      )
+    ).toBeInTheDocument()
+  })
+
   it('opens the add members dialog', async () => {
     renderSettings(space)
 
