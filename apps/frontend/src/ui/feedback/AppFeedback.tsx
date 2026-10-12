@@ -1,6 +1,7 @@
 import { FeedbackButton, getFeedbackLabels } from '@linagora/twake-feedback'
 import { useColorScheme, useMediaQuery, useTheme } from '@linagora/twake-mui'
 import { useCallback, useEffect, type ReactElement } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { FeedbackService } from '@/application/feedback'
 import { useI18n } from '@/ui/i18n/useI18n'
@@ -13,7 +14,11 @@ const MOBILE_BAR_HEIGHT = 52
 export function AppFeedback(): ReactElement | null {
   const { feedback } = useServices()
 
-  return feedback?.enabled === true ? <Button feedback={feedback} /> : null
+  // On the body: an app's dialog makes #root inert, and a problem met in that
+  // dialog must still be reportable
+  return feedback?.enabled === true
+    ? createPortal(<Button feedback={feedback} />, document.body)
+    : null
 }
 
 function Button({ feedback }: { feedback: FeedbackService }): ReactElement {

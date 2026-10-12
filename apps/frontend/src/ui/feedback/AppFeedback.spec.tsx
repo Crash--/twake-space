@@ -62,6 +62,14 @@ describe('feedback button', () => {
     expect(feedback.detach).toHaveBeenCalled()
   })
 
+  it('is outside the page an app dialog makes inert', async () => {
+    const { container } = renderRoute('/', { feedback: fakeFeedback() })
+
+    const button = await screen.findByTestId('twake-feedback-button')
+
+    expect(container.contains(button)).toBe(false)
+  })
+
   it('shows nothing without a feedback service', async () => {
     renderRoute('/')
     await screen.findByRole('navigation')
