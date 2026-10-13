@@ -32,7 +32,7 @@ What mock mode doesn't do:
 
 ## Run it against the backend
 
-The main README covers the backend and `public/.env.js`. With `API_URL = '/api'`, the dev server forwards `/api/<path>` to `http://localhost:8080/<path>`. Signing in for real needs an SSO whose users belong to an organization, and an ldap-rest with spaces. That ldap-rest isn't released yet, so the full local stack can't be set up from this repo: ask Khaled Ferjani.
+The main README covers the backend and `public/.env.js`. With `API_URL = '/api'`, the dev server forwards `/api/<path>` to `http://localhost:8080/<path>`. Signing in for real needs an SSO whose users belong to an organization, and an ldap-rest with spaces. `scripts/qa-environment/start.sh` runs both, with the backend and the frontend, seeded with test accounts and spaces. Its SSO answers only on the stack's docker network, so sign in from a browser in a container on that network, as the script prints.
 
 ## How the code is laid out
 

@@ -1,0 +1,149 @@
+# QA stack started by start.sh on top of docker-compose.yml, see compose() in compose.sh.
+# The SSO is a mock that signs in the people start.sh seeds into ldap-rest. Only the frontend
+# reaches the host, on 127.0.0.1.
+services:
+  rabbitmq:
+    ports: !reset []
+
+  postgres:
+    ports: !reset []
+
+  oidc:
+    image: node:24-slim
+    working_dir: /oidc
+    command: ['node', 'server.ts']
+    volumes:
+      - ./scripts/qa-environment/oidc:/oidc:ro
+      - ./scripts/qa-environment/.generated/certs:/certs:ro
+      - ./scripts/qa-environment/.generated/people.json:/people.json:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('https://localhost:8443/.well-known/openid-configuration').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+        ]
+      interval: 2s
+      retries: 20
+    environment:
+      NODE_EXTRA_CA_CERTS: /certs/oidc.crt
+      FRAME_ANCESTORS: "'self' http://localhost:${QA_APP_PORT:?}"
+
+  # The LDAP schema and the refint overlay come from twake-workplace at twake-ldap-rest-v0.7.2,
+  # the version of the ldap-rest image below.
+  openldap:
+    image: jpgouin/openldap:2.6.9-fix
+    environment:
+      LDAP_ROOT: dc=twake,dc=test
+      LDAP_ADMIN_USERNAME: admin
+      LDAP_ADMIN_PASSWORD: admin
+      LDAP_CUSTOM_LDIF_DIR: /ldifs
+      LDAP_EXTRA_SCHEMAS: cosine,inetorgperson,nis,twake
+    volumes:
+      - ./scripts/qa-environment/ldap/00-tree.ldif:/ldifs/00-tree.ldif:ro
+      - ./scripts/qa-environment/ldap/20-refint.sh:/docker-entrypoint-initdb.d/20-refint.sh:ro
+      - ./scripts/qa-environment/ldap/twake.ldif:/opt/bitnami/openldap/etc/schema/twake.ldif:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'ldapsearch',
+          '-x',
+          '-H',
+          'ldap://localhost:1389',
+          '-b',
+          'dc=twake,dc=test',
+          '-D',
+          'cn=admin,dc=twake,dc=test',
+          '-w',
+          'admin'
+        ]
+      interval: 2s
+      retries: 30
+
+  ldap-rest:
+    image: harbor.linagora.com/twake-workplace/twake-ldap-rest:v0.7.2
+    # Space writes name the person acting, from the Auth-User header the backend sends.
+    command: ['npx', 'ldap-rest', '--workplace-actor-services', 'twake-space']
+    depends_on:
+      openldap:
+        condition: service_healthy
+      rabbitmq-exchanges:
+        condition: service_completed_successfully
+    environment:
+      DM_LDAP_URL: ldap://openldap:1389
+      DM_LDAP_BASE: dc=twake,dc=test
+      DM_LDAP_DN: cn=admin,dc=twake,dc=test
+      DM_LDAP_PWD: admin
+      DM_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      DM_AUTH_HMAC: 'twake-space:qa-ldap-rest-secret-of-at-least-32-chars:Twake Space'
+      DM_TWAKE_LIFECYCLE_ROLE_ATTRIBUTE: twakeOrganizationRole
+      DM_TWAKE_LIFECYCLE_LOCK_ATTRIBUTE: pwdAccountLockedTime
+      DM_TWAKE_LIFECYCLE_LOCK_VALUE: 000001010000Z
+      DM_TWAKE_LIFECYCLE_DELETED_ATTRIBUTE: twakeIsDeleted
+      DM_TWAKE_LIFECYCLE_DELETED_VALUE: 'TRUE'
+      DM_TWAKE_LIFECYCLE_DELETED_AT_ATTRIBUTE: twakeDeletedAt
+      DM_TWAKE_LIFECYCLE_DELETED_AT_FORMAT: iso8601
+      DM_TWAKE_LIFECYCLE_REASON_ATTRIBUTE: twakeDeletionReason
+      DM_TWAKE_TOMBSTONE_DN: ^(uid|cn)=[^,]+,ou=users,dc=twake,dc=test;^(uid|cn)=[^,]+,ou=users,ou=[^,]+,ou=b2b,dc=twake,dc=test;
+      DM_TWAKE_TOMBSTONE_REASONS: user_request,violation,inactivity,member_deleted,organization_deleted,scim_deleted
+      DM_TWAKE_TOMBSTONE_DEFAULT_REASON: scim_deleted
+      DM_TWAKE_TOMBSTONE_GROUP_BASES: ou=b2b,dc=twake,dc=test;
+      DM_GROUP_DUMMY_USER: cn=placeholder
+      DM_TWAKE_GROUP_BASE: ou=groups,ou={org},ou=b2b,dc=twake,dc=test
+      DM_TWAKE_GROUP_USER_BASE: ou=users,ou={org},ou=b2b,dc=twake,dc=test
+      DM_TWAKE_GROUP_ORGANIZATION_DN: ou={org},ou=b2b,dc=twake,dc=test
+      DM_GROUP_CLASSES: top,groupOfNames,twakeGroup
+      DM_GROUP_SCHEMA: /app/node_modules/ldap-rest/static/schemas/twake/organizationGroups.json
+      DM_TWAKE_SPACE_BASE: ou=spaces,ou={org},ou=b2b,dc=twake,dc=test
+      DM_TWAKE_SPACE_USER_ROLE_ATTRIBUTE: twakeSpaceRole
+      DM_TWAKE_INSTANCE_ORGANIZATION_DOMAIN_ATTRIBUTE: twakeDomain
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('net').connect(8081, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
+        ]
+      interval: 2s
+      retries: 30
+
+  backend:
+    ports: !reset []
+    depends_on:
+      oidc:
+        condition: service_healthy
+      ldap-rest:
+        condition: service_healthy
+    volumes:
+      - ./scripts/qa-environment/.generated/certs:/certs:ro
+    environment:
+      OIDC_ISSUER: https://oidc:8443
+      OIDC_CLIENT_SECRET: qa-backend-secret
+      NODE_EXTRA_CA_CERTS: /certs/oidc.crt
+      LDAP_REST_URL: http://ldap-rest:8081
+      LDAP_REST_SECRET: qa-ldap-rest-secret-of-at-least-32-chars
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:8080/health/ready').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+        ]
+      interval: 2s
+      retries: 60
+
+  frontend:
+    ports: !override
+      - '127.0.0.1:${QA_APP_PORT:?}:8080'
+    environment:
+      API_URL: /api
+      API_UPSTREAM: http://backend:8080
+      SSO_BASE_URL: https://oidc:8443
+      SSO_CLIENT_ID: twakespace
+      SSO_SCOPE: openid email profile
+      SSO_REDIRECT_URI: http://localhost:${QA_APP_PORT:?}/auth/callback
+      SSO_POST_LOGOUT_REDIRECT: http://localhost:${QA_APP_PORT:?}/
