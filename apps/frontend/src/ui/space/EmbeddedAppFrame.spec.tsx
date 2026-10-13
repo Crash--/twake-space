@@ -129,7 +129,7 @@ describe('EmbeddedAppFrame', () => {
     expect(frame()).toHaveAttribute('name', 'twake-embed-mail')
     expect(frame()).toHaveAttribute(
       'sandbox',
-      'allow-scripts allow-same-origin allow-popups allow-forms allow-downloads'
+      'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads'
     )
     expect(frame()).toHaveAttribute(
       'allow',
@@ -139,7 +139,7 @@ describe('EmbeddedAppFrame', () => {
     expect(overlay()).toHaveAttribute('src', `${MAIL}/embed/overlay.html`)
     expect(overlay()).toHaveAttribute(
       'sandbox',
-      'allow-scripts allow-same-origin allow-popups allow-forms allow-downloads'
+      'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads'
     )
     expect(overlay()).toHaveAttribute(
       'allow',

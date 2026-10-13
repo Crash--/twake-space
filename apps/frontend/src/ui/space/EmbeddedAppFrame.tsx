@@ -36,9 +36,11 @@ import { useI18n } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
 import { useSession } from '@/ui/session/SessionGate'
 
-// Downloads too: a sandboxed frame without it cannot save a file
+// Downloads too: a sandboxed frame without it cannot save a file. A tab the
+// frame opens inherits the sandbox (no alert, confirm or print) unless
+// popups escape it; `allow-modals` stays off for the frame itself.
 const SANDBOX =
-  'allow-scripts allow-same-origin allow-popups allow-forms allow-downloads'
+  'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads'
 // The browser's full screen too: a video or a document of the app over the
 // whole screen (the page of TwakeSpace is another thing, `fill-page`)
 const ALLOW = 'clipboard-read; clipboard-write; fullscreen'
