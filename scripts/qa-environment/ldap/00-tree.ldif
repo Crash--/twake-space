@@ -1,0 +1,14 @@
+dn: dc=twake,dc=test
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Twake
+dc: twake
+
+dn: ou=users,dc=twake,dc=test
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=b2b,dc=twake,dc=test
+objectClass: organizationalUnit
+ou: b2b
