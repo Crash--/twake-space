@@ -1,6 +1,7 @@
+import { pino } from 'pino'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
-import { tell, tellRevoked } from './notify.ts'
+import { listenForLive, tell, tellRevoked } from './notify.ts'
 import { listenInMemory } from './testing.ts'
 
 let testDb: TestDb
@@ -60,4 +61,33 @@ it('closes the revoked session on every replica', async () => {
       expect(closeSession).toHaveBeenCalledWith('session-1')
     })
   }
+})
+
+it('keeps publishing after a failed publish leaves the client disconnected', async () => {
+  let connected = true
+  const publish = vi.fn(() => {
+    if (publish.mock.calls.length > 1) return Promise.resolve()
+    connected = false
+    return Promise.reject(new Error('channel closed'))
+  })
+  const broker = {
+    isConnected: () => connected,
+    subscribe: () => Promise.resolve(),
+    publish
+  }
+  await listenForLive(
+    broker,
+    'live',
+    { send: vi.fn(), closeSession: vi.fn() },
+    pino({ level: 'silent' })
+  )
+
+  for (const sessionId of ['session-1', 'session-2']) {
+    await testDb.db.transaction(tx => {
+      tellRevoked(tx, sessionId)
+      return Promise.resolve()
+    })
+  }
+
+  expect(publish).toHaveBeenCalledTimes(2)
 })
