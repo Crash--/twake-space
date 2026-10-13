@@ -14,6 +14,7 @@ import {
   type Handler
 } from '../../events/router.ts'
 import type { Tx } from '../../infra/db.ts'
+import { fullName } from '../../infra/ldap-rest.ts'
 import { forgetActor } from '../feed/activity.ts'
 import { tell, tellSpaceMembers } from '../live/notify.ts'
 import { deleteNotificationsOf } from '../notifications/recipients.ts'
@@ -63,7 +64,6 @@ export const resourceKey = (spaceId: string, kind: SpaceResourceKind) =>
 
 const role = z.enum(spaceRole.enumValues)
 
-// ldap-rest's space events carry the first and last name, not the display name.
 const member = z
   .looseObject({
     uuid: z.uuid().optional(),
@@ -75,11 +75,7 @@ const member = z
   })
   .transform(({ firstName, lastName, ...m }) => ({
     ...m,
-    displayName:
-      [firstName, lastName]
-        .map(part => part?.trim())
-        .filter(Boolean)
-        .join(' ') || null
+    displayName: fullName(firstName, lastName)
   }))
 
 const group = z.looseObject({

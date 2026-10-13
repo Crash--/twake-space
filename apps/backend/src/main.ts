@@ -43,6 +43,7 @@ import { configureHomeserver } from './modules/organizations/homeservers.ts'
 import { settingsPlatformRoutes } from './modules/settings/events.ts'
 import { registerSettingsRoutes } from './modules/settings/routes.ts'
 import { spacePlatformRoutes } from './modules/spaces/events.ts'
+import { scheduleReconciliation } from './modules/spaces/reconcile.ts'
 import { resourceActivityRoutes } from './modules/spaces/resources.ts'
 import { registerSpaceRoutes } from './modules/spaces/routes.ts'
 import { cachedWorkplaces } from './modules/spaces/workplaces.ts'
@@ -120,11 +121,8 @@ registerSpaceRoutes(server, {
   apps: config.spaceApps,
   workplaces: cachedWorkplaces(directory)
 })
-registerSpaceWriteRoutes(server, {
-  db,
-  authorize,
-  directory: ldapRestSpaces(ldapRest)
-})
+const spaceDirectory = ldapRestSpaces(ldapRest)
+registerSpaceWriteRoutes(server, { db, authorize, directory: spaceDirectory })
 registerTokenRoutes(server, { db, authorize, directory })
 registerDirectoryRoutes(server, { authorize, directory })
 registerNotificationRoutes(server, {
@@ -199,14 +197,16 @@ const stopParked = scheduleParkedRetries(
 )
 const stopPurge = schedulePurge(db, logger)
 const stopSweep = scheduleRevocationSweep(db, streams, logger)
+const stopReconciliation = scheduleReconciliation(db, spaceDirectory, logger)
 accepting = true
 lifecycle.started(async () => {
   accepting = false
   const parkedStopped = stopParked()
   stopPurge()
   stopSweep()
+  const reconciliationStopped = stopReconciliation()
   try {
-    await parkedStopped
+    await Promise.all([parkedStopped, reconciliationStopped])
     await Promise.all([consumers.space.close(), consumers.activity.close()])
     await delay(DRAIN_MS)
     await server.close()

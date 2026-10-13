@@ -63,9 +63,29 @@ export interface Person {
   displayName: string | null
 }
 
+// A member ldap-rest cannot read comes with its username and role only.
+export type ListedMember = {
+  username: string
+  role: SpaceRole
+  displayName: string | null
+  uuid?: string | undefined
+  email?: string | undefined
+}
+
+// ldap-rest gives a member's first and last name, not the display name.
+export const fullName = (firstName?: unknown, lastName?: unknown) =>
+  [firstName, lastName]
+    .map(part => (typeof part === 'string' ? part.trim() : ''))
+    .filter(Boolean)
+    .join(' ') || null
+
 // `actor` is the acting user's email, so ldap-rest's events name them; null
 // when an organization token acts.
 export interface SpaceDirectory {
+  // Undefined for an organization ldap-rest does not know.
+  list(orgId: string): Promise<{ id: string; name: string }[] | undefined>
+  members(orgId: string, spaceId: string): Promise<ListedMember[]>
+  exists(orgId: string, spaceId: string): Promise<boolean>
   person(
     orgId: string,
     by: 'username' | 'id',
@@ -135,6 +155,44 @@ export function ldapRestSpaces(
   const { spaces } = client
   const as = (actor: string | null) => actor ?? undefined
   return {
+    list(orgId) {
+      return notFoundAsUndefined(
+        pages(async page => {
+          const { spaces: listed, pagination } = await spaces.list(orgId, {
+            page,
+            limit: PAGE
+          })
+          return {
+            items: listed.map(({ id, name }) => ({ id, name })),
+            last: page >= pagination.totalPages
+          }
+        })
+      )
+    },
+    members(orgId, spaceId) {
+      return pages(async page => {
+        const { members, pagination } = await spaces.listMembers(
+          orgId,
+          spaceId,
+          { page, limit: PAGE }
+        )
+        return {
+          items: members.map(m => ({
+            username: m.uid,
+            role: m.role,
+            displayName: fullName(m['givenName'], m['sn']),
+            uuid: typeof m['_id'] === 'string' ? m['_id'] : undefined,
+            email: typeof m['mail'] === 'string' ? m['mail'] : undefined
+          })),
+          last: !pagination.hasNextPage
+        }
+      })
+    },
+    async exists(orgId, spaceId) {
+      return (
+        (await notFoundAsUndefined(spaces.get(orgId, spaceId))) !== undefined
+      )
+    },
     async person(orgId, by, value) {
       const user = await notFoundAsUndefined(
         client.organizations.getUser(orgId, { by, value })
@@ -278,6 +336,19 @@ export function ldapRestDirectory(
       )
       return user && toMember(user)
     }
+  }
+}
+
+const PAGE = 100
+
+async function pages<T>(
+  read: (page: number) => Promise<{ items: T[]; last: boolean }>
+): Promise<T[]> {
+  const all: T[] = []
+  for (let page = 1; ; page++) {
+    const { items, last } = await read(page)
+    all.push(...items)
+    if (last || items.length === 0) return all
   }
 }
 
