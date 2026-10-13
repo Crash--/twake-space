@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { FloatingWindow, WindowFrame } from '@/ds/FloatingWindow'
 import { useCall } from '@/ui/call/CallContext'
 import { useI18n } from '@/ui/i18n/useI18n'
+import { SANDBOX } from '@/ui/space/EmbeddedAppFrame'
 
 const MEET_PERMISSIONS =
   'camera; microphone; display-capture; autoplay; fullscreen; clipboard-write'
@@ -31,6 +32,7 @@ export function CallWindow(): ReactElement | null {
           moving={moving}
           src={call.url}
           title={t('call.window')}
+          sandbox={SANDBOX}
           allow={MEET_PERMISSIONS}
         />
       )}

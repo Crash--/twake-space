@@ -130,6 +130,10 @@ describe('MeetingMenu', () => {
     const frame = within(meeting()).getByTitle('Video meeting')
     expect(frame).toHaveAttribute('src', 'https://meet.test/abc-defg-hij')
     expect(frame).toHaveAttribute(
+      'sandbox',
+      'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-downloads'
+    )
+    expect(frame).toHaveAttribute(
       'allow',
       'camera; microphone; display-capture; autoplay; fullscreen; clipboard-write'
     )
