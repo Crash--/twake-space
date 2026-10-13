@@ -52,18 +52,14 @@ export function ShelfScreen({ state }: { state: ShelfState }): ReactElement {
 
   return (
     <Page>
-      <Typography variant="h3" component="h1">
-        {t(texts.title)}
-      </Typography>
-      <div className="u-flex u-flex-items-center u-flex-wrap u-mt-half u-mb-1">
-        <Typography color="textSecondary" className="u-flex-auto u-maw-7">
-          {t(texts.intro)}
+      <div className="u-flex u-flex-items-center u-flex-wrap u-flex-justify-between">
+        <Typography variant="h3" component="h1">
+          {t(texts.title)}
         </Typography>
         {state === 'trashed' && spaces.data && spaces.data.length > 0 && (
           <Button
             variant="outlined"
             color="error"
-            className="u-flex-none"
             onClick={() => {
               setEmptying(true)
             }}
@@ -72,6 +68,9 @@ export function ShelfScreen({ state }: { state: ShelfState }): ReactElement {
           </Button>
         )}
       </div>
+      <Typography color="textSecondary" className="u-mt-half u-mb-1 u-maw-7">
+        {t(texts.intro)}
+      </Typography>
       {spaces.isPending && (
         <LoadingRows count={3} label={t('spaces.loading')} />
       )}
