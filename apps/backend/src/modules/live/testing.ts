@@ -12,7 +12,6 @@ export async function listenInMemory(
     handler: RabbitMQMessageHandler
   }[] = []
   const broker: Broker = {
-    isConnected: () => true,
     subscribe(exchange, routingKey, _queue, handler, options) {
       consumers.push({
         routingKeys: [

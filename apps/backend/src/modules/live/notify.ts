@@ -16,10 +16,7 @@ const update = z.object({
 })
 const revoked = z.object({ sessionId: z.string() })
 
-export type Broker = Pick<
-  RabbitMQClient,
-  'publish' | 'subscribe' | 'isConnected'
->
+export type Broker = Pick<RabbitMQClient, 'publish' | 'subscribe'>
 
 let publish: (
   routingKey: string,
@@ -101,10 +98,9 @@ export async function listenForLive(
       bindings: [{ exchange, routingKey: REVOKED }]
     }
   )
-  // A message is only worth something now, so it is not retried across an
-  // outage.
+  // A message is only worth something now, so it gets a single attempt. That
+  // attempt is also what reconnects the client after a failed publish.
   publish = (routingKey, message) => {
-    if (!broker.isConnected()) return
     broker
       .publish(exchange, routingKey, message, { maxAttempts: 1 })
       .catch((error: unknown) => {
