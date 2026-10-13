@@ -244,7 +244,14 @@ export function SpaceHeader({
             {title}
           </Typography>
         </Box>
-        <Box sx={{ minWidth: 0, flex: '1 1 auto', order: { xs: 1, md: 0 } }}>
+        <Box
+          sx={{
+            minWidth: 0,
+            flex: '1 1 auto',
+            order: { xs: 1, md: 0 },
+            alignSelf: 'flex-end'
+          }}
+        >
           {tabs}
         </Box>
         {actions && (
