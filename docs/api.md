@@ -603,8 +603,9 @@ Shared rules:
 
 ### PATCH /spaces/:id
 
-- Body: `{"name":"...","apps":["chat","drive"]}`, with at least one of the two.
+- Body: `{"name":"...","description":"...","apps":["chat","drive"]}`, with at least one of the three.
 - `name` renames the space.
+- `description` replaces its description, up to 1000 characters, trimmed. It sends `spaces` on the live stream to the members.
 - `apps` replaces the app tabs the space shows, among `chat`, `tasks`, `drive`, `mail` and `calendar` (`feed` answers 400 here). It sends `spaces` on the live stream to the members.
 - Answers `204`.
 

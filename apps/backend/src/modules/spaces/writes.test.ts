@@ -19,6 +19,7 @@ import {
   spaceGroups,
   spaceMembers,
   spaceSettings,
+  spaceTab,
   spaces
 } from './schema.ts'
 import { registerSpaceWriteRoutes } from './writes.ts'
@@ -362,7 +363,48 @@ describe('space writes', () => {
     ])
   })
 
+  it('changes the description without asking ldap-rest', async () => {
+    const { calls, directory } = ldapRest()
+    await testDb.db.insert(spaceSettings).values({
+      spaceId: DESIGN,
+      description: 'Ship it',
+      color: '#46a2ff',
+      apps: ['drive']
+    })
+
+    const response = await setUp(directory)('PATCH', `/spaces/${DESIGN}`, {
+      description: '  Ship it twice  '
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(calls).toEqual([])
+    expect(await testDb.db.select().from(spaceSettings)).toEqual([
+      {
+        spaceId: DESIGN,
+        description: 'Ship it twice',
+        color: '#46a2ff',
+        apps: ['drive']
+      }
+    ])
+  })
+
+  it('keeps every app on when describing a space created elsewhere', async () => {
+    const { directory } = ldapRest()
+
+    await setUp(directory)('PATCH', `/spaces/${DESIGN}`, { description: '' })
+
+    expect(await testDb.db.select().from(spaceSettings)).toEqual([
+      {
+        spaceId: DESIGN,
+        description: '',
+        color: null,
+        apps: [...spaceTab.enumValues]
+      }
+    ])
+  })
+
   it.each([
+    ['a description over 1000 characters', { description: 'a'.repeat(1001) }],
     ['an empty change', {}],
     ['an unknown app', { apps: ['contacts'] }]
   ])('refuses %s to a space', async (_case, change) => {

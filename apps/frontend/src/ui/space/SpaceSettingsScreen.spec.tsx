@@ -146,6 +146,22 @@ describe('SpaceSettingsScreen', () => {
     })
   })
 
+  it('edits the description of the space', async () => {
+    const spaces = renderSettings(space)
+
+    const dialog = await openEdit()
+    const description = within(dialog).getByLabelText('Description')
+    expect(description).toHaveValue('Where the year is planned')
+    fireEvent.change(description, { target: { value: ' Where we plan ' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(spaces.edit).toHaveBeenCalledWith('a1', {
+        description: 'Where we plan'
+      })
+    })
+  })
+
   it('turns the app tabs of the space on and off from the edit dialog', async () => {
     const spaces = renderSettings(space)
 

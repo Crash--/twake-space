@@ -66,7 +66,9 @@ export interface NewSpace {
   apps: SpaceApp[]
 }
 
-export type SpaceChange = Partial<Pick<NewSpace, 'name' | 'apps'>>
+export type SpaceChange = Partial<
+  Pick<NewSpace, 'name' | 'description' | 'apps'>
+>
 
 export const RESOURCE_KINDS = [
   'matrix_space',
