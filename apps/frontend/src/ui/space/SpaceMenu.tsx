@@ -344,16 +344,19 @@ export function EditDialog({
   // what the form opened on, so another admin's change is not reverted.
   const [initial] = useState(space)
   const [name, setName] = useState(initial.name)
+  const [description, setDescription] = useState(initial.description)
   // Apps this deployment no longer provides stay picked, out of sight.
   const [apps, setApps] = useState<ReadonlySet<SpaceApp>>(
     () => new Set(initial.apps)
   )
   const trimmed = name.trim()
+  const described = description.trim()
   const appsChanged =
     apps.size !== initial.apps.length ||
     initial.apps.some(app => !apps.has(app))
   const change: SpaceChange = {
     ...(trimmed !== initial.name && { name: trimmed }),
+    ...(described !== initial.description && { description: described }),
     ...(appsChanged && { apps: [...apps] })
   }
   return (
@@ -380,6 +383,17 @@ export function EditDialog({
                 setName(event.target.value)
               }}
               slotProps={{ htmlInput: { maxLength: 255 } }}
+            />
+            <TextField
+              multiline
+              minRows={3}
+              label={t('settings.description')}
+              placeholder={t('settings.descriptionHint')}
+              value={description}
+              onChange={event => {
+                setDescription(event.target.value)
+              }}
+              slotProps={{ htmlInput: { maxLength: 1000 } }}
             />
             <Typography id={appsId} variant="subtitle1">
               {t('createSpace.apps')}

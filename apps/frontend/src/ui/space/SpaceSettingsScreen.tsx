@@ -77,8 +77,7 @@ interface Row {
 }
 
 // The management page of a space, for its admins. The mockup's access and
-// notification settings, and the description and color edits, wait for their
-// backend.
+// notification settings, and the color edit, wait for their backend.
 export function SpaceSettingsScreen(): ReactElement {
   const { t } = useI18n()
   const { spaceId = '' } = useParams()

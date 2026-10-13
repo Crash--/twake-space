@@ -301,9 +301,15 @@ export function registerSpaceWriteRoutes(
         z
           .object({
             name: name.optional(),
+            description: z.string().trim().max(1000).optional(),
             apps: z.array(z.enum(spaceTab.enumValues)).optional()
           })
-          .refine(b => b.name !== undefined || b.apps !== undefined),
+          .refine(
+            b =>
+              b.name !== undefined ||
+              b.description !== undefined ||
+              b.apps !== undefined
+          ),
         request.body
       )
       const { orgId, actor } = await administered(request, id)
@@ -315,15 +321,20 @@ export function registerSpaceWriteRoutes(
           db.transaction(tx => renameSpace(tx, id, newName, at))
         )
       }
-      const apps = body.apps && [...new Set(body.apps)]
-      if (apps) {
+      const settings = {
+        ...(body.description !== undefined && {
+          description: body.description
+        }),
+        ...(body.apps && { apps: [...new Set(body.apps)] })
+      }
+      if (Object.keys(settings).length > 0) {
         await db.transaction(async tx => {
           await tx
             .insert(spaceSettings)
-            .values({ spaceId: id, apps })
+            .values({ spaceId: id, apps: spaceTab.enumValues, ...settings })
             .onConflictDoUpdate({
               target: spaceSettings.spaceId,
-              set: { apps }
+              set: settings
             })
           await tellSpaceMembers(tx, id)
         })
