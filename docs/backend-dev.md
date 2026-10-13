@@ -20,7 +20,7 @@ npm run dev -w @twake-space/backend
 - `npm run dev` runs `src/main.ts` with `node --watch`, loads `.env` if it exists, and preloads `src/instrument.ts` for Sentry. Node runs the TypeScript directly, there is no build step in dev.
 - The API listens on port 8080. `/health/live` and `/health/ready` answer there, and `/metrics` answers on port 9464.
 
-At startup the backend runs OIDC discovery against `OIDC_ISSUER`, so the issuer must be reachable or it stops. Signing in for real also needs an ldap-rest with spaces, which isn't released yet, so the full local stack can't be set up from this repo: ask Khaled Ferjani.
+At startup the backend runs OIDC discovery against `OIDC_ISSUER`, so the issuer must be reachable or it stops. Signing in for real also needs an ldap-rest with spaces. `scripts/qa-environment/start.sh` runs the whole stack with ldap-rest and a mock SSO, seeded with test accounts and spaces, under its own compose project. The top of that script says how to build. Its SSO answers only on the stack's docker network, so signing in takes a browser in a container on that network, as the script prints.
 
 `src/config.ts` validates the environment at startup and stops with a list of every invalid key. [Deploying](deploy.md#configuration) lists every variable.
 
