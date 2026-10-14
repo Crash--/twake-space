@@ -69,7 +69,7 @@ Startup fails when `space`, `b2b` or `admin-panel` is missing, since other servi
 
 Every name above is a setting, listed in [Deploying](deploy.md#rabbitmq-names). The router and the handlers always see the default routing keys and the default `activity` name: the consumer translates them back before routing. A renamed platform exchange is kept as is, so `parked_events` rows and log lines show the deployment's name.
 
-Local `docker-compose.yml` runs RabbitMQ and declares the exchanges the backend only checks: these three and `drive`.
+Local `docker-compose.yml` runs RabbitMQ and declares the exchanges the backend only checks: these three.
 
 ## Routing
 
@@ -219,8 +219,8 @@ sequenceDiagram
 - Roles map `viewer` to `read`, `editor` and `admin` to `write`. Groups go by the group id the `twake.space.group.*` events carry.
 - `revision` lives per space in `drive_commands`, a row never deleted. The next one is the greater of the last one plus 1 and the current time in milliseconds, so it keeps increasing after the table is restored or rebuilt.
 - A transaction stores at most one command per space, once all its changes are applied. It locks the drive rows last, in space id order, and holds them until the commit, so the changes to one space take turns and a higher revision always carries a newer state.
-- The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, while no queue is bound, or while the `drive` exchange is missing, and the next pass sends it again. A pass stops at its first failure and logs it once.
-- The backend only checks the `drive` exchange, never declares it. A publish fails at once while the broker is unreachable: the next pass connects again.
+- The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, or while no queue is bound, and the next pass sends it again. A pass stops at its first failure and logs it once.
+- The backend declares the `drive` exchange, durable topic, when it is missing. A publish fails at once while the broker is unreachable: the next pass connects again.
 - Each replica locks the command it publishes and skips the ones another replica holds. A replica stopping between the publish and the commit leaves the command to send again, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
 
 ## Activity events

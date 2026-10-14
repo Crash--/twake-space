@@ -256,7 +256,6 @@ export interface DrivePublisher {
   close: () => Promise<void>
 }
 
-// The deployment owns the drive exchange, so it is checked, never declared.
 // One attempt per publish and no reconnect loop: during an outage a sweep fails
 // at once instead of queueing publishes for when the broker returns. Its own
 // connection, as a refused publish closes the channel and must not stop a
@@ -288,7 +287,7 @@ export function drivePublisher(
       channel.on('close', () => {
         if (open?.channel === channel) reset()
       })
-      await channel.checkExchange(exchange)
+      await channel.assertExchange(exchange, 'topic', { durable: true })
       open = { connection, channel }
       return open
     } catch (error) {

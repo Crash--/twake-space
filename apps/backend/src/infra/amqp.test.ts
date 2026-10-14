@@ -363,14 +363,13 @@ describe('deadLetterQueue', () => {
 
 function fakeBroker() {
   const state = {
-    exchangeExists: true,
+    declarable: true,
     reachable: true,
     unroutable: false,
     confirming: true,
     answering: true
   }
   const channels: {
-    checkExchange: Mock
     assertExchange: Mock
     publish: Mock
   }[] = []
@@ -381,14 +380,13 @@ function fakeBroker() {
       close: vi.fn(() => Promise.resolve()),
       createConfirmChannel: () => {
         const channel = Object.assign(new EventEmitter(), {
-          checkExchange: vi.fn(() =>
+          assertExchange: vi.fn(() =>
             !state.answering
               ? new Promise(() => undefined)
-              : state.exchangeExists
+              : state.declarable
                 ? Promise.resolve({})
-                : Promise.reject(new Error('NOT_FOUND - no exchange'))
+                : Promise.reject(new Error('ACCESS_REFUSED - configure'))
           ),
-          assertExchange: vi.fn(),
           publish: vi.fn(() => {
             if (state.unroutable) channel.emit('return', {})
             return true
@@ -417,7 +415,7 @@ function fakeBroker() {
 describe('drivePublisher', () => {
   const topology = amqpTopology.parse({}).amqp
 
-  it('checks the drive exchange, never declares it, and publishes the command mandatory', async () => {
+  it('declares the drive exchange and publishes the command mandatory', async () => {
     const broker = fakeBroker()
     const drives = drivePublisher(broker.connect, topology, 1000)
 
@@ -426,8 +424,9 @@ describe('drivePublisher', () => {
 
     const [channel] = broker.channels
     expect(broker.connects).toHaveBeenCalledTimes(1)
-    expect(channel?.checkExchange).toHaveBeenCalledWith('drive')
-    expect(channel?.assertExchange).not.toHaveBeenCalled()
+    expect(channel?.assertExchange).toHaveBeenCalledWith('drive', 'topic', {
+      durable: true
+    })
     expect(channel?.publish).toHaveBeenLastCalledWith(
       'drive',
       'drive.org_drive.ensure',
@@ -436,15 +435,17 @@ describe('drivePublisher', () => {
     )
   })
 
-  it('fails while the exchange is missing, and checks again on the next publish', async () => {
+  it('fails while the broker refuses to declare the exchange, and declares it again on the next publish', async () => {
     const broker = fakeBroker()
-    broker.state.exchangeExists = false
+    broker.state.declarable = false
     const drives = drivePublisher(broker.connect, topology, 1000)
 
-    await expect(drives.publish({ revision: 1 })).rejects.toThrow('NOT_FOUND')
+    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+      'ACCESS_REFUSED'
+    )
     expect(broker.connections[0]?.close).toHaveBeenCalled()
 
-    broker.state.exchangeExists = true
+    broker.state.declarable = true
     await drives.publish({ revision: 1 })
     expect(broker.connects).toHaveBeenCalledTimes(2)
   })
