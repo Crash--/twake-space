@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { CloudEvent } from '../../events/envelope.ts'
@@ -6,8 +7,8 @@ import { MalformedEventError, RejectedEventError } from '../../events/router.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { activityRoute } from '../feed/activity.ts'
 import { activityEvents, feedCards } from '../feed/schema.ts'
-import { resourceActivityRoutes } from './resources.ts'
-import { spaceResources, spaces } from './schema.ts'
+import { driveReplyRoutes, resourceActivityRoutes } from './resources.ts'
+import { spaceDriveReplies, spaceResources, spaces } from './schema.ts'
 
 const SPACE_ID = '3b9e2c71-5d4a-4f0e-9c8b-1a2d6e7f8091'
 
@@ -19,6 +20,7 @@ afterAll(() => testDb.drop())
 beforeEach(async () => {
   await testDb.db.delete(activityEvents)
   await testDb.db.delete(spaceResources)
+  await testDb.db.delete(spaceDriveReplies)
   await testDb.db.delete(lastChanges)
   await testDb.db.delete(spaces)
   await testDb.db
@@ -67,8 +69,8 @@ describe('provisioned events', () => {
     })
 
     await provisioned(
-      'drive',
-      { kind: 'drive', id: 'a1f0c3e2d4b5' },
+      'calendar',
+      { kind: 'calendar', id: 'a1f0c3e2d4b5' },
       { time: '2026-10-05T09:30:00Z' }
     )
 
@@ -83,8 +85,8 @@ describe('provisioned events', () => {
     })
 
     await provisioned(
-      'drive',
-      { kind: 'drive', id: 'a1f0c3e2d4b5' },
+      'calendar',
+      { kind: 'calendar', id: 'a1f0c3e2d4b5' },
       { time: '2026-10-05T10:00:01Z' }
     )
 
@@ -94,7 +96,7 @@ describe('provisioned events', () => {
   it('drops a resource of a space it never had', async () => {
     await testDb.db.delete(spaces)
 
-    await provisioned('drive', { kind: 'drive', id: 'a1f0c3e2d4b5' })
+    await provisioned('calendar', { kind: 'calendar', id: 'a1f0c3e2d4b5' })
 
     expect(await readResources()).toEqual([])
   })
@@ -102,8 +104,8 @@ describe('provisioned events', () => {
   it('rejects a resource sent for a space of another organization', async () => {
     await expect(
       provisioned(
-        'drive',
-        { kind: 'drive', id: 'a1f0c3e2d4b5' },
+        'calendar',
+        { kind: 'calendar', id: 'a1f0c3e2d4b5' },
         { twakeorg: 'globex' }
       )
     ).rejects.toBeInstanceOf(RejectedEventError)
@@ -111,12 +113,12 @@ describe('provisioned events', () => {
   })
 
   it('stores the resource id of a space', async () => {
-    await provisioned('drive', { kind: 'drive', id: 'a1f0c3e2d4b5' })
+    await provisioned('calendar', { kind: 'calendar', id: 'a1f0c3e2d4b5' })
 
     expect(await readResources()).toEqual([
       {
         spaceId: SPACE_ID,
-        kind: 'drive',
+        kind: 'calendar',
         organizationId: 'linagora',
         resourceId: 'a1f0c3e2d4b5'
       }
@@ -140,23 +142,199 @@ describe('provisioned events', () => {
 
   it('refuses an unknown kind', async () => {
     await expect(
-      provisioned('drive', { kind: 'matrix_room', id: 'x' })
+      provisioned('calendar', { kind: 'matrix_room', id: 'x' })
     ).rejects.toBeInstanceOf(MalformedEventError)
   })
 
   it("refuses a kind that is not the app's own", async () => {
     await expect(
-      provisioned('drive', { kind: 'mailbox', id: 'team-1' })
+      provisioned('calendar', { kind: 'mailbox', id: 'team-1' })
     ).rejects.toBeInstanceOf(MalformedEventError)
   })
 
   it('refuses a provisioned event without an organization', async () => {
     await expect(
-      provisioned('drive', { kind: 'drive', id: 'a1' }, { twakeorg: undefined })
+      provisioned(
+        'calendar',
+        { kind: 'calendar', id: 'a1' },
+        { twakeorg: undefined }
+      )
     ).rejects.toBeInstanceOf(MalformedEventError)
   })
 
-  describe('after activity on the resource', () => {
+  it('ignores a provisioned event older than the last one', async () => {
+    await provisioned(
+      'calendar',
+      { kind: 'calendar', id: 'new' },
+      { time: '2026-10-05T10:00:00Z' }
+    )
+
+    await provisioned(
+      'calendar',
+      { kind: 'calendar', id: 'old' },
+      { time: '2026-10-05T09:00:00Z' }
+    )
+
+    expect(await readResources()).toMatchObject([{ resourceId: 'new' }])
+  })
+
+  it("leaves the space's drive to the drive replies", () => {
+    expect(
+      resourceActivityRoutes.get('com.twake.drive.space.provisioned.v1')
+    ).toBeUndefined()
+  })
+})
+
+describe('drive replies', () => {
+  function reply(
+    name: 'ready' | 'removed',
+    data: Record<string, unknown>,
+    overrides: Partial<CloudEvent> = {},
+    log = pino({ level: 'silent' })
+  ) {
+    const type = `com.twake.drive.org_drive.${name}.v1`
+    const handler = driveReplyRoutes.get(type)
+    if (!handler) throw new Error(`no handler for ${type}`)
+    const event: CloudEvent = {
+      specversion: '1.0',
+      id: randomUUID(),
+      source: 'twake://drive',
+      type,
+      twakeorg: 'linagora',
+      data: { reference: { source: 'twake-space', id: SPACE_ID }, ...data },
+      ...overrides
+    }
+    return testDb.db.transaction(tx => handler(event, tx, log))
+  }
+
+  const ready = (
+    revision: number,
+    driveId: string,
+    overrides: Partial<CloudEvent> = {}
+  ) => reply('ready', { revision, drive: { id: driveId } }, overrides)
+
+  it('records the drive of the space', async () => {
+    await ready(1, 'a1f0c3e2d4b5')
+
+    expect(await readResources()).toEqual([
+      {
+        spaceId: SPACE_ID,
+        kind: 'drive',
+        organizationId: 'linagora',
+        resourceId: 'a1f0c3e2d4b5'
+      }
+    ])
+  })
+
+  it('takes the drive of a newer revision', async () => {
+    await ready(1, 'old')
+    await ready(2, 'new')
+
+    expect(await readResources()).toMatchObject([{ resourceId: 'new' }])
+  })
+
+  it('ignores a reply older than the one recorded', async () => {
+    await ready(3, 'new')
+    await ready(2, 'old')
+
+    expect(await readResources()).toMatchObject([{ resourceId: 'new' }])
+  })
+
+  it('takes the same reply twice', async () => {
+    await ready(1, 'a1f0c3e2d4b5')
+    await ready(1, 'a1f0c3e2d4b5')
+
+    expect(await readResources()).toMatchObject([
+      { resourceId: 'a1f0c3e2d4b5' }
+    ])
+  })
+
+  it('forgets the drive once removed', async () => {
+    await ready(1, 'a1f0c3e2d4b5')
+
+    await reply('removed', { revision: 2 })
+
+    expect(await readResources()).toEqual([])
+  })
+
+  it('does not bring back a removed drive on a late reply', async () => {
+    await reply('removed', { revision: 2 })
+
+    await ready(1, 'a1f0c3e2d4b5')
+
+    expect(await readResources()).toEqual([])
+  })
+
+  it('ignores the drives of other apps', async () => {
+    await reply('ready', {
+      reference: { source: 'twake-chat', id: SPACE_ID },
+      revision: 1,
+      drive: { id: 'a1f0c3e2d4b5' }
+    })
+
+    expect(await readResources()).toEqual([])
+  })
+
+  it('drops the drive of a space it does not have', async () => {
+    await testDb.db.delete(spaces)
+
+    await ready(1, 'a1f0c3e2d4b5')
+
+    expect(await readResources()).toEqual([])
+  })
+
+  it('rejects a drive sent for a space of another organization', async () => {
+    await expect(
+      ready(1, 'a1f0c3e2d4b5', { twakeorg: 'globex' })
+    ).rejects.toBeInstanceOf(RejectedEventError)
+    expect(await readResources()).toEqual([])
+  })
+
+  it('refuses a reply without a revision', async () => {
+    await expect(
+      reply('ready', { drive: { id: 'a1f0c3e2d4b5' } })
+    ).rejects.toBeInstanceOf(MalformedEventError)
+  })
+
+  it('logs the members the drive skipped', async () => {
+    const lines: Record<string, unknown>[] = []
+    const log = pino(
+      { level: 'warn' },
+      {
+        write: (line: string) => {
+          lines.push(JSON.parse(line) as Record<string, unknown>)
+        }
+      }
+    )
+
+    await reply(
+      'ready',
+      {
+        revision: 1,
+        drive: { id: 'a1f0c3e2d4b5' },
+        skipped: [
+          {
+            email: 'carol@example.com',
+            reason: 'not in the organization directory'
+          }
+        ]
+      },
+      {},
+      log
+    )
+
+    expect(lines).toMatchObject([
+      {
+        spaceId: SPACE_ID,
+        skipped: {
+          email: 'carol@example.com',
+          reason: 'not in the organization directory'
+        }
+      }
+    ])
+  })
+
+  describe('after activity on the drive', () => {
     function activity(twakeorg = 'linagora') {
       const type = 'com.twake.drive.file.created.v1'
       const handler = activityRoute.get(type)
@@ -190,7 +368,7 @@ describe('provisioned events', () => {
     it('brings the earlier activity into the space', async () => {
       await activity()
 
-      await provisioned('drive', { kind: 'drive', id: 'drive-1' })
+      await ready(1, 'drive-1')
 
       expect(
         await testDb.db
@@ -203,7 +381,7 @@ describe('provisioned events', () => {
     it("leaves another organization's activity out", async () => {
       await activity('globex')
 
-      await provisioned('drive', { kind: 'drive', id: 'drive-1' })
+      await ready(1, 'drive-1')
 
       expect(await cards()).toEqual([])
     })
@@ -214,25 +392,9 @@ describe('provisioned events', () => {
         .update(activityEvents)
         .set({ createdAt: new Date(Date.now() - 31 * 60_000) })
 
-      await provisioned('drive', { kind: 'drive', id: 'drive-1' })
+      await ready(1, 'drive-1')
 
       expect(await cards()).toEqual([])
     })
-  })
-
-  it('ignores a provisioned event older than the last one', async () => {
-    await provisioned(
-      'drive',
-      { kind: 'drive', id: 'new' },
-      { time: '2026-10-05T10:00:00Z' }
-    )
-
-    await provisioned(
-      'drive',
-      { kind: 'drive', id: 'old' },
-      { time: '2026-10-05T09:00:00Z' }
-    )
-
-    expect(await readResources()).toMatchObject([{ resourceId: 'new' }])
   })
 })

@@ -5,7 +5,10 @@ import type { CloudEvent, PlatformEvent } from '../../events/envelope.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { notifyRecipients } from '../notifications/recipients.ts'
 import { spacePlatformRoutes } from '../spaces/events.ts'
-import { resourceActivityRoutes } from '../spaces/resources.ts'
+import {
+  driveReplyRoutes,
+  resourceActivityRoutes
+} from '../spaces/resources.ts'
 import { listenInMemory } from './testing.ts'
 
 const SPACE_ID = '3b9e2c71-5d4a-4f0e-9c8b-1a2d6e7f8091'
@@ -165,8 +168,31 @@ it('tells the members of the spaces linking a group when it is renamed', async (
 })
 
 it('tells every member when a resource is ready', async () => {
-  const type = 'com.twake.drive.space.provisioned.v1'
+  const type = 'com.twake.calendar.space.provisioned.v1'
   const handler = resourceActivityRoutes.get(type)
+  if (!handler) throw new Error(`no handler for ${type}`)
+  const event: CloudEvent = {
+    specversion: '1.0',
+    id: randomUUID(),
+    source: 'twake://calendar',
+    type,
+    twakeorg: 'org-1',
+    data: { space_id: SPACE_ID, resource: { kind: 'calendar', id: 'team-1' } }
+  }
+
+  await testDb.db.transaction(tx => handler(event, tx, log))
+
+  expect(await told(2)).toEqual(
+    expect.arrayContaining([
+      [ALICE, 'spaces', space],
+      [BOB, 'spaces', space]
+    ])
+  )
+})
+
+it('tells every member when the drive is ready', async () => {
+  const type = 'com.twake.drive.org_drive.ready.v1'
+  const handler = driveReplyRoutes.get(type)
   if (!handler) throw new Error(`no handler for ${type}`)
   const event: CloudEvent = {
     specversion: '1.0',
@@ -174,7 +200,11 @@ it('tells every member when a resource is ready', async () => {
     source: 'twake://drive',
     type,
     twakeorg: 'org-1',
-    data: { space_id: SPACE_ID, resource: { kind: 'drive', id: 'folder-1' } }
+    data: {
+      reference: { source: 'twake-space', id: SPACE_ID },
+      revision: 1,
+      drive: { id: 'a1f0c3e2d4b5' }
+    }
   }
 
   await testDb.db.transaction(tx => handler(event, tx, log))

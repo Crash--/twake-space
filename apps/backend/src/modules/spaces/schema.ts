@@ -1,6 +1,7 @@
 import {
   bytea,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -150,6 +151,13 @@ export const spaceResources = pgTable(
     index().on(table.kind, table.resourceId)
   ]
 )
+
+// The revision of the last drive reply applied to a space. Never deleted, so a
+// late reply cannot bring back a drive that was replaced or removed.
+export const spaceDriveReplies = pgTable('space_drive_replies', {
+  spaceId: uuid('space_id').primaryKey(),
+  revision: integer().notNull()
+})
 
 // What a member did with a space: pinned it, opened it last.
 export const spaceMarks = pgTable(

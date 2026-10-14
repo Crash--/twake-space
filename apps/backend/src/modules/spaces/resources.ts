@@ -1,4 +1,5 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, lte, sql } from 'drizzle-orm'
+import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { CloudEvent } from '../../events/envelope.ts'
 import { fresh } from '../../events/freshness.ts'
@@ -7,10 +8,16 @@ import {
   RejectedEventError,
   type Handler
 } from '../../events/router.ts'
+import type { Tx } from '../../infra/db.ts'
 import { attachToSpace } from '../feed/activity.ts'
 import { tellSpaceMembers } from '../live/notify.ts'
 import { deletedAfter, resourceKey } from './events.ts'
-import { spaceResourceKind, spaceResources, spaces } from './schema.ts'
+import {
+  spaceDriveReplies,
+  spaceResourceKind,
+  spaceResources,
+  spaces
+} from './schema.ts'
 
 type SpaceResourceKind = (typeof spaceResourceKind.enumValues)[number]
 
@@ -57,29 +64,122 @@ function onProvisioned(kind: SpaceResourceKind): Handler<CloudEvent> {
       )
     }
     if (!(await fresh(tx, at, [resourceKey(space_id, kind)])).size) return
-    await tx
-      .insert(spaceResources)
-      .values({
-        spaceId: space_id,
-        kind,
-        organizationId: twakeorg,
-        resourceId: resource.id
-      })
-      .onConflictDoUpdate({
-        target: [spaceResources.spaceId, spaceResources.kind],
-        set: { resourceId: resource.id, provisionedAt: sql`now()` }
-      })
-    await attachToSpace(tx, space_id, twakeorg, { kind, id: resource.id })
-    await tellSpaceMembers(tx, space_id)
+    await recordResource(tx, space_id, twakeorg, kind, resource.id)
   }
 }
 
+async function recordResource(
+  tx: Tx,
+  spaceId: string,
+  organizationId: string,
+  kind: SpaceResourceKind,
+  resourceId: string
+) {
+  await tx
+    .insert(spaceResources)
+    .values({ spaceId, kind, organizationId, resourceId })
+    .onConflictDoUpdate({
+      target: [spaceResources.spaceId, spaceResources.kind],
+      set: { resourceId, provisionedAt: sql`now()` }
+    })
+  await attachToSpace(tx, spaceId, organizationId, { kind, id: resourceId })
+  await tellSpaceMembers(tx, spaceId)
+}
+
+// Drive provisions from our drive.org_drive.ensure commands and replies below.
 export const resourceActivityRoutes: ReadonlyMap<
   string,
   Handler<CloudEvent>
 > = new Map(
-  Object.entries(APP_KINDS).map(([app, kind]) => [
-    `com.twake.${app}.space.provisioned.v1`,
-    onProvisioned(kind)
-  ])
+  Object.entries(APP_KINDS)
+    .filter(([app]) => app !== 'drive')
+    .map(([app, kind]) => [
+      `com.twake.${app}.space.provisioned.v1`,
+      onProvisioned(kind)
+    ])
 )
+
+const driveReply = z.looseObject({
+  twakeorg: z.string().min(1),
+  data: z.looseObject({
+    reference: z.looseObject({ source: z.string(), id: z.string() }),
+    revision: z.number().int().positive()
+  })
+})
+
+const readyDrive = driveReply.extend({
+  data: driveReply.shape.data.extend({
+    drive: z.looseObject({ id: z.string().min(1) }),
+    // Only logged, so a list we cannot read must not cost the drive id.
+    skipped: z.array(z.record(z.string(), z.unknown())).catch([])
+  })
+})
+
+// Returns the space of a reply that is still the newest for it, under the
+// lock of its revision row, so the replies of one space take turns.
+async function applies(
+  tx: Tx,
+  log: Logger,
+  { twakeorg, data: { reference, revision } }: z.output<typeof driveReply>
+): Promise<string | undefined> {
+  if (reference.source !== 'twake-space') return undefined
+  const spaceId = parseOrDrop(z.uuid(), reference.id, 'reference.id')
+  const [space] = await tx
+    .select({ organizationId: spaces.organizationId })
+    .from(spaces)
+    .where(eq(spaces.spaceId, spaceId))
+  // We send commands only for the spaces we hold, so it was deleted meanwhile.
+  if (!space) {
+    log.warn({ spaceId }, 'drive reply for an unknown space')
+    return undefined
+  }
+  if (space.organizationId !== twakeorg) {
+    throw new RejectedEventError(
+      `space ${spaceId} belongs to another organization`
+    )
+  }
+  const [newest] = await tx
+    .insert(spaceDriveReplies)
+    .values({ spaceId, revision })
+    .onConflictDoUpdate({
+      target: spaceDriveReplies.spaceId,
+      set: { revision },
+      setWhere: lte(spaceDriveReplies.revision, revision)
+    })
+    .returning({ spaceId: spaceDriveReplies.spaceId })
+  return newest?.spaceId
+}
+
+const onDriveReady: Handler<CloudEvent> = async (event, tx, log) => {
+  const reply = parseOrDrop(readyDrive, event, event.type)
+  const spaceId = await applies(tx, log, reply)
+  if (!spaceId) return
+  const {
+    twakeorg: organizationId,
+    data: { drive, skipped }
+  } = reply
+  for (const entry of skipped) {
+    log.warn({ spaceId, skipped: entry }, 'drive member skipped')
+  }
+  await recordResource(tx, spaceId, organizationId, 'drive', drive.id)
+}
+
+const onDriveRemoved: Handler<CloudEvent> = async (event, tx, log) => {
+  const reply = parseOrDrop(driveReply, event, event.type)
+  const spaceId = await applies(tx, log, reply)
+  if (!spaceId) return
+  await tx
+    .delete(spaceResources)
+    .where(
+      and(eq(spaceResources.spaceId, spaceId), eq(spaceResources.kind, 'drive'))
+    )
+  await tellSpaceMembers(tx, spaceId)
+}
+
+export const driveReplyRoutes: ReadonlyMap<
+  string,
+  Handler<CloudEvent>
+> = new Map([
+  ['com.twake.drive.org_drive.ready.v1', onDriveReady],
+  ['com.twake.drive.org_drive.removed.v1', onDriveRemoved]
+])

@@ -13,7 +13,8 @@ import type { AmqpTopology } from '../events/topology.ts'
 
 // The events whose order matters. Only what a handler exists for: a binding
 // without one would only ack and drop. An app provisions on the space's created
-// event, so its provisioned event comes here, after it.
+// event, so its provisioned event comes here, after it. Drive replies come here
+// too, so a reply and the space's deletion take turns.
 export function subscription(topology: AmqpTopology) {
   const platform = Object.values(topology.events)
   const [primary, ...rest] = platform
@@ -21,7 +22,8 @@ export function subscription(topology: AmqpTopology) {
   const options = {
     bindings: [
       ...rest,
-      { exchange: topology.activityExchange, routingKey: PROVISIONED }
+      { exchange: topology.activityExchange, routingKey: PROVISIONED },
+      { exchange: topology.activityExchange, routingKey: DRIVE_REPLIES }
     ],
     deadLetterExchange: topology.deadLetterExchange,
     // Other services own these. The apps and we declare the activity one, and
@@ -44,6 +46,7 @@ export function subscription(topology: AmqpTopology) {
 }
 
 const PROVISIONED = 'com.twake.*.space.provisioned.v1'
+const DRIVE_REPLIES = 'com.twake.drive.org_drive.*'
 
 // Each activity event stands alone, so every replica consumes the queue.
 export function activitySubscription(topology: AmqpTopology) {

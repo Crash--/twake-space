@@ -60,7 +60,7 @@ Modules import each other's schemas and helpers directly. There is no module reg
 
 ## Events from RabbitMQ
 
-The consumer reads two queues: `twake-space`, in order, bound to the platform exchanges (`space`, `b2b`, `admin-panel`, `settings`) and to the apps' provisioned events, and `twake-space.activity`, several messages at a time, bound to the rest of the `activity` exchange. [Events](events.md#consuming-rabbitmq) lists the bindings.
+The consumer reads two queues: `twake-space`, in order, bound to the platform exchanges (`space`, `b2b`, `admin-panel`, `settings`), to the apps' provisioned events and to Drive's replies, and `twake-space.activity`, several messages at a time, bound to the rest of the `activity` exchange. [Events](events.md#consuming-rabbitmq) lists the bindings.
 
 ```mermaid
 flowchart LR

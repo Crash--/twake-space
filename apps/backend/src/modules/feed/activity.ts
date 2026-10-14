@@ -335,7 +335,13 @@ export async function forgetActor(
 export const activityRoute = {
   get(type: string): Handler<CloudEvent> | undefined {
     const app = /^com\.twake\.([a-z]+)\./.exec(type)?.[1]
-    if (!app || type.includes('.space.provisioned.')) return undefined
+    if (
+      !app ||
+      type.includes('.space.provisioned.') ||
+      type.includes('.org_drive.')
+    ) {
+      return undefined
+    }
     return handlers.get(app)
   }
 }

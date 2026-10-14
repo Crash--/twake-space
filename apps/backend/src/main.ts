@@ -44,7 +44,10 @@ import { settingsPlatformRoutes } from './modules/settings/events.ts'
 import { registerSettingsRoutes } from './modules/settings/routes.ts'
 import { spacePlatformRoutes } from './modules/spaces/events.ts'
 import { scheduleReconciliation } from './modules/spaces/reconcile.ts'
-import { resourceActivityRoutes } from './modules/spaces/resources.ts'
+import {
+  driveReplyRoutes,
+  resourceActivityRoutes
+} from './modules/spaces/resources.ts'
 import { registerSpaceRoutes } from './modules/spaces/routes.ts'
 import { cachedWorkplaces } from './modules/spaces/workplaces.ts'
 import { registerSpaceWriteRoutes } from './modules/spaces/writes.ts'
@@ -77,7 +80,10 @@ const ldapRest = createLdapRestClient(config)
 const directory = ldapRestDirectory(ldapRest)
 const routes: Routes = {
   activity: {
-    get: type => resourceActivityRoutes.get(type) ?? activityRoute.get(type)
+    get: type =>
+      resourceActivityRoutes.get(type) ??
+      driveReplyRoutes.get(type) ??
+      activityRoute.get(type)
   },
   platform: meetingOrganizations(
     {
@@ -160,7 +166,8 @@ const consumers = await startConsumers(
   {
     // It still drains the activity events older versions bound to it.
     space: handle,
-    // The space queue handles provisioned events, after the space's creation.
+    // The space queue handles provisioned events and drive replies, in order
+    // with the space's own events.
     activity: createMessageHandler({
       routes: { ...routes, activity: activityRoute },
       ...handlerDeps

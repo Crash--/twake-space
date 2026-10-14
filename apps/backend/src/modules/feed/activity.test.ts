@@ -302,6 +302,15 @@ describe('activity events', () => {
     ).toBeUndefined()
     expect(activityRoute.get('com.acme.drive.file.created.v1')).toBeUndefined()
   })
+
+  it('makes no card from the drive replies', () => {
+    expect(
+      activityRoute.get('com.twake.drive.org_drive.ready.v1')
+    ).toBeUndefined()
+    expect(
+      activityRoute.get('com.twake.drive.org_drive.removed.v1')
+    ).toBeUndefined()
+  })
 })
 
 describe('notifications', () => {

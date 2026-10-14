@@ -114,6 +114,7 @@ sequenceDiagram
   Note over FE: the app's tab is ready
 ```
 
+- Drive is the exception: it answers a `drive.org_drive.ensure` command for the space with `com.twake.drive.org_drive.ready.v1`, which carries the drive id ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)).
 - Members, groups and renames go the same way: ldap-rest first, then its event to the backend and every app.
 - A tab shows as being prepared until its resource arrives, and as stalled after 2 minutes. Chat also needs the organization's homeserver.
 - `SPACE_APPS` and the space's own `apps` decide which tabs exist. Chat and mail also depend on the organization: the chat control plane and `dns.validated` tell.

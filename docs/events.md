@@ -22,7 +22,7 @@ flowchart LR
     AQ[twake-space.activity queue]
   end
   P --> Q
-  A -->|provisioned events| Q
+  A -->|provisioned events, drive replies| Q
   A -->|every other event| AQ
   Q --> R[Router]
   AQ --> R
@@ -42,7 +42,7 @@ flowchart LR
 
 The backend consumes two queues through [@linagora/rabbitmq-client](https://github.com/linagora/rabbitmq-client/tree/v0.7.1), each on its own connection:
 
-- `twake-space` takes the events whose order matters: the platform events, and the apps' provisioned events, which follow the space's creation.
+- `twake-space` takes the events whose order matters: the platform events, the apps' provisioned events, which follow the space's creation, and Drive's replies.
 - `twake-space.activity` takes every other activity event. Each one stands alone, so every replica consumes it.
 
 At startup the backend declares `twake-space` and binds it to each platform event it handles, routing key equal to the event name:
@@ -51,7 +51,7 @@ At startup the backend declares `twake-space` and binds it to each platform even
 - `b2b`: `b2b.group.updated`, `b2b.member.role.changed`, `b2b.member.disabled`, `domain.user.deleted`, `domain.organization.deleted`, `chat.deprovision`, `chat.deployment.completed`
 - `admin-panel`: `dns.validated`
 - `settings`: `user.settings.updated`
-- `activity`: `com.twake.*.space.provisioned.v1`
+- `activity`: `com.twake.*.space.provisioned.v1`, `com.twake.drive.org_drive.*`
 
 It declares `twake-space.activity` with one binding, `#` on `activity`. Older versions bound that key to `twake-space`, and each start removes it from there, once `twake-space.activity` holds those events. `twake-space` still handles the activity events it already held.
 
@@ -189,7 +189,6 @@ The [space write routes](api.md#space-writes) apply their change to the copy the
 
 `com.twake.<app>.space.provisioned.v1` records the app's resource for a space (`data.space_id`, `data.resource.kind`, `data.resource.id`):
 
-- `drive` -> `drive`
 - `mail` -> `mailbox`
 - `calendar` -> `calendar`
 - `chat` -> `matrix_space` (the space's Matrix room id)
@@ -201,6 +200,16 @@ The [space write routes](api.md#space-writes) apply their change to the copy the
 - It moves into the space the activity events on that resource stored without a space in the last 30 minutes (as long as a parked event waits), and shows their cards. An older event on it belonged to a person before the space had the resource.
 - It ignores an event for a space deleted after the event's `time`.
 
+### The space's drive
+
+Drive answers each `drive.org_drive.ensure` command for a space with a reply on `activity` ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Each reply names the space by `data.reference` (`source` `twake-space`, `id` the space id) and carries the command's `data.revision`. The `twake-space` queue handles them, in turn with the space's deletion.
+
+- `com.twake.drive.org_drive.ready.v1` records `data.drive.id` as the space's `drive` resource, moves into the space the activity events on that drive, as a provisioned event does, and sends a `spaces` live event to the space's members.
+- `com.twake.drive.org_drive.removed.v1` removes the space's `drive` resource and sends the same live event.
+- `space_drive_replies` keeps, per space, the revision of the last reply applied, and is never deleted. A reply with a lower revision changes nothing, so a late reply does not bring back a drive that was replaced or removed. A reply with the same revision applies again.
+- Each entry of `data.skipped` (a member or group the drive could not add) is logged as a warning with the space id.
+- A reply about another app's drive is ignored. One for a space the copy does not have is logged and dropped: the space was deleted after the command. One whose `twakeorg` is not the space's organization is rejected.
+
 ### Activity that becomes a card
 
 Any other `com.twake.<app>.*` type is stored as a card for these apps:
@@ -211,7 +220,7 @@ Any other `com.twake.<app>.*` type is stored as a card for these apps:
 - meet -> `activities`
 - tasks -> `activities`
 
-Chat makes no card: its messages are already in Matrix. A chat type other than `space.provisioned` has no handler and is unrouted.
+Chat makes no card: its messages are already in Matrix. A chat type other than `space.provisioned` has no handler and is unrouted. The drive replies make no card either.
 
 The CloudEvent fields the handler reads:
 
