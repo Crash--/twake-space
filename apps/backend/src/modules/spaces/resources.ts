@@ -1,4 +1,4 @@
-import { and, eq, lte, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import type { CloudEvent } from '../../events/envelope.ts'
@@ -13,7 +13,7 @@ import { attachToSpace } from '../feed/activity.ts'
 import { tellSpaceMembers } from '../live/notify.ts'
 import { deletedAfter, resourceKey } from './events.ts'
 import {
-  spaceDriveReplies,
+  driveCommands,
   spaceResourceKind,
   spaceResources,
   spaces
@@ -115,22 +115,29 @@ const readyDrive = driveReply.extend({
   })
 })
 
-// Returns the space of a reply that is still the newest for it, under the
-// lock of its revision row, so the replies of one space take turns.
+// Returns the space of a reply no older than the last one applied to it. The
+// lock on its drive_commands row, which the space's deletion takes too, makes
+// the replies and the deletion of one space take turns.
 async function applies(
   tx: Tx,
   log: Logger,
-  { twakeorg, data: { reference, revision } }: z.output<typeof driveReply>
+  { twakeorg, data: { reference, revision } }: z.output<typeof driveReply>,
+  unknownSpaceLevel: 'warn' | 'debug'
 ): Promise<string | undefined> {
   if (reference.source !== 'twake-space') return undefined
   const spaceId = parseOrDrop(z.uuid(), reference.id, 'reference.id')
+  const [commands] = await tx
+    .select({ repliedRevision: driveCommands.repliedRevision })
+    .from(driveCommands)
+    .where(eq(driveCommands.spaceId, spaceId))
+    .for('update')
   const [space] = await tx
     .select({ organizationId: spaces.organizationId })
     .from(spaces)
     .where(eq(spaces.spaceId, spaceId))
   // We send commands only for the spaces we hold, so it was deleted meanwhile.
-  if (!space) {
-    log.warn({ spaceId }, 'drive reply for an unknown space')
+  if (!commands || !space) {
+    log[unknownSpaceLevel]({ spaceId }, 'drive reply for an unknown space')
     return undefined
   }
   if (space.organizationId !== twakeorg) {
@@ -138,42 +145,48 @@ async function applies(
       `space ${spaceId} belongs to another organization`
     )
   }
-  const [newest] = await tx
-    .insert(spaceDriveReplies)
-    .values({ spaceId, revision })
-    .onConflictDoUpdate({
-      target: spaceDriveReplies.spaceId,
-      set: { revision },
-      setWhere: lte(spaceDriveReplies.revision, revision)
-    })
-    .returning({ spaceId: spaceDriveReplies.spaceId })
-  return newest?.spaceId
+  const { repliedRevision } = commands
+  if (repliedRevision !== null && repliedRevision > revision) return undefined
+  await tx
+    .update(driveCommands)
+    .set({ repliedRevision: revision })
+    .where(eq(driveCommands.spaceId, spaceId))
+  return spaceId
 }
 
 const onDriveReady: Handler<CloudEvent> = async (event, tx, log) => {
   const reply = parseOrDrop(readyDrive, event, event.type)
-  const spaceId = await applies(tx, log, reply)
+  const spaceId = await applies(tx, log, reply, 'warn')
   if (!spaceId) return
   const {
     twakeorg: organizationId,
     data: { drive, skipped }
   } = reply
-  for (const entry of skipped) {
-    log.warn({ spaceId, skipped: entry }, 'drive member skipped')
+  if (skipped.length > 0) {
+    log.warn({ spaceId, skipped }, 'drive members skipped')
   }
+  const [recorded] = await tx
+    .select({ resourceId: spaceResources.resourceId })
+    .from(spaceResources)
+    .where(
+      and(eq(spaceResources.spaceId, spaceId), eq(spaceResources.kind, 'drive'))
+    )
+  if (recorded?.resourceId === drive.id) return
   await recordResource(tx, spaceId, organizationId, 'drive', drive.id)
 }
 
+// The removal answers the space's deletion too, so finding no space is normal.
 const onDriveRemoved: Handler<CloudEvent> = async (event, tx, log) => {
   const reply = parseOrDrop(driveReply, event, event.type)
-  const spaceId = await applies(tx, log, reply)
+  const spaceId = await applies(tx, log, reply, 'debug')
   if (!spaceId) return
-  await tx
+  const removed = await tx
     .delete(spaceResources)
     .where(
       and(eq(spaceResources.spaceId, spaceId), eq(spaceResources.kind, 'drive'))
     )
-  await tellSpaceMembers(tx, spaceId)
+    .returning({ spaceId: spaceResources.spaceId })
+  if (removed.length > 0) await tellSpaceMembers(tx, spaceId)
 }
 
 export const driveReplyRoutes: ReadonlyMap<

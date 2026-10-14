@@ -478,16 +478,6 @@ export async function deleteSpace(
     .delete(spaceGroups)
     .where(eq(spaceGroups.spaceId, id))
     .returning({ groupId: spaceGroups.groupId })
-  const resources = await tx
-    .delete(spaceResources)
-    .where(eq(spaceResources.spaceId, id))
-    .returning({ kind: spaceResources.kind })
-  // So a replayed event older than the deletion cannot bring them back.
-  await fresh(tx, timestamp, [
-    ...members.map(m => memberKey(id, m.userId)),
-    ...groups.map(g => groupKey(id, g.groupId)),
-    ...resources.map(r => resourceKey(id, r.kind))
-  ])
   await dropSpaceFromTokens(tx, id, {
     actor,
     reason: 'its only space was deleted'
@@ -500,6 +490,18 @@ export async function deleteSpace(
     .where(eq(spaces.spaceId, id))
     .returning({ organizationId: spaces.organizationId })
   await removeDrive(tx, id, deleted?.organizationId)
+  // After removeDrive locks the drive_commands row: a drive reply that held it
+  // first has committed its drive by now, and one still waiting finds no space.
+  const resources = await tx
+    .delete(spaceResources)
+    .where(eq(spaceResources.spaceId, id))
+    .returning({ kind: spaceResources.kind })
+  // So a replayed event older than the deletion cannot bring them back.
+  await fresh(tx, timestamp, [
+    ...members.map(m => memberKey(id, m.userId)),
+    ...groups.map(g => groupKey(id, g.groupId)),
+    ...resources.map(r => resourceKey(id, r.kind))
+  ])
   tell(
     tx,
     'spaces',

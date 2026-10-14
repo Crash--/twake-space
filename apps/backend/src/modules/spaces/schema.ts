@@ -2,7 +2,6 @@ import {
   bigint,
   bytea,
   index,
-  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -154,22 +153,17 @@ export const spaceResources = pgTable(
   ]
 )
 
-// The revision of the last drive reply applied to a space. Never deleted, so a
-// late reply cannot bring back a drive that was replaced or removed.
-export const spaceDriveReplies = pgTable('space_drive_replies', {
-  spaceId: uuid('space_id').primaryKey(),
-  revision: integer().notNull()
-})
-
 // Never deleted, so a deleted space's revision keeps counting and a late command
 // with a lower one cannot bring its drive back. Locking the row makes the
-// changes to one space take turns. `command` waits here until the broker
-// confirms it.
+// changes and drive replies of one space take turns. `command` waits here until
+// the broker confirms it. `repliedRevision` is that of the last reply applied,
+// so a late reply cannot bring back a drive that was replaced or removed.
 export const driveCommands = pgTable('drive_commands', {
   spaceId: uuid('space_id').primaryKey(),
   organizationId: text('organization_id').notNull(),
   revision: bigint({ mode: 'number' }).notNull(),
-  command: jsonb().$type<Record<string, unknown>>()
+  command: jsonb().$type<Record<string, unknown>>(),
+  repliedRevision: bigint('replied_revision', { mode: 'number' })
 })
 
 // What a member did with a space: pinned it, opened it last.

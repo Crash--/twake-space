@@ -239,13 +239,14 @@ sequenceDiagram
 
 ### The space's drive
 
-Drive answers each `drive.org_drive.ensure` command for a space with a reply on `activity` ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Each reply names the space by `data.reference` (`source` `twake-space`, `id` the space id) and carries the command's `data.revision`. The `twake-space` queue handles them, in turn with the space's deletion.
+Drive answers each `drive.org_drive.ensure` command for a space with a reply on `activity` ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Each reply names the space by `data.reference` (`source` `twake-space`, `id` the space id) and carries the command's `data.revision`. The `twake-space` queue handles them.
 
-- `com.twake.drive.org_drive.ready.v1` records `data.drive.id` as the space's `drive` resource, moves into the space the activity events on that drive, as a provisioned event does, and sends a `spaces` live event to the space's members.
-- `com.twake.drive.org_drive.removed.v1` removes the space's `drive` resource and sends the same live event.
-- `space_drive_replies` keeps, per space, the revision of the last reply applied, and is never deleted. A reply with a lower revision changes nothing, so a late reply does not bring back a drive that was replaced or removed. A reply with the same revision applies again.
-- Each entry of `data.skipped` (a member or group the drive could not add) is logged as a warning with the space id.
-- A reply about another app's drive is ignored. One for a space the copy does not have is logged and dropped: the space was deleted after the command. One whose `twakeorg` is not the space's organization is rejected.
+- `com.twake.drive.org_drive.ready.v1` records `data.drive.id` as the space's `drive` resource, moves into the space the activity events on that drive, as a provisioned event does, and sends a `spaces` live event to the space's members. A reply with the drive already recorded does none of this.
+- `com.twake.drive.org_drive.removed.v1` removes the space's `drive` resource and, when there was one, sends the same live event.
+- `drive_commands.replied_revision` keeps the revision of the last reply applied. A reply with a lower revision changes nothing, so a late reply does not bring back a drive that was replaced or removed. A reply with the same revision applies again.
+- A reply locks the space's `drive_commands` row, as the space's deletion does when it stores `removed`, wherever the deletion comes from. The two take turns, so a reply never leaves a drive on a deleted space.
+- `data.skipped` (the members and groups the drive could not add) is logged as one warning with the space id.
+- A reply about another app's drive is ignored. One for a space the copy does not have is dropped: the space was deleted after the command. A `ready` reply is logged as a warning then, and a `removed` reply, the usual answer to a deletion, at debug. One whose `twakeorg` is not the space's organization is rejected.
 
 ### Activity that becomes a card
 
