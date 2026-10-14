@@ -43,7 +43,7 @@ import { registerDirectoryRoutes } from './modules/organizations/directory.ts'
 import { configureHomeserver } from './modules/organizations/homeservers.ts'
 import { settingsPlatformRoutes } from './modules/settings/events.ts'
 import { registerSettingsRoutes } from './modules/settings/routes.ts'
-import { ENSURE_DRIVE, scheduleDriveCommands } from './modules/spaces/drives.ts'
+import { scheduleDriveCommands } from './modules/spaces/drives.ts'
 import { spacePlatformRoutes } from './modules/spaces/events.ts'
 import { scheduleReconciliation } from './modules/spaces/reconcile.ts'
 import {
@@ -207,10 +207,12 @@ const stopDriveCommands = scheduleDriveCommands(
   db,
   command =>
     confirmed(
-      drivePublisher.publish(config.amqp.driveExchange, ENSURE_DRIVE, command, {
-        mandatory: true,
-        maxAttempts: 1
-      })
+      drivePublisher.publish(
+        config.amqp.driveExchange,
+        config.amqp.driveRoutingKey,
+        command,
+        { mandatory: true, maxAttempts: 1 }
+      )
     ),
   logger
 )

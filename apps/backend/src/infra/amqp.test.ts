@@ -239,12 +239,30 @@ describe('subscription', () => {
     })
     expect(options.bindings).toContainEqual({
       exchange: 'activity',
-      routingKey: 'com.twake.drive.org_drive.*'
+      routingKey: 'com.twake.drive.org_drive.#'
     })
     expect(options.bindings).not.toContainEqual({
       exchange: 'activity',
       routingKey: '#'
     })
+    // RabbitMQ topic matching: `*` takes one word, `#` any number.
+    const matches = (pattern: string, key: string) =>
+      new RegExp(
+        `^${pattern
+          .split('.')
+          .map(w => (w === '#' ? '.*' : w === '*' ? '[^.]+' : w))
+          .join('\\.')}$`
+      ).test(key)
+    const activityKeys = options.bindings
+      .filter(b => b.exchange === 'activity')
+      .map(b => b.routingKey)
+    for (const type of [
+      'com.twake.drive.org_drive.ready.v1',
+      'com.twake.drive.org_drive.removed.v1',
+      'com.twake.tasks.space.provisioned.v1'
+    ]) {
+      expect(activityKeys.some(k => matches(k, type))).toBe(true)
+    }
     expect(options.passiveExchanges).toEqual(['space', 'b2b', 'dns'])
     expect(options.deadLetterExchange).toBe('twake-space.dlx')
     expect(options.queueArguments).toMatchObject({

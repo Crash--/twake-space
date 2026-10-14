@@ -75,6 +75,18 @@ export const amqpTopology = z
     AMQP_TWAKE_SPACE_EXCHANGE: z.string().min(1).default('twake-space'),
     AMQP_LIVE_EXCHANGE: z.string().min(1).default('twake-space.live'),
     AMQP_DRIVE_EXCHANGE: z.string().min(1).default('drive'),
+    AMQP_DRIVE_ROUTING_KEY: z
+      .string()
+      .regex(/^[^*#]+$/, 'must not hold a wildcard')
+      .default('drive.org_drive.ensure'),
+    AMQP_PROVISIONED_BINDING: z
+      .string()
+      .min(1)
+      .default('com.twake.*.space.provisioned.v1'),
+    AMQP_DRIVE_REPLIES_BINDING: z
+      .string()
+      .min(1)
+      .default('com.twake.drive.org_drive.#'),
     AMQP_EVENTS: overrides.default({})
   })
   .transform((env, ctx) => {
@@ -133,6 +145,9 @@ export const amqpTopology = z
         twakeSpaceExchange: env.AMQP_TWAKE_SPACE_EXCHANGE,
         liveExchange: env.AMQP_LIVE_EXCHANGE,
         driveExchange: env.AMQP_DRIVE_EXCHANGE,
+        driveRoutingKey: env.AMQP_DRIVE_ROUTING_KEY,
+        provisionedBinding: env.AMQP_PROVISIONED_BINDING,
+        driveRepliesBinding: env.AMQP_DRIVE_REPLIES_BINDING,
         events
       }
     }

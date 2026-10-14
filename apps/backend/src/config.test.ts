@@ -135,7 +135,10 @@ describe('loadConfig: RabbitMQ topology', () => {
       activityDeadLetterExchange: 'twake-space.activity.dlx',
       activityConcurrency: 10,
       activityExchange: 'activity',
-      driveExchange: 'drive'
+      driveExchange: 'drive',
+      driveRoutingKey: 'drive.org_drive.ensure',
+      provisionedBinding: 'com.twake.*.space.provisioned.v1',
+      driveRepliesBinding: 'com.twake.drive.org_drive.#'
     })
     expect(amqp.events['twake.space.created']).toEqual({
       exchange: 'space',
@@ -164,10 +167,16 @@ describe('loadConfig: RabbitMQ topology', () => {
       AMQP_B2B_EXCHANGE: 'b2b-saas',
       AMQP_SETTINGS_EXCHANGE: 'common-settings',
       AMQP_TWAKE_SPACE_EXCHANGE: 'space-commands',
-      AMQP_DRIVE_EXCHANGE: 'twake-space.drive'
+      AMQP_DRIVE_EXCHANGE: 'twake-space.drive',
+      AMQP_DRIVE_ROUTING_KEY: 'twake-space.drive.ensure',
+      AMQP_PROVISIONED_BINDING: 'apps.*.provisioned',
+      AMQP_DRIVE_REPLIES_BINDING: 'apps.drive.replies.#'
     })
 
     expect(amqp).toMatchObject({
+      driveRoutingKey: 'twake-space.drive.ensure',
+      provisionedBinding: 'apps.*.provisioned',
+      driveRepliesBinding: 'apps.drive.replies.#',
       queue: 'space-events',
       deadLetterExchange: 'space-events.dlx',
       activityQueue: 'space-events.activity',
@@ -235,6 +244,9 @@ describe('loadConfig: RabbitMQ topology', () => {
         })
       })
     ).toThrow('AMQP_EVENTS')
+    expect(() =>
+      loadConfig({ ...base, AMQP_DRIVE_ROUTING_KEY: 'drive.#' })
+    ).toThrow('AMQP_DRIVE_ROUTING_KEY')
     expect(() =>
       loadConfig({ ...base, AMQP_ACTIVITY_EXCHANGE: 'b2b' })
     ).toThrow('AMQP_ACTIVITY_EXCHANGE')

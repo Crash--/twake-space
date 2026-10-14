@@ -11,7 +11,6 @@ import {
 
 // cozy-stack ADR 009: after each change to a space, the stack gets the space's
 // full state and makes its organization drive match it.
-export const ENSURE_DRIVE = 'drive.org_drive.ensure'
 
 const SWEEP_EVERY_MS = 10_000
 const BATCH = 100

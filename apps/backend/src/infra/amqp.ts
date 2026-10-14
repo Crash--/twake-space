@@ -22,8 +22,14 @@ export function subscription(topology: AmqpTopology) {
   const options = {
     bindings: [
       ...rest,
-      { exchange: topology.activityExchange, routingKey: PROVISIONED },
-      { exchange: topology.activityExchange, routingKey: DRIVE_REPLIES }
+      {
+        exchange: topology.activityExchange,
+        routingKey: topology.provisionedBinding
+      },
+      {
+        exchange: topology.activityExchange,
+        routingKey: topology.driveRepliesBinding
+      }
     ],
     deadLetterExchange: topology.deadLetterExchange,
     // Other services own these. The apps and we declare the activity one, and
@@ -44,9 +50,6 @@ export function subscription(topology: AmqpTopology) {
   } satisfies SubscribeOptions
   return { ...primary, queue: topology.queue, options }
 }
-
-const PROVISIONED = 'com.twake.*.space.provisioned.v1'
-const DRIVE_REPLIES = 'com.twake.drive.org_drive.*'
 
 // Each activity event stands alone, so every replica consumes the queue.
 export function activitySubscription(topology: AmqpTopology) {

@@ -52,7 +52,7 @@ At startup the backend declares `twake-space` and binds it to each platform even
 - `b2b`: `b2b.group.updated`, `b2b.member.role.changed`, `b2b.member.disabled`, `domain.user.deleted`, `domain.organization.deleted`, `chat.deprovision`, `chat.deployment.completed`
 - `admin-panel`: `dns.validated`
 - `settings`: `user.settings.updated`
-- `activity`: `com.twake.*.space.provisioned.v1`, `com.twake.drive.org_drive.*`
+- `activity`: `com.twake.*.space.provisioned.v1` and `com.twake.drive.org_drive.#` (`AMQP_PROVISIONED_BINDING` and `AMQP_DRIVE_REPLIES_BINDING`)
 
 It declares `twake-space.activity` with one binding, `#` on `activity`. Older versions bound that key to `twake-space`, and each start removes it from there, once `twake-space.activity` holds those events. `twake-space` still handles the activity events it already held.
 
