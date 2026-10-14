@@ -519,37 +519,63 @@ describe('feed cards', () => {
     ])
   })
 
-  it('keeps one card per folder digest, showing the latest window, and stores a flush that ran twice once', async () => {
-    const digest = (id: string, time: string, created: number) =>
-      anEvent({
-        id,
-        type: 'com.twake.drive.folder.changed.v1',
-        time,
-        data: {
-          object: {
-            type: 'folder',
-            id: 'q4',
-            container: { kind: 'drive', id: 'drive-1' },
-            title: 'Q4 assets'
-          },
-          files: { created, updated: 0, deleted: 0 },
-          samples: ['logo.svg']
-        }
-      })
+  const digest = (
+    id: string,
+    time: string,
+    created: number,
+    member = 'alice@linagora.com'
+  ) =>
+    anEvent({
+      id,
+      type: 'com.twake.drive.folder.changed.v1',
+      time,
+      twakeactorid: undefined,
+      twakeactor: member,
+      data: {
+        object: {
+          type: 'folder',
+          id: 'q4',
+          container: { kind: 'drive', id: 'drive-1' },
+          title: 'Q4 assets'
+        },
+        files: { created, updated: 0, deleted: 0 },
+        samples: ['logo.svg']
+      }
+    })
 
+  it('keeps one card per folder digest at its latest window, and stores a flush that ran twice once', async () => {
     await store(digest('window-1', '2026-10-05T09:00:00Z', 1200))
     await store(digest('window-2', '2026-10-05T09:00:30Z', 300))
     await store(digest('window-2', '2026-10-05T09:00:30Z', 300))
+    await store(digest('late', '2026-10-05T08:00:00Z', 1))
 
-    expect(await stored()).toHaveLength(2)
+    expect(await stored()).toHaveLength(3)
     expect(await cards()).toEqual([
       {
         objectId: 'q4',
         category: 'files',
-        time: new Date('2026-10-05T09:00:00Z'),
+        time: new Date('2026-10-05T09:00:30Z'),
         latest: 'window-2'
       }
     ])
+  })
+
+  it('keeps a folder digest card per member', async () => {
+    await testDb.db.insert(spaceMembers).values({
+      spaceId: SPACE_ID,
+      userId: BOB,
+      username: 'bob',
+      email: 'bob@linagora.com',
+      role: 'editor'
+    })
+
+    await store(digest('alice-1', '2026-10-05T09:00:00Z', 2))
+    await store(digest('bob-1', '2026-10-05T09:00:00Z', 5, 'bob@linagora.com'))
+    await store(digest('alice-2', '2026-10-05T09:00:30Z', 1))
+
+    expect(
+      (await cards()).map(c => c.latest).sort((a, b) => a.localeCompare(b))
+    ).toEqual(['alice-2', 'bob-1'])
   })
 
   it('makes no card for an event outside any space', async () => {

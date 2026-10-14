@@ -11,6 +11,7 @@ import {
   type Column
 } from 'drizzle-orm'
 import { unionAll } from 'drizzle-orm/pg-core'
+import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import { spaceMembers } from '../spaces/schema.ts'
 import {
@@ -37,41 +38,29 @@ export interface StoredContent {
   samples?: unknown
 }
 
-interface Files {
-  created: number
-  updated: number
-  deleted: number
-  samples: string[]
-}
+export const FOLDER_DIGEST = 'com.twake.drive.folder.changed.v1'
 
-const FOLDER_DIGEST = 'com.twake.drive.folder.changed.v1'
+const count = z.int().positive().catch(0)
 
 // Apps send data.files and data.samples unchecked.
-function toFiles(
-  type: string,
-  { files, samples }: StoredContent
-): Files | null {
-  if (
-    type !== FOLDER_DIGEST ||
-    typeof files !== 'object' ||
-    files === null ||
-    Array.isArray(files)
-  )
-    return null
-  const count = (key: string) => {
-    const value: unknown = (files as Record<string, unknown>)[key]
-    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
-      ? value
-      : 0
-  }
-  return {
-    created: count('created'),
-    updated: count('updated'),
-    deleted: count('deleted'),
-    samples: Array.isArray(samples)
-      ? samples.filter(s => typeof s === 'string').slice(0, 5)
-      : []
-  }
+const folderDigest = z
+  .object({
+    files: z.object({ created: count, updated: count, deleted: count }),
+    samples: z
+      .array(z.unknown())
+      .catch([])
+      .transform(samples =>
+        samples.filter(s => typeof s === 'string').slice(0, 5)
+      )
+  })
+  .transform(({ files, samples }) => ({ ...files, samples }))
+  .nullable()
+  .catch(null)
+
+type Files = NonNullable<z.output<typeof folderDigest>>
+
+function toFiles(type: string, content: StoredContent): Files | null {
+  return type === FOLDER_DIGEST ? folderDigest.parse(content) : null
 }
 
 type NamedActor =

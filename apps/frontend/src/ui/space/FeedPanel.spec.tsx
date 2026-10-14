@@ -797,6 +797,43 @@ describe('FeedPanel', () => {
     expect(screen.getByText('Message 1')).toBeInTheDocument()
   })
 
+  it('moves a changed item that is now the newest to the newest place', async () => {
+    const { feed, live } = renderFeed([post(1), post(2)])
+    await screen.findByText('Message 2')
+
+    vi.mocked(feed.item).mockResolvedValueOnce(
+      post(1, { time: at(3), body: 'Message 1 again' })
+    )
+    act(() => {
+      live.emit('feed', { spaceId: 'a1', itemId: 'post-1', change: 'changed' })
+    })
+
+    await screen.findByText('Message 1 again')
+    expect(screen.getAllByText(/^Message/).map(m => m.textContent)).toEqual([
+      'Message 2',
+      'Message 1 again'
+    ])
+  })
+
+  it('moves a changed item to its place by its new time', async () => {
+    const { feed, live } = renderFeed([post(1), post(2), post(5)])
+    await screen.findByText('Message 5')
+
+    vi.mocked(feed.item).mockResolvedValueOnce(
+      post(1, { time: at(3), body: 'Message 1 again' })
+    )
+    act(() => {
+      live.emit('feed', { spaceId: 'a1', itemId: 'post-1', change: 'changed' })
+    })
+
+    await screen.findByText('Message 1 again')
+    expect(screen.getAllByText(/^Message/).map(m => m.textContent)).toEqual([
+      'Message 2',
+      'Message 1 again',
+      'Message 5'
+    ])
+  })
+
   it('shows my own post once when its live echo arrives', async () => {
     const { feed, live } = renderFeed([])
     fireEvent.change(

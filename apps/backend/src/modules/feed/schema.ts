@@ -108,8 +108,11 @@ export const feedCards = pgTable(
     spaceId: uuid('space_id').notNull(),
     objectType: text('object_type').notNull(),
     objectId: text('object_id').notNull(),
+    // Set on a Drive folder digest, which is one per member.
+    memberId: uuid('member_id'),
     category: feedCategory().notNull(),
-    // The first event's: the card keeps its place in the feed.
+    // The first event's, so the card keeps its place in the feed; a folder
+    // digest's latest window's, so it moves to the top.
     time: timestamptz('time').notNull(),
     latestEventId: uuid('latest_event_id')
       .notNull()
@@ -117,7 +120,9 @@ export const feedCards = pgTable(
     latestTime: timestamptz('latest_time').notNull()
   },
   table => [
-    unique().on(table.spaceId, table.objectType, table.objectId),
+    unique()
+      .on(table.spaceId, table.objectType, table.objectId, table.memberId)
+      .nullsNotDistinct(),
     index().on(table.spaceId, table.time, table.id)
   ]
 )

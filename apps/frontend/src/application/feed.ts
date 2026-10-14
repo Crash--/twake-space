@@ -39,7 +39,10 @@ interface ItemBase {
   reactions: Reaction[]
 }
 
-/** One card per object: it keeps its first time, and shows the latest event. */
+/**
+ * One card per object, and per member for a Drive folder digest. It keeps its
+ * first time, a folder digest its latest window's, and shows the latest event.
+ */
 export interface FeedCard extends ItemBase {
   kind: 'card'
   /** The latest activity event type, like `com.twake.tasks.task.moved.v1`. */

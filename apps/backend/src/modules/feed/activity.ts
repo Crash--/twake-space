@@ -17,6 +17,7 @@ import {
   spaceResourceKind,
   spaceResources
 } from '../spaces/schema.ts'
+import { FOLDER_DIGEST } from './items.ts'
 import { tellFeed } from './live.ts'
 import {
   activityEvents,
@@ -178,16 +179,45 @@ async function checkActor(tx: Tx, spaceId: string, actor: Actor | null) {
   }
 }
 
-// The card keeps the place of the object's first event and shows its latest,
-// whatever order the events arrive in.
-async function showCard(tx: Tx, card: typeof feedCards.$inferInsert) {
+interface StoredEvent {
+  id: string
+  spaceId: string
+  type: string
+  actor: Actor | null
+  objectType: string
+  objectId: string
+  category: Category
+  time: Date
+}
+
+// The card shows the object's latest event, whatever order the events arrive
+// in. It keeps the place of the first, but a folder digest, one per member
+// (cozy-stack ADR 010), takes the place of its latest window.
+async function showCard(tx: Tx, event: StoredEvent) {
+  const digest = event.type === FOLDER_DIGEST
   const [shown] = await tx
     .insert(feedCards)
-    .values(card)
+    .values({
+      spaceId: event.spaceId,
+      objectType: event.objectType,
+      objectId: event.objectId,
+      memberId: digest && event.actor?.type === 'user' ? event.actor.id : null,
+      category: event.category,
+      time: event.time,
+      latestEventId: event.id,
+      latestTime: event.time
+    })
     .onConflictDoUpdate({
-      target: [feedCards.spaceId, feedCards.objectType, feedCards.objectId],
+      target: [
+        feedCards.spaceId,
+        feedCards.objectType,
+        feedCards.objectId,
+        feedCards.memberId
+      ],
       set: {
-        time: sql`least(${feedCards.time}, excluded.time)`,
+        time: digest
+          ? sql`greatest(${feedCards.time}, excluded.time)`
+          : sql`least(${feedCards.time}, excluded.time)`,
         latestEventId: sql`case when excluded.latest_time >= ${feedCards.latestTime}
           then excluded.latest_event_id else ${feedCards.latestEventId} end`,
         latestTime: sql`greatest(${feedCards.latestTime}, excluded.latest_time)`
@@ -195,7 +225,7 @@ async function showCard(tx: Tx, card: typeof feedCards.$inferInsert) {
     })
     .returning({ id: feedCards.id, added: sql<boolean>`xmax = 0` })
   if (!shown) throw new Error('the card upsert returned no row')
-  await tellFeed(tx, card.spaceId, shown.id, shown.added ? 'added' : 'changed')
+  await tellFeed(tx, event.spaceId, shown.id, shown.added ? 'added' : 'changed')
 }
 
 // Only events that came within the wait for a late event: an older one on the
@@ -222,21 +252,15 @@ export async function attachToSpace(
     )
     .returning({
       id: activityEvents.id,
+      type: activityEvents.type,
+      actor: activityEvents.actor,
       objectType: activityEvents.objectType,
       objectId: activityEvents.objectId,
       category: activityEvents.category,
       time: activityEvents.time
     })
   for (const event of attached) {
-    await showCard(tx, {
-      spaceId,
-      objectType: event.objectType,
-      objectId: event.objectId,
-      category: event.category,
-      time: event.time,
-      latestEventId: event.id,
-      latestTime: event.time
-    })
+    await showCard(tx, { ...event, spaceId })
   }
 }
 
@@ -280,13 +304,14 @@ function store(category: Category): Handler<CloudEvent> {
     if (!stored) return
     if (spaceId) {
       await showCard(tx, {
+        id: stored.id,
         spaceId,
+        type: event.type,
+        actor,
         objectType: data.object.type,
         objectId: data.object.id,
         category,
-        time: stored.time,
-        latestEventId: stored.id,
-        latestTime: stored.time
+        time: stored.time
       })
     }
     // Twake Tasks notifies its own users.
@@ -316,6 +341,12 @@ export async function forgetActor(
       .where(eq(feedPosts.authorId, uuid))
     await tx.delete(feedItemReactions).where(eq(feedItemReactions.userId, uuid))
     await tx.delete(feedReads).where(eq(feedReads.userId, uuid))
+    // Not null: the unique key treats nulls as equal, so the card would clash
+    // with any other card on the folder that has no member.
+    await tx
+      .update(feedCards)
+      .set({ memberId: sql`gen_random_uuid()` })
+      .where(eq(feedCards.memberId, uuid))
   }
   // An actor sent by email only keeps a null id, so the email matches it too.
   await tx

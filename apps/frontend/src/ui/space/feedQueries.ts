@@ -99,8 +99,8 @@ function withItem(
   filter: FeedFilter,
   isNew: boolean
 ): Pages {
-  const known = data.pages.some(page => page.items.some(i => i.id === item.id))
-  if (known) {
+  const old = data.pages.flatMap(page => page.items).find(i => i.id === item.id)
+  if (old?.time === item.time) {
     return {
       ...data,
       pages: data.pages.map(page => ({
@@ -109,14 +109,40 @@ function withItem(
       }))
     }
   }
-  // A changed item that is not loaded belongs to an older page.
-  if (!isNew || !shows(item, filter)) return data
-  const [first, ...rest] = data.pages
-  if (!first) return data
+  if (!shows(item, filter)) return data
+  const pages = withoutItem(data, item.id).pages
+  if (isNew && !old) {
+    const [first, ...rest] = pages
+    if (!first) return data
+    return {
+      ...data,
+      pages: [{ ...first, items: [item, ...first.items] }, ...rest]
+    }
+  }
+  // A folder digest card takes the time of its latest window, so it moves to
+  // its place in the server's order. A changed item older than every loaded
+  // one belongs to an older page.
+  const index = pages.findIndex(page => page.items.some(i => isBefore(item, i)))
+  const last = pages.length - 1
+  if (index === -1 && (!old || last < 0 || pages[last]?.next)) {
+    return { ...data, pages }
+  }
+  const at = index === -1 ? last : index
   return {
     ...data,
-    pages: [{ ...first, items: [item, ...first.items] }, ...rest]
+    pages: pages.map((page, p) => {
+      if (p !== at) return page
+      const i = page.items.findIndex(other => isBefore(item, other))
+      const items = [...page.items]
+      items.splice(i === -1 ? items.length : i, 0, item)
+      return { ...page, items }
+    })
   }
+}
+
+// The server's order: newest first, then by id.
+function isBefore(a: FeedItem, b: FeedItem): boolean {
+  return a.time > b.time || (a.time === b.time && a.id > b.id)
 }
 
 function withoutItem(data: Pages, itemId: string): Pages {
@@ -131,7 +157,8 @@ function withoutItem(data: Pages, itemId: string): Pages {
 
 /**
  * Writes an item into every loaded filter of the space's feed: a known one is
- * replaced in place, a new one goes on top of the filters that show it.
+ * replaced in place unless its time changed, a new one goes on top of the
+ * filters that show it.
  */
 function putItem(
   queryClient: QueryClient,

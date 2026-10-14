@@ -267,7 +267,7 @@ The CloudEvent fields the handler reads:
 - `data.object`: `type`, `id`, `title`, and an optional `container` (`kind`, `id`): the app's own resource the object lives in. Apps send ids, never a link.
 - `data.preview`: optional text, cut to 280 characters.
 - `data.state`: optional, an object the card passes to the browser as is, such as a calendar event's time. The card shows the latest event's, so an app sends the whole state on every event.
-- `data.files`, `data.samples`: optional, the counts (`created`, `updated`, `deleted`) and up to five file names of a Drive folder digest, `com.twake.drive.folder.changed.v1` ([ADR 010](https://github.com/linagora/cozy-stack/pull/4990)). Its object is the top folder, so each window updates the folder's card. A count that is not a whole number above 0 reads as 0.
+- `data.files`, `data.samples`: optional, the counts (`created`, `updated`, `deleted`) and up to five file names of a Drive folder digest, `com.twake.drive.folder.changed.v1` ([ADR 010](https://github.com/linagora/cozy-stack/blob/a7b1151c607afdd770f4e4d998db71070ba7e49e/docs/adr/010-adr-drive-activity-digest.md)). Its object is the top folder and there is one per member, so each window updates that member's card for the folder, which moves up to the window's time. A count that is not a whole number above 0 reads as 0.
 - `data.actor`: `{ type: 'token', id, name }` when an API token acted.
 - `data.recipients`: who to notify (see Notifications).
 
@@ -292,7 +292,7 @@ sequenceDiagram
   participant FE as Browser
   K->>BE: activity event
   BE->>PG: insert activity_events
-  BE->>PG: upsert feed_cards (space, object type, object id)
+  BE->>PG: upsert feed_cards (space, object type, object id, member)
   BE->>K: after commit, live: feed added or changed
   K-->>BE: every replica
   BE-->>FE: event: feed (GET /stream)
@@ -301,6 +301,7 @@ sequenceDiagram
 
 - A space's feed is its cards and its posts, newest first. The routes are in the [HTTP API](api.md#feed).
 - A card exists per object: space, `object.type` and `object.id`. Its time is the object's first event, so later events change the card without moving it. It shows the latest event (by CloudEvent `time`) whatever order the events arrive in.
+- A Drive folder digest card exists per object and member, the actor's user id. Its time is its latest window, so each window moves it to the top.
 - An event in no space makes no card. It exists for personal notifications only.
 - Posts are plain text, from editors and admins. Their authors edit and delete them. Every member reacts to cards and posts.
 - Each new or changed card, post or reaction, and each deleted post, sends a `feed` live event to the space's members. Chat messages and reactions from Matrix send none.

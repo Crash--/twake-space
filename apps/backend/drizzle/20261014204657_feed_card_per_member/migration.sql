@@ -1,0 +1,4 @@
+ALTER TABLE "feed_cards" DROP CONSTRAINT "feed_cards_space_id_object_type_object_id_unique";--> statement-breakpoint
+ALTER TABLE "feed_cards" ADD COLUMN "member_id" uuid;--> statement-breakpoint
+ALTER TABLE "feed_cards" ADD CONSTRAINT "feed_cards_space_id_object_type_object_id_member_id_unique" UNIQUE NULLS NOT DISTINCT("space_id","object_type","object_id","member_id");--> statement-breakpoint
+UPDATE "feed_cards" SET "member_id" = CASE WHEN "activity_events"."actor"->>'type' = 'user' THEN ("activity_events"."actor"->>'id')::uuid END, "time" = "feed_cards"."latest_time" FROM "activity_events" WHERE "activity_events"."id" = "feed_cards"."latest_event_id" AND "activity_events"."type" = 'com.twake.drive.folder.changed.v1';

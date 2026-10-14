@@ -15,6 +15,7 @@ import { MalformedEventError, NotYetKnownError } from '../../events/router.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import {
   activityEvents,
+  feedCards,
   feedItemReactions,
   feedPosts,
   feedReads
@@ -336,6 +337,17 @@ describe('space events', () => {
           time: new Date()
         })
         .returning()
+      if (!event) throw new Error('no event')
+      await testDb.db.insert(feedCards).values({
+        spaceId: SPACE_ID,
+        objectType: 'folder',
+        objectId: 'q4',
+        memberId: JDOE_ID,
+        category: 'files',
+        time: event.time,
+        latestEventId: event.id,
+        latestTime: event.time
+      })
       await testDb.db.insert(activityEvents).values({
         source: 'twake://calendar',
         eventId: 'e2',
@@ -351,7 +363,7 @@ describe('space events', () => {
       await testDb.db.insert(notifications).values({
         userId: JDOE_ID,
         type: 'card_mention',
-        activityEventId: event?.id,
+        activityEventId: event.id,
         payload: {}
       })
       const [post] = await testDb.db
@@ -409,6 +421,11 @@ describe('space events', () => {
         ).toEqual([{ authorId: null }])
         expect(await testDb.db.select().from(feedItemReactions)).toEqual([])
         expect(await testDb.db.select().from(feedReads)).toEqual([])
+        const [card] = await testDb.db
+          .select({ memberId: feedCards.memberId })
+          .from(feedCards)
+        expect(card?.memberId).toBeTruthy()
+        expect(card?.memberId).not.toBe(JDOE_ID)
       }
     )
   })

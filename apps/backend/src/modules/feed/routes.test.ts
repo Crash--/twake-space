@@ -542,6 +542,18 @@ describe('GET /spaces/:spaceId/feed/items/:itemId', () => {
     })
   })
 
+  it('answers no file counts for a folder digest whose counts are not an object', async () => {
+    const card = await aCard('q4', '2026-10-05T09:00:00Z', {
+      type: DIGEST,
+      files: [3],
+      samples: 'logo.svg'
+    })
+
+    const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
+
+    expect(found.json()).toMatchObject({ files: null })
+  })
+
   it('answers no file counts for an event that is not a folder digest', async () => {
     const card = await aCard('q4', '2026-10-05T09:00:00Z', {
       files: { created: 3 },

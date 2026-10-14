@@ -780,7 +780,15 @@ function Card({
       {app === 'calendar' ? (
         <EventDetails card={card} />
       ) : card.files ? (
-        <FolderDetails title={card.object.title} files={card.files} />
+        <FeedFile
+          icon={FileTypeFolder}
+          name={card.object.title}
+          detail={
+            card.files.samples.length > 0 && (
+              <FeedDetail>{card.files.samples.join(', ')}</FeedDetail>
+            )
+          }
+        />
       ) : app === 'drive' ? (
         <FileDetails card={card} />
       ) : (
@@ -898,26 +906,6 @@ function useFileChanges(): (files: FileCounts) => string | null {
       ? new Intl.ListFormat(lang, { type: 'conjunction' }).format(parts)
       : null
   }
-}
-
-function FolderDetails({
-  title,
-  files
-}: {
-  title: string
-  files: FileCounts
-}): ReactElement {
-  return (
-    <FeedFile
-      icon={FileTypeFolder}
-      name={title}
-      detail={
-        files.samples.length > 0 && (
-          <FeedDetail>{files.samples.join(', ')}</FeedDetail>
-        )
-      }
-    />
-  )
 }
 
 // "1 hour", "30 minutes", "1 hour 30 minutes", in the language of the page.
