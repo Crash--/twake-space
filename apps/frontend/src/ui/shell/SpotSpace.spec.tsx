@@ -124,7 +124,8 @@ describe('SpotSpace', () => {
         container: { kind: 'project', id: 'project-1' }
       },
       preview: null,
-      state: {}
+      state: {},
+      files: null
     }
     const design: Space = {
       ...space('space-1', 'Design', null),

@@ -67,7 +67,8 @@ const task: FeedCard = {
     container: { kind: 'project', id: 'project-1' }
   },
   preview: null,
-  state: {}
+  state: {},
+  files: null
 }
 
 const mail: FeedCard = {
@@ -236,6 +237,58 @@ describe('FeedPanel', () => {
       })
       expect(within(card).getByText('updated a file')).toBeInTheDocument()
       expect(within(card).getByText('XLSX · From Drive')).toBeInTheDocument()
+    })
+
+    const digest = (files: FeedCard['files']): FeedCard => ({
+      ...task,
+      id: 'folder-q4',
+      category: 'files',
+      type: 'com.twake.drive.folder.changed.v1',
+      object: {
+        type: 'folder',
+        id: 'q4',
+        title: 'Q4 assets',
+        container: { kind: 'drive', id: 'drive-1' }
+      },
+      files
+    })
+
+    it('counts the files of a folder digest, leaving out a count of 0, with the first names', async () => {
+      renderFeed(
+        [
+          digest({
+            created: 1200,
+            updated: 3,
+            deleted: 0,
+            samples: ['logo.svg', 'banner.png']
+          })
+        ],
+        { space: driveSpace }
+      )
+
+      const card = await screen.findByRole('article', {
+        name: 'Bob Durand: Q4 assets'
+      })
+      expect(
+        within(card).getByText('added 1,200 files and updated 3 files')
+      ).toBeInTheDocument()
+      expect(within(card).getByText('Q4 assets')).toBeInTheDocument()
+      expect(within(card).getByText('logo.svg, banner.png')).toBeInTheDocument()
+      expect(
+        within(card).getByRole('link', { name: 'Open in Drive' })
+      ).toHaveAttribute('href', '/spaces/a1/drive')
+    })
+
+    it('reads a digest with only deletions as a deletion', async () => {
+      renderFeed(
+        [digest({ created: 0, updated: 0, deleted: 1, samples: ['old.pdf'] })],
+        { space: driveSpace }
+      )
+
+      const card = await screen.findByRole('article', {
+        name: 'Bob Durand: Q4 assets'
+      })
+      expect(within(card).getByText('deleted 1 file')).toBeInTheDocument()
     })
   })
 

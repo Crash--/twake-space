@@ -310,7 +310,7 @@ A space's feed holds cards and posts. A card shows the activity on one object (a
 A feed item:
 
 - `id`, `kind` (`card` or `post`), `category` (`messages`, `files`, `activities` or `events`; a post is a message), `time`, `updatedAt`, and `reactions`, a list of `{key, userIds}` in the order they were first added.
-- A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`) and `state` (an object the app sends, such as a calendar event's time). `time` is the object's first event, so the card keeps its place; everything else comes from its latest event.
+- A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`), `state` (an object the app sends, such as a calendar event's time) and `files` (`{created, updated, deleted, samples}` for a Drive folder digest, or `null`). `time` is the object's first event, so the card keeps its place; everything else comes from its latest event.
 - A post adds `author`, `body` (plain text) and `editedAt` (`null` until edited).
 - An actor or author is `{type: "user", id, name}`, `{type: "token", id, name}`, or `{type: "deleted_user"}`. For a user, `id` is `null` when the app named them by email only and no member has it, and `name` is the member's display name or username, or `null` when they are not a member of the space.
 
@@ -331,6 +331,7 @@ A feed item:
   },
   "preview": "First draft",
   "state": {},
+  "files": null,
   "reactions": [{ "key": "👍", "userIds": ["<uuid>"] }]
 }
 ```

@@ -20,6 +20,7 @@ describe('showcaseFeed', () => {
         'calendar.proposed',
         'calendar.rescheduled',
         'calendar.updated',
+        'drive.changed',
         'drive.created',
         'drive.updated',
         'mail.received',

@@ -10,6 +10,7 @@ import {
   Trash,
   Upload,
   Drive,
+  FileTypeFolder,
   getFileTypeIcon,
   type IconProps
 } from '@linagora/twake-icons'
@@ -29,6 +30,7 @@ import {
   type FeedCard,
   type FeedFilter,
   type FeedItem,
+  type FileCounts,
   type FeedPost,
   withReaction
 } from '@/application/feed'
@@ -734,6 +736,7 @@ function Card({
 }): ReactElement {
   const { t } = useI18n()
   const time = useTime()
+  const changes = useFileChanges()
   const app = cardApp(card)
   const actor = useActorName(card.actor)
   const verb = VERBS[`${app ?? ''}.${cardAction(card) ?? ''}`]
@@ -769,10 +772,15 @@ function Card({
     >
       <FeedHeader
         who={actor ?? appName}
-        what={verb ? t(verb) : t('feed.verbs.other')}
+        what={
+          (card.files && changes(card.files)) ??
+          (verb ? t(verb) : t('feed.verbs.other'))
+        }
       />
       {app === 'calendar' ? (
         <EventDetails card={card} />
+      ) : card.files ? (
+        <FolderDetails title={card.object.title} files={card.files} />
       ) : app === 'drive' ? (
         <FileDetails card={card} />
       ) : (
@@ -871,6 +879,44 @@ function FileDetails({ card }: { card: FeedCard }): ReactElement {
       )}
       {card.preview && <FeedDetail>{card.preview}</FeedDetail>}
     </>
+  )
+}
+
+const FILE_CHANGES = ['created', 'updated', 'deleted'] as const
+
+// "added 1,200 files and updated 3 files", null when every count is 0.
+function useFileChanges(): (files: FileCounts) => string | null {
+  const { t, lang } = useI18n()
+  return files => {
+    const parts = FILE_CHANGES.filter(change => files[change] > 0).map(change =>
+      t(`feed.files.${change}`, {
+        smart_count: files[change],
+        count: new Intl.NumberFormat(lang).format(files[change])
+      })
+    )
+    return parts.length > 0
+      ? new Intl.ListFormat(lang, { type: 'conjunction' }).format(parts)
+      : null
+  }
+}
+
+function FolderDetails({
+  title,
+  files
+}: {
+  title: string
+  files: FileCounts
+}): ReactElement {
+  return (
+    <FeedFile
+      icon={FileTypeFolder}
+      name={title}
+      detail={
+        files.samples.length > 0 && (
+          <FeedDetail>{files.samples.join(', ')}</FeedDetail>
+        )
+      }
+    />
   )
 }
 

@@ -360,6 +360,11 @@
     "deletedUser": "Deleted user",
     "someone": "Someone",
     "fromDrive": "From Drive",
+    "files": {
+      "created": "added %{count} file |||| added %{count} files",
+      "updated": "updated %{count} file |||| updated %{count} files",
+      "deleted": "deleted %{count} file |||| deleted %{count} files"
+    },
     "emoji": "Add an emoji",
     "members": {
       "title": "Space members",

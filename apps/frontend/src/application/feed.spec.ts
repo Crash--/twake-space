@@ -26,7 +26,8 @@ const card: FeedCard = {
     container: { kind: 'project', id: 'p1' }
   },
   preview: null,
-  state: {}
+  state: {},
+  files: null
 }
 
 describe('withReaction', () => {

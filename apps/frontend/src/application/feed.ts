@@ -48,6 +48,15 @@ export interface FeedCard extends ItemBase {
   object: FeedObject
   preview: string | null
   state: Record<string, unknown>
+  /** A Drive folder digest: the files of one window, up to five names. */
+  files: FileCounts | null
+}
+
+export interface FileCounts {
+  created: number
+  updated: number
+  deleted: number
+  samples: string[]
 }
 
 export interface FeedPost extends ItemBase {

@@ -519,6 +519,39 @@ describe('feed cards', () => {
     ])
   })
 
+  it('keeps one card per folder digest, showing the latest window, and stores a flush that ran twice once', async () => {
+    const digest = (id: string, time: string, created: number) =>
+      anEvent({
+        id,
+        type: 'com.twake.drive.folder.changed.v1',
+        time,
+        data: {
+          object: {
+            type: 'folder',
+            id: 'q4',
+            container: { kind: 'drive', id: 'drive-1' },
+            title: 'Q4 assets'
+          },
+          files: { created, updated: 0, deleted: 0 },
+          samples: ['logo.svg']
+        }
+      })
+
+    await store(digest('window-1', '2026-10-05T09:00:00Z', 1200))
+    await store(digest('window-2', '2026-10-05T09:00:30Z', 300))
+    await store(digest('window-2', '2026-10-05T09:00:30Z', 300))
+
+    expect(await stored()).toHaveLength(2)
+    expect(await cards()).toEqual([
+      {
+        objectId: 'q4',
+        category: 'files',
+        time: new Date('2026-10-05T09:00:00Z'),
+        latest: 'window-2'
+      }
+    ])
+  })
+
   it('makes no card for an event outside any space', async () => {
     await store(
       anEvent({

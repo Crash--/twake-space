@@ -787,7 +787,8 @@ describe('SpaceScreen', () => {
           container: { kind: 'project', id: 'project-1' }
         },
         preview: null,
-        state: {}
+        state: {},
+        files: null
       }
     ]
 

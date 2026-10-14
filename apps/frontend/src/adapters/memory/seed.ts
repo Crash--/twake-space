@@ -272,7 +272,8 @@ function roadmapFeed(): FeedItem[] {
             container: { kind: 'project', id: 'project-roadmap' }
           },
           preview: null,
-          state: {}
+          state: {},
+          files: null
         }
       case 1:
         return {
@@ -288,7 +289,8 @@ function roadmapFeed(): FeedItem[] {
             container: { kind: 'mailbox', id: `roadmap@${DOMAIN}` }
           },
           preview: null,
-          state: {}
+          state: {},
+          files: null
         }
       case 2: {
         const start = Date.UTC(2026, 9, 9 + round, 9)
@@ -305,6 +307,7 @@ function roadmapFeed(): FeedItem[] {
             container: { kind: 'calendar', id: 'calendar-roadmap' }
           },
           preview: null,
+          files: null,
           state: {
             start: iso(start),
             end: iso(start + HOUR),
@@ -353,7 +356,9 @@ export function showcaseFeed(now: number): FeedItem[] {
     actor: FeedCard['actor'],
     title: string,
     container: FeedObject['container'],
-    extra: Partial<Pick<FeedCard, 'preview' | 'state' | 'reactions'>> = {}
+    extra: Partial<
+      Pick<FeedCard, 'preview' | 'state' | 'files' | 'reactions'>
+    > = {}
   ): FeedCard => {
     const category = {
       tasks: 'activities',
@@ -378,6 +383,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       },
       preview: null,
       state: {},
+      files: null,
       ...extra
     }
   }
@@ -423,6 +429,20 @@ export function showcaseFeed(now: number): FeedItem[] {
     ),
     file('updated', 'Project brief.docx', 'dave'),
     file('created', 'Kickoff_notes.txt', 'alice'),
+    card('drive', 'folder', 'changed', person('carol'), 'Q4 assets', drive, {
+      files: {
+        created: 1200,
+        updated: 3,
+        deleted: 0,
+        samples: [
+          'logo.svg',
+          'banner.png',
+          'brief.pdf',
+          'budget.xlsx',
+          'notes.md'
+        ]
+      }
+    }),
     task('created', 'Draft the launch plan', person('bob')),
     task('updated', 'Update landing page CTA', person('carol'), 'New wording'),
     task(

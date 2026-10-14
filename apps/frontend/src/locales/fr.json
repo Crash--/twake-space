@@ -360,6 +360,11 @@
     "deletedUser": "Utilisateur supprimé",
     "someone": "Quelqu'un",
     "fromDrive": "Depuis Drive",
+    "files": {
+      "created": "a ajouté %{count} fichier |||| a ajouté %{count} fichiers",
+      "updated": "a mis à jour %{count} fichier |||| a mis à jour %{count} fichiers",
+      "deleted": "a supprimé %{count} fichier |||| a supprimé %{count} fichiers"
+    },
     "emoji": "Ajouter un emoji",
     "members": {
       "title": "Membres de l'espace",

@@ -229,6 +229,7 @@ The CloudEvent fields the handler reads:
 - `data.object`: `type`, `id`, `title`, and an optional `container` (`kind`, `id`): the app's own resource the object lives in. Apps send ids, never a link.
 - `data.preview`: optional text, cut to 280 characters.
 - `data.state`: optional, an object the card passes to the browser as is, such as a calendar event's time. The card shows the latest event's, so an app sends the whole state on every event.
+- `data.files`, `data.samples`: optional, the counts (`created`, `updated`, `deleted`) and up to five file names of a Drive folder digest, `com.twake.drive.folder.changed.v1` ([ADR 010](https://github.com/linagora/cozy-stack/pull/4990)). Its object is the top folder, so each window updates the folder's card. A count that is not a whole number above 0 reads as 0.
 - `data.actor`: `{ type: 'token', id, name }` when an API token acted.
 - `data.recipients`: who to notify (see Notifications).
 
@@ -358,6 +359,7 @@ sequenceDiagram
 - Each filter (all, messages, files, activities, events) is its own paged query, with no `category` for all.
 - A `feed` live event updates every loaded filter of the space: an added item goes on top of the filters that show it, a changed one is replaced where it is loaded, and a removed one, or one the backend no longer finds, is dropped.
 - A card's title opens the space's tab for its container: `project` -> Tasks, `drive` -> Drive, `mailbox` -> Mail, `calendar` -> Calendar, `matrix_space` -> Chat. With no container, or a tab the space does not show, the title is plain text.
+- A Drive folder digest card says what the latest window did, leaving out a count of 0, such as "added 1,200 files and updated 3 files", and lists its file names under the folder.
 - A message card opens its email: the Mail tab at `/email/<object id>`, the JMAP email id, which the frame shows below its embed route, `/embed/team-mailboxes/<id>/email/<email id>`. Mail finds the folder that holds the email and reports `/mailbox/<folder id>/email/<email id>` back. An email that is gone or not in the team mailbox leaves the frame on the Inbox.
 - An event card opens its event: the Calendar tab at `/events/<object id>`, which the frame shows below its embed route, `/embed/calendars/<id>/events/<uid>`. Calendar opens the event's preview there, and reports its path back to the bare route once the preview closes.
 

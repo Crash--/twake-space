@@ -78,7 +78,8 @@ const file: FeedItem = {
   actor: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
   object: { type: 'file', id: 'f-1', title: 'brief.pdf', container: null },
   preview: null,
-  state: {}
+  state: {},
+  files: null
 }
 
 describe('memorySpaces', () => {

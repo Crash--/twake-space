@@ -360,6 +360,11 @@
     "deletedUser": "Gelöschter Benutzer",
     "someone": "Jemand",
     "fromDrive": "Aus Drive",
+    "files": {
+      "created": "hat %{count} Datei hinzugefügt |||| hat %{count} Dateien hinzugefügt",
+      "updated": "hat %{count} Datei aktualisiert |||| hat %{count} Dateien aktualisiert",
+      "deleted": "hat %{count} Datei gelöscht |||| hat %{count} Dateien gelöscht"
+    },
     "emoji": "Emoji hinzufügen",
     "members": {
       "title": "Mitglieder des Bereichs",

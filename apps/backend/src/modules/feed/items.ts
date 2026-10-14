@@ -33,6 +33,45 @@ export interface StoredContent {
   }
   preview?: string
   state?: unknown
+  files?: unknown
+  samples?: unknown
+}
+
+interface Files {
+  created: number
+  updated: number
+  deleted: number
+  samples: string[]
+}
+
+const FOLDER_DIGEST = 'com.twake.drive.folder.changed.v1'
+
+// Apps send data.files and data.samples unchecked.
+function toFiles(
+  type: string,
+  { files, samples }: StoredContent
+): Files | null {
+  if (
+    type !== FOLDER_DIGEST ||
+    typeof files !== 'object' ||
+    files === null ||
+    Array.isArray(files)
+  )
+    return null
+  const count = (key: string) => {
+    const value: unknown = (files as Record<string, unknown>)[key]
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+      ? value
+      : 0
+  }
+  return {
+    created: count('created'),
+    updated: count('updated'),
+    deleted: count('deleted'),
+    samples: Array.isArray(samples)
+      ? samples.filter(s => typeof s === 'string').slice(0, 5)
+      : []
+  }
 }
 
 type NamedActor =
@@ -66,6 +105,7 @@ export type FeedItem =
       }
       preview: string | null
       state: object
+      files: Files | null
     })
   | (Common & {
       kind: 'post'
@@ -287,6 +327,7 @@ async function loadItems(
         !Array.isArray(content.state)
           ? content.state
           : {},
+      files: toFiles(card.type, content),
       reactions: reactionsOf(card.id)
     })
   }

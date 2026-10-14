@@ -360,6 +360,11 @@
     "deletedUser": "Người dùng đã xóa",
     "someone": "Ai đó",
     "fromDrive": "Từ Drive",
+    "files": {
+      "created": "đã thêm %{count} tệp",
+      "updated": "đã cập nhật %{count} tệp",
+      "deleted": "đã xóa %{count} tệp"
+    },
     "emoji": "Thêm biểu tượng cảm xúc",
     "members": {
       "title": "Thành viên không gian",

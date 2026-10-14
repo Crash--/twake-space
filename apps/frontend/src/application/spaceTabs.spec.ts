@@ -139,7 +139,8 @@ describe('itemPlace', () => {
       container: { kind: 'project', id: 'project-1' }
     },
     preview: null,
-    state: {}
+    state: {},
+    files: null
   }
   const post: FeedPost = {
     id: 'post-1',

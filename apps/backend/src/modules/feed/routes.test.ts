@@ -128,6 +128,9 @@ async function aCard(
     category?: 'files' | 'events'
     spaceId?: string
     state?: unknown
+    type?: string
+    files?: unknown
+    samples?: unknown
   } = {}
 ) {
   const spaceId = options.spaceId ?? DESIGN
@@ -138,7 +141,7 @@ async function aCard(
       eventId: `${spaceId}-${objectId}-${time}`,
       organizationId: 'org-1',
       spaceId,
-      type: 'com.twake.drive.file.created.v1',
+      type: options.type ?? 'com.twake.drive.file.created.v1',
       category: options.category ?? 'files',
       actor: { type: 'user', id: ALICE, email: 'alice@example.com' },
       objectType: 'file',
@@ -151,7 +154,9 @@ async function aCard(
           container: { kind: 'drive', id: 'drive-1' }
         },
         preview: 'First draft',
-        state: options.state
+        state: options.state,
+        files: options.files,
+        samples: options.samples
       },
       time: new Date(time)
     })
@@ -245,6 +250,7 @@ describe('GET /spaces/:spaceId/feed', () => {
           },
           preview: 'First draft',
           state: {},
+          files: null,
           reactions: [{ key: '👍', userIds: [BOB, CAROL] }]
         }
       ],
@@ -485,6 +491,66 @@ describe('GET /spaces/:spaceId/feed/items/:itemId', () => {
     const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
 
     expect(found.json()).toMatchObject({ state: {} })
+  })
+
+  const DIGEST = 'com.twake.drive.folder.changed.v1'
+
+  it('answers the file counts and sample names of a folder digest', async () => {
+    const card = await aCard('q4', '2026-10-05T09:00:00Z', {
+      type: DIGEST,
+      files: { created: 1200, updated: 3, deleted: 0 },
+      samples: ['logo.svg', 'banner.png']
+    })
+
+    const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
+
+    expect(found.json()).toMatchObject({
+      files: {
+        created: 1200,
+        updated: 3,
+        deleted: 0,
+        samples: ['logo.svg', 'banner.png']
+      }
+    })
+  })
+
+  it('reads a count an app sent that is not a whole number as 0', async () => {
+    const card = await aCard('q4', '2026-10-05T09:00:00Z', {
+      type: DIGEST,
+      files: { created: '12', updated: -1, deleted: 2.5 },
+      samples: ['logo.svg', 7]
+    })
+
+    const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
+
+    expect(found.json()).toMatchObject({
+      files: { created: 0, updated: 0, deleted: 0, samples: ['logo.svg'] }
+    })
+  })
+
+  it('keeps the first five sample names of a folder digest', async () => {
+    const card = await aCard('q4', '2026-10-05T09:00:00Z', {
+      type: DIGEST,
+      files: { created: 6 },
+      samples: ['a', 'b', 'c', 'd', 'e', 'f']
+    })
+
+    const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
+
+    expect(found.json()).toMatchObject({
+      files: { samples: ['a', 'b', 'c', 'd', 'e'] }
+    })
+  })
+
+  it('answers no file counts for an event that is not a folder digest', async () => {
+    const card = await aCard('q4', '2026-10-05T09:00:00Z', {
+      files: { created: 3 },
+      samples: ['logo.svg']
+    })
+
+    const found = await setUp()('GET', `/spaces/${DESIGN}/feed/items/${card}`)
+
+    expect(found.json()).toMatchObject({ files: null })
   })
 })
 
