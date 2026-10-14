@@ -176,7 +176,7 @@ async function reconcileSpace(
       .map(g => g.groupId)
     if (unlinked.length > 0) await unlinkGroups(tx, id, at, unlinked)
     // Also when nothing changed: it repairs a drive whose command was lost.
-    await ensureDrive(tx, id)
+    ensureDrive(tx, id)
   })
 }
 

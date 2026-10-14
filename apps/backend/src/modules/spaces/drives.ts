@@ -1,6 +1,6 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { eq, isNotNull, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
-import { afterCommit, type Db, type Tx } from '../../infra/db.ts'
+import { afterCommit, beforeCommit, type Db, type Tx } from '../../infra/db.ts'
 import {
   driveCommands,
   spaceGroups,
@@ -13,47 +13,84 @@ import {
 // full state and makes its organization drive match it.
 
 const SWEEP_EVERY_MS = 10_000
-const BATCH = 100
 
 type SpaceRole = (typeof spaceRole.enumValues)[number]
 const right = (role: SpaceRole) => (role === 'viewer' ? 'read' : 'write')
+
+// Milliseconds since the epoch, so the revision keeps increasing after the
+// table is restored or rebuilt.
+const now = sql`(extract(epoch from clock_timestamp()) * 1000)::bigint`
+const next = sql`greatest(${driveCommands.revision} + 1, ${now})`
 
 export type PublishCommand = (command: Record<string, unknown>) => Promise<void>
 
 let nudge: () => void = () => undefined
 
+interface Change {
+  removed: boolean
+  organizationId?: string | undefined
+}
+
+const DRIVES = Symbol('drives')
+
+function changes(tx: Tx) {
+  return beforeCommit(tx, DRIVES, () => new Map<string, Change>(), storeAll)
+}
+
+// At the end of the transaction and in space id order, so two transactions
+// cannot deadlock on their drive rows or on the rows they lock before.
+async function storeAll(tx: Tx, changed: Map<string, Change>) {
+  const ordered = [...changed].sort(([a], [b]) => (a < b ? -1 : 1))
+  for (const [spaceId, change] of ordered) await store(tx, spaceId, change)
+}
+
 // The row lock taken here holds until the commit, so the state read after it is
 // at least as new as the one sent with any lower revision.
-async function store(
-  tx: Tx,
-  spaceId: string,
-  organizationId: string | undefined,
-  removed: boolean
-) {
-  const next = { revision: sql`${driveCommands.revision} + 1` }
+async function store(tx: Tx, spaceId: string, change: Change) {
+  const [space] = change.removed
+    ? []
+    : await tx
+        .select({ organizationId: spaces.organizationId })
+        .from(spaces)
+        .where(eq(spaces.spaceId, spaceId))
+  const organizationId = space?.organizationId ?? change.organizationId
+  if (!change.removed && !space) return
   const [counted] =
     organizationId === undefined
       ? await tx
           .update(driveCommands)
-          .set(next)
+          .set({ revision: next, removed: true })
           .where(eq(driveCommands.spaceId, spaceId))
           .returning()
       : await tx
           .insert(driveCommands)
-          .values({ spaceId, organizationId, revision: 1 })
-          .onConflictDoUpdate({ target: driveCommands.spaceId, set: next })
+          .values({
+            spaceId,
+            organizationId,
+            revision: now,
+            removed: change.removed
+          })
+          .onConflictDoUpdate({
+            target: driveCommands.spaceId,
+            set: change.removed
+              ? { revision: next, removed: true }
+              : { revision: next },
+            ...(!change.removed && {
+              setWhere: eq(driveCommands.removed, false)
+            })
+          })
           .returning()
   if (!counted) return
-  const [space] = removed
+  const [named] = change.removed
     ? []
     : await tx
         .select({ name: spaces.name })
         .from(spaces)
         .where(eq(spaces.spaceId, spaceId))
-  const state = space
+  const state = named
     ? {
         state: 'created',
-        name: space.name,
+        name: named.name,
         members: (
           await tx
             .select({ email: spaceMembers.email, role: spaceMembers.role })
@@ -85,56 +122,56 @@ async function store(
   })
 }
 
-/** Sends the space's state to its drive once the transaction commits. */
-export async function ensureDrive(tx: Tx, spaceId: string): Promise<void> {
-  const [space] = await tx
-    .select({ organizationId: spaces.organizationId })
-    .from(spaces)
-    .where(eq(spaces.spaceId, spaceId))
-  if (space) await store(tx, spaceId, space.organizationId, false)
+/**
+ * Stores the space's state for the sweep to send, once the transaction's other
+ * changes are done.
+ */
+export function ensureDrive(tx: Tx, spaceId: string): void {
+  const changed = changes(tx)
+  if (!changed.has(spaceId)) changed.set(spaceId, { removed: false })
 }
 
 /**
- * Removes the space's drive once the transaction commits. Without an
+ * Stores the removal of the space's drive for the sweep to send. Without an
  * organization, only a space that already sent a command has one to remove.
  */
 export function removeDrive(
   tx: Tx,
   spaceId: string,
   organizationId?: string
-): Promise<void> {
-  return store(tx, spaceId, organizationId, true)
+): void {
+  changes(tx).set(spaceId, { removed: true, organizationId })
 }
 
-// Stops at the first failure: the next sweep tries again. Another replica may
-// publish the same command too, which the stack applies once.
+// Stops at the first failure: the next sweep tries again. The row lock keeps
+// other replicas off the command while it is published, and a change to the
+// space waits for the publish to end.
 export async function publishDriveCommands(
   db: Db,
   publish: PublishCommand,
   stopped = () => false
 ): Promise<void> {
-  for (;;) {
-    const pending = await db
-      .select()
-      .from(driveCommands)
-      .where(isNotNull(driveCommands.command))
-      .limit(BATCH)
-    for (const { spaceId, revision, command } of pending) {
-      // A backlog must not hold up the shutdown: what is left stays stored.
-      if (stopped()) return
-      if (command) await publish(command)
-      // A newer revision stored meanwhile stays to be published.
-      await db
+  // A backlog must not hold up the shutdown: what is left stays stored.
+  while (!stopped()) {
+    const published = await db.transaction(async tx => {
+      const [pending] = await tx
+        .select({
+          spaceId: driveCommands.spaceId,
+          command: driveCommands.command
+        })
+        .from(driveCommands)
+        .where(isNotNull(driveCommands.command))
+        .limit(1)
+        .for('update', { skipLocked: true })
+      if (!pending?.command) return false
+      await publish(pending.command)
+      await tx
         .update(driveCommands)
         .set({ command: null })
-        .where(
-          and(
-            eq(driveCommands.spaceId, spaceId),
-            eq(driveCommands.revision, revision)
-          )
-        )
-    }
-    if (pending.length < BATCH) return
+        .where(eq(driveCommands.spaceId, pending.spaceId))
+      return true
+    })
+    if (!published) return
   }
 }
 

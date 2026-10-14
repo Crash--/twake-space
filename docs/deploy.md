@@ -167,7 +167,7 @@ The defaults match the platform. [Events](events.md#consuming-rabbitmq) lists th
 - `AMQP_ACTIVITY_EXCHANGE`: the exchange the apps publish their activity on, default `activity`.
 - `AMQP_TWAKE_SPACE_EXCHANGE`: the topic exchange Twake Space publishes its own messages on, default `twake-space`. The backend declares it as a durable topic exchange on its first publish.
 - `AMQP_LIVE_EXCHANGE`: the topic exchange replicas share live updates and session revocations on, default `twake-space.live`. The backend declares it, and each replica binds its own exclusive queue to it, named `<exchange>.replica.<uuid>`. The RabbitMQ user needs configure, write and read on both names.
-- `AMQP_DRIVE_EXCHANGE`: the topic exchange Twake Space sends each space's drive commands on, default `drive`. The backend declares it as a durable topic exchange on its first publish, so the RabbitMQ user needs configure and write on it. [Events](events.md#drive-commands) has the command.
+- `AMQP_DRIVE_EXCHANGE`: the topic exchange Twake Space sends each space's drive commands on, default `drive`. The deployment declares it: the backend only checks it, so the RabbitMQ user needs write on it, and while it is missing the commands stay stored. [Events](events.md#drive-commands) has the command.
 - `AMQP_DRIVE_ROUTING_KEY`: the routing key of the drive commands, default `drive.org_drive.ensure`. A `*` or `#` in it is a configuration error.
 - `AMQP_PROVISIONED_BINDING`: the pattern that binds the apps' provisioned events from the activity exchange to `twake-space`, default `com.twake.*.space.provisioned.v1`.
 - `AMQP_DRIVE_REPLIES_BINDING`: the pattern that binds Drive's replies from the activity exchange to `twake-space`, default `com.twake.drive.org_drive.#`.
@@ -187,8 +187,7 @@ The backend starts in this order. A failure at any step stops the process.
 6. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
 7. Opens a second connection, declares the activity queue, its binding and dead letter queue, and starts consuming it.
 8. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
-9. Opens a third connection, for the drive commands.
-10. Starts the background jobs and reports ready.
+9. Starts the background jobs and reports ready. The drive commands open their own connection on their first publish, and again after it drops.
 
 On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry or a drive command publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
 
@@ -227,7 +226,7 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 ### RabbitMQ
 
-- The `space`, `b2b` and `admin-panel` exchanges must exist before the backend starts, or it stops. Their owners declare them; compose declares them locally. These and the names below are the defaults: see [RabbitMQ names](#rabbitmq-names).
+- The `space`, `b2b` and `admin-panel` exchanges must exist before the backend starts, or it stops. The `drive` exchange must exist for the drive commands to leave. Their owners declare them; compose declares them locally. These and the names below are the defaults: see [RabbitMQ names](#rabbitmq-names).
 - The backend declares the `activity` and `settings` exchanges, its `twake-space` and `twake-space.activity` quorum queues with their bindings, the `twake-space.dlx` and `twake-space.activity.dlx` exchanges, the `twake-space.dlq` and `twake-space.activity.dlq` queues, and the `twake-space` and `twake-space.live` exchanges it publishes on, with one `twake-space.live.replica.<uuid>` queue per replica. Its user needs configure, write and read permissions on those.
 - Meeting requests are published on `twake-space` with publisher confirms and `mandatory`, with a 10 second timeout: they fail while no calendar consumer has a queue bound.
 - Live updates are published once, and dropped while the replica is disconnected.

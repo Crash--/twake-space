@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm'
 import {
   bigint,
+  boolean,
   bytea,
   index,
   jsonb,
@@ -156,15 +158,26 @@ export const spaceResources = pgTable(
 // Never deleted, so a deleted space's revision keeps counting and a late command
 // with a lower one cannot bring its drive back. Locking the row makes the
 // changes and drive replies of one space take turns. `command` waits here until
-// the broker confirms it. `repliedRevision` is that of the last reply applied,
-// so a late reply cannot bring back a drive that was replaced or removed.
-export const driveCommands = pgTable('drive_commands', {
-  spaceId: uuid('space_id').primaryKey(),
-  organizationId: text('organization_id').notNull(),
-  revision: bigint({ mode: 'number' }).notNull(),
-  command: jsonb().$type<Record<string, unknown>>(),
-  repliedRevision: bigint('replied_revision', { mode: 'number' })
-})
+// the broker confirms it. `removed` keeps the drive of a space whose
+// organization was deleted from coming back. `repliedRevision` is that of the
+// last reply applied, so a late reply cannot bring back a drive that was
+// replaced or removed.
+export const driveCommands = pgTable(
+  'drive_commands',
+  {
+    spaceId: uuid('space_id').primaryKey(),
+    organizationId: text('organization_id').notNull(),
+    revision: bigint({ mode: 'number' }).notNull(),
+    removed: boolean().notNull().default(false),
+    command: jsonb().$type<Record<string, unknown>>(),
+    repliedRevision: bigint('replied_revision', { mode: 'number' })
+  },
+  table => [
+    index('drive_commands_pending_idx')
+      .on(table.spaceId)
+      .where(sql`${table.command} is not null`)
+  ]
+)
 
 // What a member did with a space: pinned it, opened it last.
 export const spaceMarks = pgTable(

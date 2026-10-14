@@ -25,6 +25,7 @@ import {
 } from '../tokens/revocation.ts'
 import { ensureDrive, removeDrive } from './drives.ts'
 import {
+  driveCommands,
   groupNames,
   organizationMembers,
   organizationRole,
@@ -261,7 +262,7 @@ export async function upsertGroups(
       target: [spaceGroups.spaceId, spaceGroups.groupId],
       set: { name: sql`excluded.name`, role: sql`excluded.role` }
     })
-  await ensureDrive(tx, spaceId)
+  ensureDrive(tx, spaceId)
   await tellSpaceMembers(tx, spaceId)
 }
 
@@ -303,7 +304,7 @@ export async function upsertMembers(
         role: sql`excluded.role`
       }
     })
-  await ensureDrive(tx, spaceId)
+  ensureDrive(tx, spaceId)
   tell(tx, 'spaces', [...byUser.keys()], { spaceId })
 }
 
@@ -359,7 +360,7 @@ async function removeMembers(
       )
     )
   )
-  // In one order, so two transactions cannot deadlock on their drive rows.
+  // In one order, so two transactions cannot deadlock on their rows.
   for (const spaceId of [...new Set(removed.map(m => m.spaceId))].sort()) {
     const left = removed.filter(m => m.spaceId === spaceId).map(m => m.userId)
     await tx
@@ -367,7 +368,7 @@ async function removeMembers(
       .where(
         and(eq(spaceMarks.spaceId, spaceId), inArray(spaceMarks.userId, left))
       )
-    await ensureDrive(tx, spaceId)
+    ensureDrive(tx, spaceId)
     tell(tx, 'spaces', left, { spaceId })
   }
 }
@@ -416,7 +417,7 @@ export async function createSpace(
     })
   await upsertMembers(tx, log, space.id, at, space.members)
   await upsertGroups(tx, space.id, at, space.groups)
-  await ensureDrive(tx, space.id)
+  ensureDrive(tx, space.id)
 }
 
 const onUpdated: Handler<PlatformEvent> = async (event, tx) => {
@@ -450,7 +451,7 @@ export async function renameSpace(
     if (seen) return
     throw new NotYetKnownError(`unknown space ${id}`)
   }
-  await ensureDrive(tx, id)
+  ensureDrive(tx, id)
   await tellSpaceMembers(tx, id)
 }
 
@@ -489,9 +490,15 @@ export async function deleteSpace(
     .delete(spaces)
     .where(eq(spaces.spaceId, id))
     .returning({ organizationId: spaces.organizationId })
-  await removeDrive(tx, id, deleted?.organizationId)
-  // After removeDrive locks the drive_commands row: a drive reply that held it
-  // first has committed its drive by now, and one still waiting finds no space.
+  removeDrive(tx, id, deleted?.organizationId)
+  // The removal is stored at the commit, so lock the drive_commands row now: a
+  // drive reply that held it first has committed its drive by now, and one
+  // still waiting finds no space.
+  await tx
+    .select({ spaceId: driveCommands.spaceId })
+    .from(driveCommands)
+    .where(eq(driveCommands.spaceId, id))
+    .for('update')
   const resources = await tx
     .delete(spaceResources)
     .where(eq(spaceResources.spaceId, id))
@@ -588,7 +595,7 @@ export async function unlinkGroups(
       )
     )
   )
-  await ensureDrive(tx, id)
+  ensureDrive(tx, id)
   await tellSpaceMembers(tx, id)
 }
 
@@ -801,8 +808,7 @@ const onMemberDisabled: Handler<PlatformEvent> = async (event, tx, log) => {
         eq(spaces.organizationId, disabled.organizationId)
       )
     )
-    .orderBy(spaceMembers.spaceId)
-  for (const { spaceId } of joined) await ensureDrive(tx, spaceId)
+  for (const { spaceId } of joined) ensureDrive(tx, spaceId)
 }
 
 const organizationDeleted = z.looseObject({
@@ -825,10 +831,7 @@ const onOrganizationDeleted: Handler<PlatformEvent> = async (event, tx) => {
     .select({ spaceId: spaces.spaceId })
     .from(spaces)
     .where(eq(spaces.organizationId, organizationId))
-    .orderBy(spaces.spaceId)
-  for (const { spaceId } of owned) {
-    await removeDrive(tx, spaceId, organizationId)
-  }
+  for (const { spaceId } of owned) removeDrive(tx, spaceId, organizationId)
 }
 
 export const spacePlatformRoutes: ReadonlyMap<

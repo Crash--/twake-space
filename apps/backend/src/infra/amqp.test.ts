@@ -1,6 +1,16 @@
+import { EventEmitter } from 'node:events'
 import type { RabbitMQMessageProperties } from '@linagora/rabbitmq-client'
+import type amqplib from 'amqplib'
 import { pino } from 'pino'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock
+} from 'vitest'
 import type { IncomingMessage, Outcome } from '../events/router.ts'
 import { amqpTopology } from '../events/topology.ts'
 import {
@@ -10,6 +20,7 @@ import {
   consumerStats,
   deadLetterQueue,
   deliveryHandler,
+  drivePublisher,
   subscription
 } from './amqp.ts'
 
@@ -347,5 +358,142 @@ describe('deadLetterQueue', () => {
         }
       }
     )
+  })
+})
+
+function fakeBroker() {
+  const state = {
+    exchangeExists: true,
+    reachable: true,
+    unroutable: false,
+    confirming: true,
+    answering: true
+  }
+  const channels: {
+    checkExchange: Mock
+    assertExchange: Mock
+    publish: Mock
+  }[] = []
+  const connections: (EventEmitter & { close: Mock })[] = []
+  const connect = vi.fn(() => {
+    if (!state.reachable) return Promise.reject(new Error('ECONNREFUSED'))
+    const connection = Object.assign(new EventEmitter(), {
+      close: vi.fn(() => Promise.resolve()),
+      createConfirmChannel: () => {
+        const channel = Object.assign(new EventEmitter(), {
+          checkExchange: vi.fn(() =>
+            !state.answering
+              ? new Promise(() => undefined)
+              : state.exchangeExists
+                ? Promise.resolve({})
+                : Promise.reject(new Error('NOT_FOUND - no exchange'))
+          ),
+          assertExchange: vi.fn(),
+          publish: vi.fn(() => {
+            if (state.unroutable) channel.emit('return', {})
+            return true
+          }),
+          waitForConfirms: () =>
+            state.confirming
+              ? Promise.resolve()
+              : new Promise<void>(() => undefined)
+        })
+        channels.push(channel)
+        return Promise.resolve(channel)
+      }
+    })
+    connections.push(connection)
+    return Promise.resolve(connection)
+  })
+  return {
+    connect: connect as unknown as () => Promise<amqplib.ChannelModel>,
+    connects: connect,
+    channels,
+    connections,
+    state
+  }
+}
+
+describe('drivePublisher', () => {
+  const topology = amqpTopology.parse({}).amqp
+
+  it('checks the drive exchange, never declares it, and publishes the command mandatory', async () => {
+    const broker = fakeBroker()
+    const drives = drivePublisher(broker.connect, topology, 1000)
+
+    await drives.publish({ revision: 1 })
+    await drives.publish({ revision: 2 })
+
+    const [channel] = broker.channels
+    expect(broker.connects).toHaveBeenCalledTimes(1)
+    expect(channel?.checkExchange).toHaveBeenCalledWith('drive')
+    expect(channel?.assertExchange).not.toHaveBeenCalled()
+    expect(channel?.publish).toHaveBeenLastCalledWith(
+      'drive',
+      'drive.org_drive.ensure',
+      Buffer.from(JSON.stringify({ revision: 2 })),
+      expect.objectContaining({ mandatory: true, persistent: true })
+    )
+  })
+
+  it('fails while the exchange is missing, and checks again on the next publish', async () => {
+    const broker = fakeBroker()
+    broker.state.exchangeExists = false
+    const drives = drivePublisher(broker.connect, topology, 1000)
+
+    await expect(drives.publish({ revision: 1 })).rejects.toThrow('NOT_FOUND')
+    expect(broker.connections[0]?.close).toHaveBeenCalled()
+
+    broker.state.exchangeExists = true
+    await drives.publish({ revision: 1 })
+    expect(broker.connects).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails a command no queue takes', async () => {
+    const broker = fakeBroker()
+    broker.state.unroutable = true
+    const drives = drivePublisher(broker.connect, topology, 1000)
+
+    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+      'no queue is bound'
+    )
+  })
+
+  it('fails at once while the broker is unreachable, and reconnects once it is back', async () => {
+    const broker = fakeBroker()
+    const drives = drivePublisher(broker.connect, topology, 1000)
+    await drives.publish({ revision: 1 })
+    broker.state.reachable = false
+    broker.connections[0]?.emit('close')
+
+    await expect(drives.publish({ revision: 2 })).rejects.toThrow(
+      'ECONNREFUSED'
+    )
+
+    broker.state.reachable = true
+    await drives.publish({ revision: 2 })
+    expect(broker.connects).toHaveBeenCalledTimes(3)
+  })
+
+  it('drops the connection when the broker does not confirm in time', async () => {
+    const broker = fakeBroker()
+    broker.state.confirming = false
+    const drives = drivePublisher(broker.connect, topology, 10)
+
+    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+      'did not confirm in time'
+    )
+    expect(broker.connections[0]?.close).toHaveBeenCalled()
+  })
+
+  it('fails in time when the broker stalls before the channel is ready', async () => {
+    const broker = fakeBroker()
+    broker.state.answering = false
+    const drives = drivePublisher(broker.connect, topology, 10)
+
+    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+      'did not confirm in time'
+    )
+    expect(broker.channels[0]?.publish).not.toHaveBeenCalled()
   })
 })

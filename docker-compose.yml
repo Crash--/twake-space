@@ -19,7 +19,7 @@ services:
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
-        for exchange in space b2b admin-panel; do
+        for exchange in space b2b admin-panel drive; do
           rabbitmqadmin --host rabbitmq --non-interactive declare exchange \
             --name "$$exchange" --type topic --durable true || exit 1
         done

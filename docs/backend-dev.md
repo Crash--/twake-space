@@ -15,7 +15,7 @@ cp apps/backend/.env.example apps/backend/.env
 npm run dev -w @twake-space/backend
 ```
 
-- `docker compose up -d` starts RabbitMQ, declares the `space`, `b2b` and `admin-panel` exchanges the backend expects, and starts Postgres. The `backend` and `frontend` services sit behind the `app` profile and do not start by default.
+- `docker compose up -d` starts RabbitMQ, declares the `space`, `b2b`, `admin-panel` and `drive` exchanges the backend expects, and starts Postgres. The `backend` and `frontend` services sit behind the `app` profile and do not start by default.
 - Fill in `LDAP_REST_SECRET` and `OIDC_CLIENT_SECRET` in `.env`. The other values in `.env.example` match the compose services.
 - `npm run dev` runs `src/main.ts` with `node --watch`, loads `.env` if it exists, and preloads `src/instrument.ts` for Sentry. Node runs the TypeScript directly, there is no build step in dev.
 - The API listens on port 8080. `/health/live` and `/health/ready` answer there, and `/metrics` answers on port 9464.

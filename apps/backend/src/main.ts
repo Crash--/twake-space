@@ -1,15 +1,16 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import * as Sentry from '@sentry/node'
+import amqplib from 'amqplib'
 import { pino } from 'pino'
 import { loadConfig } from './config.ts'
 import { postgresDeduplicator } from './events/dedupe.ts'
 import { parkIn, scheduleParkedRetries } from './events/parking.ts'
 import { createMessageHandler, type Routes } from './events/router.ts'
 import {
-  connectPublisher,
   consumerAlive,
   consumerStats,
   deadLetterQueue,
+  drivePublisher,
   startConsumers
 } from './infra/amqp.ts'
 import { createDb, migrateDb } from './infra/db.ts'
@@ -168,8 +169,7 @@ const consumers = await startConsumers(
   {
     // It still drains the activity events older versions bound to it.
     space: handle,
-    // The space queue handles provisioned events and drive replies, in order
-    // with the space's own events.
+    // The space queue handles provisioned events and drive replies.
     activity: createMessageHandler({
       routes: { ...routes, activity: activityRoute },
       ...handlerDeps
@@ -179,10 +179,9 @@ const consumers = await startConsumers(
   client => listenForLive(client, config.amqp.liveExchange, streams, logger)
 )
 const consumer = consumers.space
-// Mandatory: unroutable while no calendar consumer is bound, so the route
-// fails instead of dropping the meeting. The client waits for the broker
-// without end and retries for over a minute, longer than a request should
-// hang; a publish that lands late is harmless, the retry carries its uid.
+// The client waits for the broker without end and retries for over a minute,
+// longer than a request should hang; a publish that lands late is harmless,
+// the retry carries its uid.
 const confirmed = (published: Promise<void>) =>
   Promise.race([
     published,
@@ -190,6 +189,8 @@ const confirmed = (published: Promise<void>) =>
       throw new Error('RabbitMQ did not confirm in time')
     })
   ])
+// Mandatory: unroutable while no calendar consumer is bound, so the route
+// fails instead of dropping the meeting.
 publish = (routingKey, event, messageId) => {
   if (!consumer.isConnected()) {
     return Promise.reject(new Error('RabbitMQ is disconnected'))
@@ -201,21 +202,12 @@ publish = (routingKey, event, messageId) => {
     })
   )
 }
-// Mandatory, so a command stays stored until the stack's queue takes it.
-const drivePublisher = await connectPublisher(config, logger)
-const stopDriveCommands = scheduleDriveCommands(
-  db,
-  command =>
-    confirmed(
-      drivePublisher.publish(
-        config.amqp.driveExchange,
-        config.amqp.driveRoutingKey,
-        command,
-        { mandatory: true, maxAttempts: 1 }
-      )
-    ),
-  logger
+const drives = drivePublisher(
+  () => amqplib.connect(config.AMQP_URL, { timeout: PUBLISH_TIMEOUT_MS }),
+  config.amqp,
+  PUBLISH_TIMEOUT_MS
 )
+const stopDriveCommands = scheduleDriveCommands(db, drives.publish, logger)
 isAlive = consumerAlive([consumers.space, consumers.activity], consumerStatus)
 const stopParked = scheduleParkedRetries(
   db,
@@ -243,7 +235,7 @@ lifecycle.started(async () => {
     await Promise.all([
       consumers.space.close(),
       consumers.activity.close(),
-      drivePublisher.close()
+      drives.close()
     ])
     await delay(DRAIN_MS)
     await server.close()

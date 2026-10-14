@@ -18,11 +18,17 @@ type Transaction = Db['transaction']
 
 const commitHooks = new WeakMap<Tx, (() => void)[]>()
 
+type Finishing = Map<
+  symbol,
+  { value: unknown; finish: (tx: Tx, value: unknown) => Promise<void> }
+>
+const finishing = new WeakMap<Tx, Finishing>()
+
 // Drizzle has no commit hook. A savepoint hands its hooks to its transaction
 // once it is released, so one that rolls back alone drops them.
 function runHooksOnCommit(
   target: { transaction: Transaction },
-  outer?: (() => void)[]
+  outer?: { hooks: (() => void)[]; finishing: Finishing }
 ) {
   const transaction = target.transaction.bind(target)
   target.transaction = (async (
@@ -30,12 +36,20 @@ function runHooksOnCommit(
     config?: Parameters<Transaction>[1]
   ) => {
     const hooks: (() => void)[] = []
-    const result = await transaction(tx => {
+    const result = await transaction(async tx => {
+      const finishes: Finishing = outer?.finishing ?? (new Map() as Finishing)
       commitHooks.set(tx, hooks)
-      runHooksOnCommit(tx, hooks)
-      return body(tx)
+      finishing.set(tx, finishes)
+      runHooksOnCommit(tx, { hooks, finishing: finishes })
+      const result = await body(tx)
+      if (!outer) {
+        for (const { value, finish } of finishes.values()) {
+          await finish(tx, value)
+        }
+      }
+      return result
     }, config)
-    if (outer) outer.push(...hooks)
+    if (outer) outer.hooks.push(...hooks)
     else for (const hook of hooks) hook()
     return result
   }) as Transaction
@@ -52,6 +66,30 @@ export function afterCommit(tx: Tx, hook: () => void): void {
   const hooks = commitHooks.get(tx)
   if (!hooks) throw new Error('not in a transaction')
   hooks.push(hook)
+}
+
+/**
+ * Returns the value the transaction holds under `key`, starting it on first
+ * use, and calls `finish` with it once the transaction's body is done, still
+ * inside the transaction. Savepoints share their transaction's values, even
+ * when they roll back.
+ */
+export function beforeCommit<T>(
+  tx: Tx,
+  key: symbol,
+  start: () => T,
+  finish: (tx: Tx, value: T) => Promise<void>
+): T {
+  const finishes = finishing.get(tx)
+  if (!finishes) throw new Error('not in a transaction')
+  const held = finishes.get(key)
+  if (held) return held.value as T
+  const value = start()
+  finishes.set(key, {
+    value,
+    finish: finish as (tx: Tx, value: unknown) => Promise<void>
+  })
+  return value
 }
 
 // Postgres data exceptions (22), integrity violations (23) and program limits

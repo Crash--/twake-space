@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import {
   DeadLetterError,
   RabbitMQClient,
@@ -250,18 +251,104 @@ async function connect(
   return client
 }
 
-// Its own connection: a publish the broker refuses closes the channel, which
-// must not stop a consumer.
-export async function connectPublisher(
-  config: Config,
-  logger: Logger
-): Promise<RabbitMQClient> {
-  const client = new RabbitMQClient({
-    url: config.AMQP_URL,
-    logger: logger.child({ component: 'amqp' }, { level: 'warn' })
-  })
-  await client.init()
-  return client
+export interface DrivePublisher {
+  publish: (command: Record<string, unknown>) => Promise<void>
+  close: () => Promise<void>
+}
+
+// The deployment owns the drive exchange, so it is checked, never declared.
+// One attempt per publish and no reconnect loop: during an outage a sweep fails
+// at once instead of queueing publishes for when the broker returns. Its own
+// connection, as a refused publish closes the channel and must not stop a
+// consumer.
+export function drivePublisher(
+  connect: () => Promise<amqplib.ChannelModel>,
+  topology: Pick<AmqpTopology, 'driveExchange' | 'driveRoutingKey'>,
+  timeoutMs: number
+): DrivePublisher {
+  const { driveExchange: exchange, driveRoutingKey: routingKey } = topology
+  let open:
+    | { connection: amqplib.ChannelModel; channel: amqplib.ConfirmChannel }
+    | undefined
+  const reset = () => {
+    const connection = open?.connection
+    open = undefined
+    connection?.close().catch(() => undefined)
+  }
+  const opened = async () => {
+    if (open) return open
+    const connection = await connect()
+    connection.on('error', () => undefined)
+    connection.on('close', () => {
+      if (open?.connection === connection) open = undefined
+    })
+    try {
+      const channel = await connection.createConfirmChannel()
+      channel.on('error', () => undefined)
+      channel.on('close', () => {
+        if (open?.channel === channel) reset()
+      })
+      await channel.checkExchange(exchange)
+      open = { connection, channel }
+      return open
+    } catch (error) {
+      await connection.close().catch(() => undefined)
+      throw error
+    }
+  }
+  return {
+    // The deadline also covers opening the channel: the caller holds the
+    // command's row lock meanwhile, and amqplib's own timeout stops at the
+    // handshake.
+    async publish(command) {
+      let returned = false as boolean
+      let expired = false
+      const send = async () => {
+        const { channel } = await opened()
+        if (expired) return
+        const onReturn = () => {
+          returned = true
+        }
+        channel.on('return', onReturn)
+        try {
+          channel.publish(
+            exchange,
+            routingKey,
+            Buffer.from(JSON.stringify(command)),
+            {
+              persistent: true,
+              mandatory: true,
+              contentType: 'application/json'
+            }
+          )
+          await channel.waitForConfirms()
+        } finally {
+          channel.off('return', onReturn)
+        }
+      }
+      try {
+        await Promise.race([
+          send(),
+          delay(timeoutMs, undefined, { ref: false }).then(() => {
+            expired = true
+            throw new Error('RabbitMQ did not confirm in time')
+          })
+        ])
+      } catch (error) {
+        reset()
+        throw error
+      }
+      // RabbitMQ returns an unroutable message before it confirms it.
+      if (returned) {
+        throw new Error(`no queue is bound to ${exchange}/${routingKey}`)
+      }
+    },
+    async close() {
+      const connection = open?.connection
+      open = undefined
+      await connection?.close()
+    }
+  }
 }
 
 async function consume(

@@ -1,0 +1,2 @@
+ALTER TABLE "drive_commands" ADD COLUMN "removed" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "drive_commands_pending_idx" ON "drive_commands" ("space_id") WHERE "command" is not null;

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises'
 import { asc, eq } from 'drizzle-orm'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -141,10 +142,11 @@ describe('drive commands', () => {
     expect(await pending()).toEqual({
       organizationId: ORG,
       reference: { source: 'twake-space', id: SPACE_ID },
-      revision: before + 1,
+      revision: expect.any(Number) as number,
       state: 'removed',
       activity: true
     })
+    expect((await pending())?.revision).toBeGreaterThan(before)
   })
 
   it('removes the drive of every space of a deleted organization', async () => {
@@ -155,6 +157,74 @@ describe('drive commands', () => {
 
     expect(await pending()).toMatchObject({ state: 'removed' })
     expect(await pending(OTHER_ID)).toMatchObject({ state: 'removed' })
+  })
+
+  it('never creates again the drive of a space whose organization is deleted', async () => {
+    await created()
+    await handle('domain.organization.deleted', { organizationId: ORG })
+    await testDb.db.update(driveCommands).set({ command: null })
+
+    await handle('twake.space.updated', {
+      organizationId: ORG,
+      id: SPACE_ID,
+      name: 'Launch'
+    })
+    await handle('b2b.member.disabled', {
+      organizationId: ORG,
+      username: 'jdoe',
+      email: 'jdoe@evilcorp.com'
+    })
+    await handle('domain.user.deleted', { uuid: JDOE_ID })
+
+    expect(await pending()).toBeNull()
+  })
+
+  it('stores one command per space for a whole transaction', async () => {
+    await testDb.db
+      .insert(driveCommands)
+      .values({ spaceId: SPACE_ID, organizationId: ORG, revision: 2 ** 50 })
+
+    await created()
+
+    expect((await pending())?.revision).toBe(2 ** 50 + 1)
+  })
+
+  it('keeps counting up after the revisions were reset', async () => {
+    await testDb.db
+      .insert(driveCommands)
+      .values({ spaceId: SPACE_ID, organizationId: ORG, revision: 5 })
+    const before = Date.now()
+
+    await created()
+
+    expect((await pending())?.revision).toBeGreaterThanOrEqual(before)
+  })
+
+  it("locks the drive row only once the transaction's changes are done", async () => {
+    await created()
+    const handler = spacePlatformRoutes.get('twake.space.updated')
+    let lockedMidway: unknown
+
+    await testDb.db.transaction(async tx => {
+      await handler?.(
+        {
+          routingKey: 'twake.space.updated',
+          messageId: 'msg-2',
+          body: { organizationId: ORG, id: SPACE_ID, name: 'Launch' }
+        },
+        tx,
+        log
+      )
+      lockedMidway = await testDb.sql`
+        select 1 from drive_commands where space_id = ${SPACE_ID}
+        for update nowait`.then(
+        () => false,
+        (error: unknown) => error
+      )
+    })
+
+    expect(lockedMidway).toBe(false)
+    expect(await pending()).toMatchObject({ name: 'Launch' })
   })
 
   it('sends again the spaces of a disabled member and of a deleted one', async () => {
@@ -230,16 +300,36 @@ describe('publishDriveCommands', () => {
 
   it('keeps a newer revision stored while publishing', async () => {
     await created()
+    let renamed: Promise<void> | undefined
 
-    await publishDriveCommands(testDb.db, () =>
-      handle('twake.space.updated', {
+    await publishDriveCommands(testDb.db, () => {
+      renamed ??= handle('twake.space.updated', {
         organizationId: ORG,
         id: SPACE_ID,
         name: 'Launch'
       })
-    )
+      return delay(50)
+    })
+    await renamed
 
     expect(await pending()).toMatchObject({ name: 'Launch' })
+  })
+
+  it('lets replicas sweeping together publish each command once', async () => {
+    await created()
+    await created(OTHER_ID)
+    const published: unknown[] = []
+    const publish = (command: Record<string, unknown>) => {
+      published.push(command)
+      return delay(50)
+    }
+
+    await Promise.all([
+      publishDriveCommands(testDb.db, publish),
+      publishDriveCommands(testDb.db, publish)
+    ])
+
+    expect(published).toHaveLength(2)
   })
 
   it('keeps the command when the broker refuses it', async () => {

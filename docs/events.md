@@ -69,7 +69,7 @@ Startup fails when `space`, `b2b` or `admin-panel` is missing, since other servi
 
 Every name above is a setting, listed in [Deploying](deploy.md#rabbitmq-names). The router and the handlers always see the default routing keys and the default `activity` name: the consumer translates them back before routing. A renamed platform exchange is kept as is, so `parked_events` rows and log lines show the deployment's name.
 
-Local `docker-compose.yml` runs RabbitMQ and declares the three exchanges the backend only checks.
+Local `docker-compose.yml` runs RabbitMQ and declares the exchanges the backend only checks: these three and `drive`.
 
 ## Routing
 
@@ -194,10 +194,11 @@ sequenceDiagram
   participant PG as Postgres
   participant P as Publisher
   participant MQ as drive exchange
-  H->>PG: change the copy, next revision, store the command (one transaction)
+  H->>PG: change the copy, then next revision and command (one transaction)
   PG-->>P: after the commit, and every 10 s
+  P->>PG: lock one stored command, skipping locked ones
   P->>MQ: drive.org_drive.ensure (confirmed, mandatory)
-  P->>PG: clear the command, unless a newer revision replaced it
+  P->>PG: clear the command and commit
 ```
 
 ```json
@@ -214,11 +215,13 @@ sequenceDiagram
 ```
 
 - Any change to a space, its name, members or linked groups sends its full state. So do `b2b.member.disabled` for each space the person is in, and the reconciliation for each space ldap-rest lists, so the stack looks its members up again.
-- A deleted space sends `state: removed`, and so does every space of a deleted organization. An archived space, or one in the Bin, keeps its drive.
+- A deleted space sends `state: removed`, and so does every space of a deleted organization. Such a space never sends `created` again, even though Twake Space keeps the spaces of a deleted organization. An archived space, or one in the Bin, keeps its drive.
 - Roles map `viewer` to `read`, `editor` and `admin` to `write`. Groups go by the group id the `twake.space.group.*` events carry.
-- `revision` counts per space in `drive_commands`, a row never deleted. The transaction that changes the space increments it and holds its lock until the commit, so the changes to one space take turns and a higher revision always carries a newer state.
-- The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, or while no queue is bound, and the next pass sends it again.
-- Every replica publishes what it finds stored, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
+- `revision` lives per space in `drive_commands`, a row never deleted. The next one is the greater of the last one plus 1 and the current time in milliseconds, so it keeps increasing after the table is restored or rebuilt.
+- A transaction stores at most one command per space, once all its changes are applied. It locks the drive rows last, in space id order, and holds them until the commit, so the changes to one space take turns and a higher revision always carries a newer state.
+- The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, while no queue is bound, or while the `drive` exchange is missing, and the next pass sends it again. A pass stops at its first failure and logs it once.
+- The backend only checks the `drive` exchange, never declares it. A publish fails at once while the broker is unreachable: the next pass connects again.
+- Each replica locks the command it publishes and skips the ones another replica holds. A replica stopping between the publish and the commit leaves the command to send again, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
 
 ## Activity events
 
@@ -244,7 +247,7 @@ Drive answers each `drive.org_drive.ensure` command for a space with a reply on 
 - `com.twake.drive.org_drive.ready.v1` records `data.drive.id` as the space's `drive` resource, moves into the space the activity events on that drive, as a provisioned event does, and sends a `spaces` live event to the space's members. A reply with the drive already recorded does none of this.
 - `com.twake.drive.org_drive.removed.v1` removes the space's `drive` resource and, when there was one, sends the same live event.
 - `drive_commands.replied_revision` keeps the revision of the last reply applied. A reply with a lower revision changes nothing, so a late reply does not bring back a drive that was replaced or removed. A reply with the same revision applies again.
-- A reply locks the space's `drive_commands` row, as the space's deletion does when it stores `removed`, wherever the deletion comes from. The two take turns, so a reply never leaves a drive on a deleted space.
+- A reply locks the space's `drive_commands` row, as the space's deletion does right after it deletes the space, before it deletes the space's resources. The two take turns, so a reply never leaves a drive on a deleted space.
 - `data.skipped` (the members and groups the drive could not add) is logged as one warning with the space id.
 - A reply about another app's drive is ignored. One for a space the copy does not have is dropped: the space was deleted after the command. A `ready` reply is logged as a warning then, and a `removed` reply, the usual answer to a deletion, at debug. One whose `twakeorg` is not the space's organization is rejected.
 
