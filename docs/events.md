@@ -36,6 +36,7 @@ flowchart LR
   SSE --> B[Browser]
   B -->|HTTP routes| PG
   B -->|meeting request| M[twake-space exchange]
+  PG -->|drive commands, after commit| D[drive exchange]
 ```
 
 ## Consuming RabbitMQ
@@ -182,6 +183,42 @@ The [space write routes](api.md#space-writes) apply their change to the copy the
 ```
 
 `data.uid` is the calendar event's UID. A retry publishes the same UID with a new `id`.
+
+## Drive commands
+
+Each space has a shared drive on its organization's instance, which cozy-stack keeps in line with the state Twake Space sends it ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Every space gets one, whatever its tabs.
+
+```mermaid
+sequenceDiagram
+  participant H as Handler or write route
+  participant PG as Postgres
+  participant P as Publisher
+  participant MQ as drive exchange
+  H->>PG: change the copy, next revision, store the command (one transaction)
+  PG-->>P: after the commit, and every 10 s
+  P->>MQ: drive.org_drive.ensure (confirmed, mandatory)
+  P->>PG: clear the command, unless a newer revision replaced it
+```
+
+```json
+{
+  "organizationId": "<organization id>",
+  "reference": { "source": "twake-space", "id": "<space id>" },
+  "revision": 42,
+  "state": "created",
+  "name": "Design Sprint",
+  "members": [{ "email": "alice@example.com", "role": "write" }],
+  "groups": [{ "id": "<group id>", "role": "read" }],
+  "activity": true
+}
+```
+
+- Any change to a space, its name, members or linked groups sends its full state. So do `b2b.member.disabled` for each space the person is in, and the reconciliation for each space ldap-rest lists, so the stack looks its members up again.
+- A deleted space sends `state: removed`, and so does every space of a deleted organization. An archived space, or one in the Bin, keeps its drive.
+- Roles map `viewer` to `read`, `editor` and `admin` to `write`. Groups go by the group id the `twake.space.group.*` events carry.
+- `revision` counts per space in `drive_commands`, a row never deleted. The transaction that changes the space increments it and holds its lock until the commit, so the changes to one space take turns and a higher revision always carries a newer state.
+- The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, or while no queue is bound, and the next pass sends it again.
+- Every replica publishes what it finds stored, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
 
 ## Activity events
 

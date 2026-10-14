@@ -1,7 +1,9 @@
 import {
+  bigint,
   bytea,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -157,6 +159,17 @@ export const spaceResources = pgTable(
 export const spaceDriveReplies = pgTable('space_drive_replies', {
   spaceId: uuid('space_id').primaryKey(),
   revision: integer().notNull()
+})
+
+// Never deleted, so a deleted space's revision keeps counting and a late command
+// with a lower one cannot bring its drive back. Locking the row makes the
+// changes to one space take turns. `command` waits here until the broker
+// confirms it.
+export const driveCommands = pgTable('drive_commands', {
+  spaceId: uuid('space_id').primaryKey(),
+  organizationId: text('organization_id').notNull(),
+  revision: bigint({ mode: 'number' }).notNull(),
+  command: jsonb().$type<Record<string, unknown>>()
 })
 
 // What a member did with a space: pinned it, opened it last.

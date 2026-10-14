@@ -6,6 +6,7 @@ import { postgresDeduplicator } from './events/dedupe.ts'
 import { parkIn, scheduleParkedRetries } from './events/parking.ts'
 import { createMessageHandler, type Routes } from './events/router.ts'
 import {
+  connectPublisher,
   consumerAlive,
   consumerStats,
   deadLetterQueue,
@@ -42,6 +43,7 @@ import { registerDirectoryRoutes } from './modules/organizations/directory.ts'
 import { configureHomeserver } from './modules/organizations/homeservers.ts'
 import { settingsPlatformRoutes } from './modules/settings/events.ts'
 import { registerSettingsRoutes } from './modules/settings/routes.ts'
+import { ENSURE_DRIVE, scheduleDriveCommands } from './modules/spaces/drives.ts'
 import { spacePlatformRoutes } from './modules/spaces/events.ts'
 import { scheduleReconciliation } from './modules/spaces/reconcile.ts'
 import {
@@ -181,20 +183,37 @@ const consumer = consumers.space
 // fails instead of dropping the meeting. The client waits for the broker
 // without end and retries for over a minute, longer than a request should
 // hang; a publish that lands late is harmless, the retry carries its uid.
-publish = (routingKey, event, messageId) => {
-  if (!consumer.isConnected()) {
-    return Promise.reject(new Error('RabbitMQ is disconnected'))
-  }
-  return Promise.race([
-    consumer.publish(config.amqp.twakeSpaceExchange, routingKey, event, {
-      messageId,
-      mandatory: true
-    }),
+const confirmed = (published: Promise<void>) =>
+  Promise.race([
+    published,
     delay(PUBLISH_TIMEOUT_MS, undefined, { ref: false }).then(() => {
       throw new Error('RabbitMQ did not confirm in time')
     })
   ])
+publish = (routingKey, event, messageId) => {
+  if (!consumer.isConnected()) {
+    return Promise.reject(new Error('RabbitMQ is disconnected'))
+  }
+  return confirmed(
+    consumer.publish(config.amqp.twakeSpaceExchange, routingKey, event, {
+      messageId,
+      mandatory: true
+    })
+  )
 }
+// Mandatory, so a command stays stored until the stack's queue takes it.
+const drivePublisher = await connectPublisher(config, logger)
+const stopDriveCommands = scheduleDriveCommands(
+  db,
+  command =>
+    confirmed(
+      drivePublisher.publish(config.amqp.driveExchange, ENSURE_DRIVE, command, {
+        mandatory: true,
+        maxAttempts: 1
+      })
+    ),
+  logger
+)
 isAlive = consumerAlive([consumers.space, consumers.activity], consumerStatus)
 const stopParked = scheduleParkedRetries(
   db,
@@ -212,9 +231,18 @@ lifecycle.started(async () => {
   stopPurge()
   stopSweep()
   const reconciliationStopped = stopReconciliation()
+  const driveCommandsStopped = stopDriveCommands()
   try {
-    await Promise.all([parkedStopped, reconciliationStopped])
-    await Promise.all([consumers.space.close(), consumers.activity.close()])
+    await Promise.all([
+      parkedStopped,
+      reconciliationStopped,
+      driveCommandsStopped
+    ])
+    await Promise.all([
+      consumers.space.close(),
+      consumers.activity.close(),
+      drivePublisher.close()
+    ])
     await delay(DRAIN_MS)
     await server.close()
     await metrics.close()

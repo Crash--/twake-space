@@ -247,6 +247,20 @@ async function connect(
   return client
 }
 
+// Its own connection: a publish the broker refuses closes the channel, which
+// must not stop a consumer.
+export async function connectPublisher(
+  config: Config,
+  logger: Logger
+): Promise<RabbitMQClient> {
+  const client = new RabbitMQClient({
+    url: config.AMQP_URL,
+    logger: logger.child({ component: 'amqp' }, { level: 'warn' })
+  })
+  await client.init()
+  return client
+}
+
 async function consume(
   client: RabbitMQClient,
   config: Config,

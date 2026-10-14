@@ -167,6 +167,7 @@ The defaults match the platform. [Events](events.md#consuming-rabbitmq) lists th
 - `AMQP_ACTIVITY_EXCHANGE`: the exchange the apps publish their activity on, default `activity`.
 - `AMQP_TWAKE_SPACE_EXCHANGE`: the topic exchange Twake Space publishes its own messages on, default `twake-space`. The backend declares it as a durable topic exchange on its first publish.
 - `AMQP_LIVE_EXCHANGE`: the topic exchange replicas share live updates and session revocations on, default `twake-space.live`. The backend declares it, and each replica binds its own exclusive queue to it, named `<exchange>.replica.<uuid>`. The RabbitMQ user needs configure, write and read on both names.
+- `AMQP_DRIVE_EXCHANGE`: the topic exchange Twake Space sends each space's drive commands on, default `drive`. The backend declares it as a durable topic exchange on its first publish, so the RabbitMQ user needs configure and write on it. [Events](events.md#drive-commands) has the command.
 - `AMQP_EVENTS`: JSON that moves single events to another exchange or routing key, such as `{"dns.validated": {"exchange": "dns", "routingKey": "domain.dns.validated"}}`. An event the backend has no handler for, a key other than `exchange` and `routingKey`, a routing key with `*` or `#`, two events on the same exchange and key, or an event on the activity exchange is a configuration error. An exchange an event moves to must exist, like the platform exchanges: the backend only checks it.
 
 RabbitMQ refuses to redeclare a queue with other arguments, and the queue name, the dead letter exchange, the first `space` event's binding and the delivery limit are arguments, as are the client's fixed `x-overflow` and `x-dead-letter-strategy`. Changing one of them means deleting the queue first, after it has drained. Bindings an older version or setting left on the queue stay until it is deleted, except the `#` binding on the activity exchange, which each start removes from `twake-space`.
@@ -183,9 +184,10 @@ The backend starts in this order. A failure at any step stops the process.
 6. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
 7. Opens a second connection, declares the activity queue, its binding and dead letter queue, and starts consuming it.
 8. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
-9. Starts the background jobs and reports ready.
+9. Opens a third connection, for the drive commands.
+10. Starts the background jobs and reports ready.
 
-On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry still running) and closes both RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
+On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry or a drive command publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
 
 ### Database migrations
 

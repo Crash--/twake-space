@@ -47,7 +47,7 @@ flowchart LR
   apps -->|activity events| mq
   settings -->|settings events| mq
   mq --> be
-  be -->|meeting requests| mq
+  be -->|meeting requests, drive commands| mq
   mq --> apps
   hs -->|app service transactions| be
   sso -->|back-channel logout| be

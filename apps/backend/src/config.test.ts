@@ -134,7 +134,8 @@ describe('loadConfig: RabbitMQ topology', () => {
       activityQueue: 'twake-space.activity',
       activityDeadLetterExchange: 'twake-space.activity.dlx',
       activityConcurrency: 10,
-      activityExchange: 'activity'
+      activityExchange: 'activity',
+      driveExchange: 'drive'
     })
     expect(amqp.events['twake.space.created']).toEqual({
       exchange: 'space',
@@ -162,7 +163,8 @@ describe('loadConfig: RabbitMQ topology', () => {
       AMQP_ACTIVITY_EXCHANGE: 'apps',
       AMQP_B2B_EXCHANGE: 'b2b-saas',
       AMQP_SETTINGS_EXCHANGE: 'common-settings',
-      AMQP_TWAKE_SPACE_EXCHANGE: 'space-commands'
+      AMQP_TWAKE_SPACE_EXCHANGE: 'space-commands',
+      AMQP_DRIVE_EXCHANGE: 'twake-space.drive'
     })
 
     expect(amqp).toMatchObject({
@@ -172,7 +174,8 @@ describe('loadConfig: RabbitMQ topology', () => {
       activityDeadLetterExchange: 'space-events.activity.dlx',
       deliveryLimit: 5,
       activityExchange: 'apps',
-      twakeSpaceExchange: 'space-commands'
+      twakeSpaceExchange: 'space-commands',
+      driveExchange: 'twake-space.drive'
     })
     expect(amqp.events['b2b.group.updated'].exchange).toBe('b2b-saas')
     expect(amqp.events['user.settings.updated'].exchange).toBe(

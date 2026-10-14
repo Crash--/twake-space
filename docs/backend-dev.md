@@ -37,6 +37,7 @@ flowchart LR
   auth --> feed
   spaces & notifications & feed -- "after commit,<br>over RabbitMQ" --> live["live/<br>SSE /stream"]
   meetings -- "meeting request" --> exchange[(twake-space exchange)]
+  spaces -- "drive commands,<br>after commit" --> drive[(drive exchange)]
 ```
 
 - `src/main.ts` is the only place that wires things. It loads the config, runs the migrations, sets up the single installation homeserver, builds the event routes, registers every module's routes on one Fastify server, starts the metrics server, then the RabbitMQ consumer and the background jobs.
@@ -48,7 +49,7 @@ What each module owns:
 
 - `auth`: bearer authentication for sessions, the `authorize` pre-handler, back-channel logout and revoked sessions.
 - `tokens`: API tokens (account, organization and technical account tokens), the organization's token policy, the token audit log, and revoking tokens when accounts, spaces or organizations go away.
-- `spaces`: spaces, their members, linked groups, organization roles and app resources, all kept up to date from platform events, plus what stays in twake-space: each space's settings (description, color, apps), banner and state (active, archived, in the Bin), and each person's pins and visits. Serves the read routes under `/spaces` (`routes.ts`) and the write routes, which go through ldap-rest first (`writes.ts`).
+- `spaces`: spaces, their members, linked groups, organization roles and app resources, all kept up to date from platform events, plus what stays in twake-space: each space's settings (description, color, apps), banner and state (active, archived, in the Bin), and each person's pins and visits. Serves the read routes under `/spaces` (`routes.ts`) and the write routes, which go through ldap-rest first (`writes.ts`). Sends each space's drive commands to cozy-stack (`drives.ts`).
 - `organizations`: organizations (domain, chat and mail availability), homeservers, the chat control plane client, and the directory search routes `GET /organization/members` and `GET /organization/groups`.
 - `feed`: activity cards from app events, members' posts and reactions under `/spaces/:spaceId/feed`, chat messages and reactions from Matrix transactions, the retention purge, and `/metrics`.
 - `notifications`: per user notifications and settings, under `/notifications`, and the assistant's suggestions.

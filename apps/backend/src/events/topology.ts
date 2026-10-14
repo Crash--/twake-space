@@ -74,6 +74,7 @@ export const amqpTopology = z
     AMQP_SETTINGS_EXCHANGE: z.string().min(1).default('settings'),
     AMQP_TWAKE_SPACE_EXCHANGE: z.string().min(1).default('twake-space'),
     AMQP_LIVE_EXCHANGE: z.string().min(1).default('twake-space.live'),
+    AMQP_DRIVE_EXCHANGE: z.string().min(1).default('drive'),
     AMQP_EVENTS: overrides.default({})
   })
   .transform((env, ctx) => {
@@ -131,6 +132,7 @@ export const amqpTopology = z
         activityExchange: env.AMQP_ACTIVITY_EXCHANGE,
         twakeSpaceExchange: env.AMQP_TWAKE_SPACE_EXCHANGE,
         liveExchange: env.AMQP_LIVE_EXCHANGE,
+        driveExchange: env.AMQP_DRIVE_EXCHANGE,
         events
       }
     }

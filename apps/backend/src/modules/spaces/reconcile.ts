@@ -3,6 +3,7 @@ import type { Logger } from 'pino'
 import type { Db } from '../../infra/db.ts'
 import type { ListedMember, SpaceDirectory } from '../../infra/ldap-rest.ts'
 import { organizations } from '../organizations/schema.ts'
+import { ensureDrive } from './drives.ts'
 import {
   createSpace,
   deleteSpace,
@@ -174,6 +175,8 @@ async function reconcileSpace(
       .filter(g => !listedGroups.has(g.groupId))
       .map(g => g.groupId)
     if (unlinked.length > 0) await unlinkGroups(tx, id, at, unlinked)
+    // Also when nothing changed: it repairs a drive whose command was lost.
+    await ensureDrive(tx, id)
   })
 }
 

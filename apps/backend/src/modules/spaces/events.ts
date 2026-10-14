@@ -23,6 +23,7 @@ import {
   revokeAccountTokens,
   revokeOrganizationTokens
 } from '../tokens/revocation.ts'
+import { ensureDrive, removeDrive } from './drives.ts'
 import {
   groupNames,
   organizationMembers,
@@ -260,6 +261,7 @@ export async function upsertGroups(
       target: [spaceGroups.spaceId, spaceGroups.groupId],
       set: { name: sql`excluded.name`, role: sql`excluded.role` }
     })
+  await ensureDrive(tx, spaceId)
   await tellSpaceMembers(tx, spaceId)
 }
 
@@ -301,6 +303,7 @@ export async function upsertMembers(
         role: sql`excluded.role`
       }
     })
+  await ensureDrive(tx, spaceId)
   tell(tx, 'spaces', [...byUser.keys()], { spaceId })
 }
 
@@ -356,13 +359,15 @@ async function removeMembers(
       )
     )
   )
-  for (const spaceId of new Set(removed.map(m => m.spaceId))) {
+  // In one order, so two transactions cannot deadlock on their drive rows.
+  for (const spaceId of [...new Set(removed.map(m => m.spaceId))].sort()) {
     const left = removed.filter(m => m.spaceId === spaceId).map(m => m.userId)
     await tx
       .delete(spaceMarks)
       .where(
         and(eq(spaceMarks.spaceId, spaceId), inArray(spaceMarks.userId, left))
       )
+    await ensureDrive(tx, spaceId)
     tell(tx, 'spaces', left, { spaceId })
   }
 }
@@ -411,6 +416,7 @@ export async function createSpace(
     })
   await upsertMembers(tx, log, space.id, at, space.members)
   await upsertGroups(tx, space.id, at, space.groups)
+  await ensureDrive(tx, space.id)
 }
 
 const onUpdated: Handler<PlatformEvent> = async (event, tx) => {
@@ -444,6 +450,7 @@ export async function renameSpace(
     if (seen) return
     throw new NotYetKnownError(`unknown space ${id}`)
   }
+  await ensureDrive(tx, id)
   await tellSpaceMembers(tx, id)
 }
 
@@ -488,7 +495,11 @@ export async function deleteSpace(
   await tx.delete(spaceSettings).where(eq(spaceSettings.spaceId, id))
   await tx.delete(spaceBanners).where(eq(spaceBanners.spaceId, id))
   await tx.delete(spaceMarks).where(eq(spaceMarks.spaceId, id))
-  await tx.delete(spaces).where(eq(spaces.spaceId, id))
+  const [deleted] = await tx
+    .delete(spaces)
+    .where(eq(spaces.spaceId, id))
+    .returning({ organizationId: spaces.organizationId })
+  await removeDrive(tx, id, deleted?.organizationId)
   tell(
     tx,
     'spaces',
@@ -575,6 +586,7 @@ export async function unlinkGroups(
       )
     )
   )
+  await ensureDrive(tx, id)
   await tellSpaceMembers(tx, id)
 }
 
@@ -776,6 +788,19 @@ const onMemberDisabled: Handler<PlatformEvent> = async (event, tx, log) => {
       before: disabled.timestamp
     }
   )
+  // The stack looks members up again, and leaves out whom it no longer finds.
+  const joined = await tx
+    .select({ spaceId: spaceMembers.spaceId })
+    .from(spaceMembers)
+    .innerJoin(spaces, eq(spaces.spaceId, spaceMembers.spaceId))
+    .where(
+      and(
+        eq(spaceMembers.userId, accountId),
+        eq(spaces.organizationId, disabled.organizationId)
+      )
+    )
+    .orderBy(spaceMembers.spaceId)
+  for (const { spaceId } of joined) await ensureDrive(tx, spaceId)
 }
 
 const organizationDeleted = z.looseObject({
@@ -794,6 +819,14 @@ const onOrganizationDeleted: Handler<PlatformEvent> = async (event, tx) => {
     reason: 'its organization was deleted',
     before: timestamp
   })
+  const owned = await tx
+    .select({ spaceId: spaces.spaceId })
+    .from(spaces)
+    .where(eq(spaces.organizationId, organizationId))
+    .orderBy(spaces.spaceId)
+  for (const { spaceId } of owned) {
+    await removeDrive(tx, spaceId, organizationId)
+  }
 }
 
 export const spacePlatformRoutes: ReadonlyMap<
