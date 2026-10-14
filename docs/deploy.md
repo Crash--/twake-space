@@ -226,8 +226,8 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 ### RabbitMQ
 
-- The `space`, `b2b` and `admin-panel` exchanges must exist before the backend starts, or it stops. The `drive` exchange must exist for the drive commands to leave. Their owners declare them; compose declares them locally. These and the names below are the defaults: see [RabbitMQ names](#rabbitmq-names).
-- The backend declares the `activity` and `settings` exchanges, its `twake-space` and `twake-space.activity` quorum queues with their bindings, the `twake-space.dlx` and `twake-space.activity.dlx` exchanges, the `twake-space.dlq` and `twake-space.activity.dlq` queues, and the `twake-space` and `twake-space.live` exchanges it publishes on, with one `twake-space.live.replica.<uuid>` queue per replica. Its user needs configure, write and read permissions on those.
+- The `space`, `b2b` and `admin-panel` exchanges must exist before the backend starts, or it stops. Their owners declare them; compose declares them locally. These and the names below are the defaults: see [RabbitMQ names](#rabbitmq-names).
+- The backend declares the `activity` and `settings` exchanges, its `twake-space` and `twake-space.activity` quorum queues with their bindings, the `twake-space.dlx` and `twake-space.activity.dlx` exchanges, the `twake-space.dlq` and `twake-space.activity.dlq` queues, and the `twake-space`, `twake-space.live` and `drive` exchanges it publishes on, with one `twake-space.live.replica.<uuid>` queue per replica. Its user needs configure, write and read permissions on those.
 - Meeting requests are published on `twake-space` with publisher confirms and `mandatory`, with a 10 second timeout: they fail while no calendar consumer has a queue bound.
 - Live updates are published once, and dropped while the replica is disconnected.
 - `twake-space` has a single active consumer, so only one replica consumes it at a time. The others take over when it goes away. Every replica consumes `twake-space.activity`.
