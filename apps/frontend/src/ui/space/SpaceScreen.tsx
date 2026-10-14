@@ -1,13 +1,5 @@
 import { Icon } from '@linagora/twake-icons'
-import {
-  Alert,
-  Button,
-  IconButton,
-  Link,
-  Tab,
-  Tabs,
-  Typography
-} from '@linagora/twake-mui'
+import { Alert, Button, Link, Tab, Tabs, Typography } from '@linagora/twake-mui'
 import {
   useEffect,
   useLayoutEffect,
@@ -28,6 +20,7 @@ import { isRefusal } from '@/application/spaces'
 import { PREPARING_MS, spaceTabs } from '@/application/spaceTabs'
 import { NameAvatar } from '@/ds/AppFrame'
 import { CountedLabel } from '@/ds/CountedLabel'
+import { IconButton } from '@/ds/IconButton'
 import { CloseFullscreenIcon, Home, OpenInFullIcon } from '@/ds/icons'
 import {
   CompactSpaceHeader,
@@ -209,7 +202,7 @@ export function SpaceScreen(): ReactElement {
               <IconButton
                 ref={fillButton}
                 size="small"
-                aria-label={t('space.fullPage')}
+                label={t('space.fullPage')}
                 onClick={() => {
                   focusNext.current = 'leave'
                   // The page given to the tab has no button to close the assistant with

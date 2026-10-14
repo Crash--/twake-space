@@ -1,8 +1,8 @@
 import { Assistant, Icon } from '@linagora/twake-icons'
-import { IconButton } from '@linagora/twake-mui'
 import { useState, type ReactElement } from 'react'
 
 import type { Space } from '@/application/spaces'
+import { IconButton } from '@/ds/IconButton'
 import { GroupAddIcon } from '@/ds/icons'
 import { useAssistant } from '@/ui/assistant/AssistantPanel'
 import { MeetingMenu } from '@/ui/call/MeetingMenu'
@@ -21,7 +21,7 @@ export function SpaceActions({ space }: { space: Space }): ReactElement {
     <>
       <IconButton
         size="small"
-        aria-label={t('assistant.open')}
+        label={t('assistant.open')}
         aria-pressed={assistant.open}
         onClick={() => {
           assistant.setOpen(!assistant.open)
@@ -33,7 +33,7 @@ export function SpaceActions({ space }: { space: Space }): ReactElement {
       {space.role === 'admin' && (
         <IconButton
           size="small"
-          aria-label={t('spaceMenu.invite')}
+          label={t('spaceMenu.invite')}
           onClick={() => {
             setInviting(true)
           }}

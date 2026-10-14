@@ -15,7 +15,6 @@ import {
   DialogActions,
   DialogContent,
   Divider,
-  IconButton,
   Menu,
   Snackbar,
   Stack,
@@ -33,6 +32,7 @@ import type {
   SpaceSummary
 } from '@/application/spaces'
 import { DialogHeader } from '@/ds/Dialog'
+import { IconButton } from '@/ds/IconButton'
 import { MenuEntry } from '@/ds/Menu'
 import { useI18n } from '@/ui/i18n/useI18n'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
@@ -83,11 +83,7 @@ export function ShareLinkButton({ id }: { id: string }): ReactElement {
   const { share, notice } = useShareLink(id)
   return (
     <>
-      <IconButton
-        size="small"
-        aria-label={t('spaceMenu.shareLink')}
-        onClick={share}
-      >
+      <IconButton size="small" label={t('spaceMenu.shareLink')} onClick={share}>
         <Icon icon={Link} />
       </IconButton>
       {notice}
@@ -138,7 +134,7 @@ export function SpaceMenu({
     <>
       <IconButton
         size="small"
-        aria-label={t('spaceMenu.open', { name: space.name })}
+        label={t('spaceMenu.open', { name: space.name })}
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         onClick={event => {

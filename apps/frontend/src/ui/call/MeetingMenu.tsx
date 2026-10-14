@@ -1,11 +1,12 @@
 import { Calendar, Icon, Link } from '@linagora/twake-icons'
-import { IconButton, Menu, Snackbar } from '@linagora/twake-mui'
+import { Menu, Snackbar } from '@linagora/twake-mui'
 import { useState, type ReactElement } from 'react'
 import { useNavigate } from 'react-router'
 
 import { tabPath } from '@/application/embeddedApps'
 import type { Space } from '@/application/spaces'
 import { isTabReady } from '@/application/spaceTabs'
+import { IconButton } from '@/ds/IconButton'
 import { Videocam, VideocamSymbolIcon } from '@/ds/icons'
 import { MenuEntry } from '@/ds/Menu'
 import { useCall } from '@/ui/call/CallContext'
@@ -36,7 +37,7 @@ export function MeetingMenu({ space }: { space: Space }): ReactElement | null {
     <>
       <IconButton
         size="small"
-        aria-label={t('call.menu')}
+        label={t('call.menu')}
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         onClick={event => {
