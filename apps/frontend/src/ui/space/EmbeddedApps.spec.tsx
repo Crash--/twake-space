@@ -138,6 +138,13 @@ function frame(title = 'Projects and tasks'): HTMLIFrameElement {
   return element
 }
 
+function outOfViewport(element: Element): boolean {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (getComputedStyle(node).transform.includes('-300vw')) return true
+  }
+  return false
+}
+
 function postFromFrame(
   data: unknown,
   origin = TASKS,
@@ -378,6 +385,7 @@ describe('EmbeddedApps', () => {
     expect(await screen.findByText('Home')).toBeInTheDocument()
     expect(screen.getByTitle('Projects and tasks')).toBe(first)
     expect(first.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(outOfViewport(first)).toBe(true)
 
     go('/spaces/a1/tasks')
     await waitFor(() => {
@@ -385,6 +393,7 @@ describe('EmbeddedApps', () => {
     })
     expect(screen.getByTitle('Projects and tasks')).toBe(first)
     expect(first.closest('[aria-hidden="true"]')).toBeNull()
+    expect(outOfViewport(first)).toBe(false)
   })
 
   it('writes the path of a hidden frame once its tab shows again', async () => {
@@ -502,6 +511,7 @@ describe('EmbeddedApps', () => {
     expect(getComputedStyle(chat).visibility).toBe('visible')
     expect(chat.closest('[inert]')).toBeNull()
     expect(chat.closest('[aria-hidden]')).toBeNull()
+    expect(outOfViewport(chat)).toBe(false)
   })
 
   it("keeps Chat's call in its conversation on another space until it ends", async () => {

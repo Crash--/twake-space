@@ -5,6 +5,11 @@ import type { HTMLAttributes, ReactElement, ReactNode } from 'react'
 // size and its state, out of the layout and out of reach (`inert`). Not
 // `display: none`, which would size the app to nothing. `reachable` keeps it
 // within reach while hidden, for a frame that floats over the page.
+// Out of reach, it is also moved out of the viewport: Chrome and Safari only
+// slow down the timers and rendering of a cross-origin frame outside the
+// viewport, and `visibility: hidden` alone leaves it running at full speed.
+const outOfViewport = { transform: 'translateX(-300vw)' }
+
 export function KeptAlive({
   active,
   reachable = false,
@@ -27,7 +32,8 @@ export function KeptAlive({
               position: 'absolute',
               inset: 0,
               visibility: 'hidden',
-              pointerEvents: 'none'
+              pointerEvents: 'none',
+              ...(hidden && outOfViewport)
             }
       }
     >
@@ -66,7 +72,8 @@ export function KeptAliveStack({
               position: 'absolute',
               inset: 0,
               visibility: 'hidden',
-              pointerEvents: 'none'
+              pointerEvents: 'none',
+              ...(hidden && outOfViewport)
             }
       }
     >
