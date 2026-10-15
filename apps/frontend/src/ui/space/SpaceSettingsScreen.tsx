@@ -154,7 +154,7 @@ function Settings({ space }: { space: Space }): ReactElement {
         </Typography>
         <Stack direction="row" spacing={1} className="u-ml-auto">
           <Button
-            variant="outlined"
+            variant="ghost"
             startIcon={<Icon icon={Pen} />}
             onClick={() => {
               setDialog('edit')
@@ -163,7 +163,7 @@ function Settings({ space }: { space: Space }): ReactElement {
             {t('settings.edit')}
           </Button>
           <Button
-            variant="outlined"
+            variant="ghost"
             startIcon={<Icon icon={Archive} />}
             onClick={() => {
               ask('archived')
@@ -172,7 +172,7 @@ function Settings({ space }: { space: Space }): ReactElement {
             {t('settings.archive')}
           </Button>
           <Button
-            variant="outlined"
+            variant="ghost"
             startIcon={<Icon icon={Trash} />}
             onClick={() => {
               ask('trashed')
