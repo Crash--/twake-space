@@ -155,6 +155,13 @@ export function SpaceScreen(): ReactElement {
   const embedded = current.state === 'ready' ? embeddedApp(current.tab) : null
   const embeddedUrl = embedded ? appUrls[embedded.app] : null
   const framed = embedded !== null && embeddedUrl !== null
+  const appsOff = space.data.chat
+    ? space.data.mail
+      ? null
+      : 'space.mailOff'
+    : space.data.mail
+      ? 'space.chatOff'
+      : 'space.chatAndMailOff'
 
   // The children keep their places whether the tab has the page or not, so
   // that the panel is not mounted again
@@ -257,14 +264,9 @@ export function SpaceScreen(): ReactElement {
           }
         />
       )}
-      {!filled && !space.data.chat && (
-        <Alert severity="info" className="u-mt-1 u-mb-1">
-          {t('space.chatOff')}
-        </Alert>
-      )}
-      {!filled && !space.data.mail && (
-        <Alert severity="info" className="u-mt-1 u-mb-1">
-          {t('space.mailOff')}
+      {!filled && appsOff && (
+        <Alert severity="info" className="u-mt-1">
+          {t(appsOff)}
         </Alert>
       )}
       {/* A framed tab's panel is the frame itself, under the shell */}

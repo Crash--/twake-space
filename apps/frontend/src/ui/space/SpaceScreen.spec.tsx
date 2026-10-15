@@ -120,7 +120,7 @@ describe('SpaceScreen', () => {
     expect(screen.getByRole('tab', { name: 'Mail' })).toBeEnabled()
     expect(
       screen.getByText(
-        'Chat is off: it is not turned on for your organization.'
+        "Chat turns on once your organization's domain is validated."
       )
     ).toBeInTheDocument()
   })
@@ -131,9 +131,19 @@ describe('SpaceScreen', () => {
     expect(await screen.findByRole('tab', { name: 'Mail' })).toBeDisabled()
     expect(
       screen.getByText(
-        "Mail is off: your organization's mail domain is not validated yet."
+        "Mail turns on once your organization's domain is validated."
       )
     ).toBeInTheDocument()
+  })
+
+  it('says once why Chat and Mail are both off', async () => {
+    renderAt('/spaces/a1/tasks', { ...roadmap, chat: false, mail: false })
+
+    expect(await screen.findByRole('tab', { name: 'Mail' })).toBeDisabled()
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      "Chat and mail turn on once your organization's domain is validated."
+    )
   })
 
   it('leaves a tab that is off for the first tab that is on', async () => {
