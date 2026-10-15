@@ -14,10 +14,18 @@ export function MenuEntry({
   danger?: boolean
 }): ReactElement {
   return (
-    <MenuItem onClick={onClick} sx={danger ? { color: 'error.main' } : null}>
-      <ListItemIcon sx={danger ? { color: 'inherit' } : null}>
-        {icon}
-      </ListItemIcon>
+    <MenuItem
+      onClick={onClick}
+      sx={
+        danger
+          ? {
+              color: 'error.main',
+              '& .MuiListItemIcon-root': { color: 'inherit' }
+            }
+          : null
+      }
+    >
+      <ListItemIcon>{icon}</ListItemIcon>
       <ListItemText>{children}</ListItemText>
     </MenuItem>
   )
