@@ -265,7 +265,7 @@ export function SpaceScreen(): ReactElement {
         />
       )}
       {!filled && appsOff && (
-        <Alert severity="info" className="u-mt-1">
+        <Alert severity="info" className="u-mt-1 u-mb-1">
           {t(appsOff)}
         </Alert>
       )}

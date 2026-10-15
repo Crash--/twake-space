@@ -220,7 +220,7 @@
     "loading": "Chargement de l'espace…",
     "notFound": "Cet espace n'existe pas, ou vous n'en faites pas partie.",
     "loadFailed": "L'espace n'a pas pu être chargé.",
-    "chatOff": "Le chat s'active une fois le domaine de votre organisation validé.",
+    "chatOff": "Le chat n'est pas encore configuré pour votre organisation.",
     "mailOff": "Le mail s'active une fois le domaine de votre organisation validé.",
     "chatAndMailOff": "Le chat et le mail s'activent une fois le domaine de votre organisation validé.",
     "preparing": "%{app} est en cours de préparation pour cet espace.",

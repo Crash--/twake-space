@@ -220,7 +220,7 @@
     "loading": "Caricamento dello spazio…",
     "notFound": "Questo spazio non esiste, oppure non ne fai parte.",
     "loadFailed": "Non è stato possibile caricare lo spazio.",
-    "chatOff": "La chat si attiva quando il dominio della tua organizzazione è convalidato.",
+    "chatOff": "La chat non è ancora configurata per la tua organizzazione.",
     "mailOff": "La mail si attiva quando il dominio della tua organizzazione è convalidato.",
     "chatAndMailOff": "Chat e mail si attivano quando il dominio della tua organizzazione è convalidato.",
     "preparing": "%{app} è in preparazione per questo spazio.",

@@ -220,7 +220,7 @@
     "loading": "Đang tải không gian…",
     "notFound": "Không gian này không tồn tại hoặc bạn không phải thành viên.",
     "loadFailed": "Không thể tải không gian.",
-    "chatOff": "Trò chuyện sẽ bật khi tên miền của tổ chức bạn được xác thực.",
+    "chatOff": "Trò chuyện chưa được thiết lập cho tổ chức của bạn.",
     "mailOff": "Thư sẽ bật khi tên miền của tổ chức bạn được xác thực.",
     "chatAndMailOff": "Trò chuyện và thư sẽ bật khi tên miền của tổ chức bạn được xác thực.",
     "preparing": "%{app} đang được chuẩn bị cho không gian này.",

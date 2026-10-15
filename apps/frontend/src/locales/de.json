@@ -220,7 +220,7 @@
     "loading": "Space wird geladen…",
     "notFound": "Dieser Space existiert nicht, oder du bist kein Mitglied.",
     "loadFailed": "Der Space konnte nicht geladen werden.",
-    "chatOff": "Chat wird aktiviert, sobald die Domain deiner Organisation bestätigt ist.",
+    "chatOff": "Chat ist für deine Organisation noch nicht eingerichtet.",
     "mailOff": "Mail wird aktiviert, sobald die Domain deiner Organisation bestätigt ist.",
     "chatAndMailOff": "Chat und Mail werden aktiviert, sobald die Domain deiner Organisation bestätigt ist.",
     "preparing": "%{app} wird für diesen Space vorbereitet.",

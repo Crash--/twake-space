@@ -220,7 +220,7 @@
     "loading": "Loading the space…",
     "notFound": "This space does not exist, or you are not in it.",
     "loadFailed": "The space could not be loaded.",
-    "chatOff": "Chat turns on once your organization's domain is validated.",
+    "chatOff": "Chat is not set up for your organization yet.",
     "mailOff": "Mail turns on once your organization's domain is validated.",
     "chatAndMailOff": "Chat and mail turn on once your organization's domain is validated.",
     "preparing": "%{app} is being prepared for this space.",

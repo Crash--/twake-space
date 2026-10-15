@@ -119,9 +119,7 @@ describe('SpaceScreen', () => {
     expect(screen.getByRole('tab', { name: 'Feed' })).toBeEnabled()
     expect(screen.getByRole('tab', { name: 'Mail' })).toBeEnabled()
     expect(
-      screen.getByText(
-        "Chat turns on once your organization's domain is validated."
-      )
+      screen.getByText('Chat is not set up for your organization yet.')
     ).toBeInTheDocument()
   })
 
