@@ -22,6 +22,7 @@ const space: Space = {
   chat: true,
   mail: false,
   homeserverUrl: 'https://matrix.test',
+  chatUrl: null,
   banner: null,
   members: [],
   groups: [],

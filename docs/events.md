@@ -49,7 +49,7 @@ The backend consumes two queues through [@linagora/rabbitmq-client](https://gith
 At startup the backend declares `twake-space` and binds it to each platform event it handles, routing key equal to the event name:
 
 - `space`: `twake.space.created`, `twake.space.updated`, `twake.space.deleted`, `twake.space.member.added`, `twake.space.member.role.changed`, `twake.space.member.removed`, `twake.space.group.linked`, `twake.space.group.role.changed`, `twake.space.group.unlinked`
-- `b2b`: `b2b.group.updated`, `b2b.member.role.changed`, `b2b.member.disabled`, `domain.user.deleted`, `domain.organization.deleted`, `chat.deprovision`, `chat.deployment.completed`
+- `b2b`: `b2b.group.updated`, `b2b.member.role.changed`, `b2b.member.disabled`, `domain.user.deleted`, `domain.organization.deleted`, `chat.deprovision`, `chat.deployment.completed`, `chat.deployment.updated`
 - `admin-panel`: `dns.validated`
 - `settings`: `user.settings.updated`
 - `activity`: `com.twake.*.space.provisioned.v1` and `com.twake.drive.org_drive.#` (`AMQP_PROVISIONED_BINDING` and `AMQP_DRIVE_REPLIES_BINDING`)
@@ -109,11 +109,12 @@ To replay a platform event by hand, such as one from `twake-space.dlq`, publish 
 Every platform handler is wrapped: when the body has an `organizationId` the copy does not know yet, the backend reads it once from the directory (ldap-rest) and inserts it with its `domain`, `chatAvailable` and `mailAvailable`. If the directory does not know it, a warning is logged and the handler still runs.
 
 - In a single installation, the organization points to the one configured homeserver.
-- In SaaS, the backend asks the chat control plane (`GET deployment/<organizationId>/twake-space`) for the tenant's homeserver and stores it, tokens encrypted. A 404 means chat is not deployed yet. When the control plane fails, the event still runs and the organization keeps no homeserver; on `chat.deployment.completed` the event is parked and retried instead.
+- In SaaS, the backend asks the chat control plane (`GET deployment/<organizationId>/twake-space`) for the tenant's homeserver and stores it, tokens encrypted, with its `chatUrl` (null when the control plane gives none). A 404 means chat is not deployed yet. When the control plane fails, the event still runs and the organization keeps no homeserver; on `chat.deployment.completed` and `chat.deployment.updated` the event is parked and retried instead.
 
 ### Organization availability
 
 - `chat.deployment.completed`: sets chat available at `deployment.completedAt`, then refreshes the tenant's homeserver. A missing `status` counts as success. Another `status` leaves chat as it is, but the homeserver is still refreshed.
+- `chat.deployment.updated`: refreshes the tenant's homeserver, and with it its `chatUrl`. It leaves chat availability as it is, so an update of a tenant being deprovisioned does not turn its chat back on.
 - `chat.deprovision`: sets chat unavailable at `timestamp`.
 - `dns.validated`: sets mail available to `mailDnsConfigurationValidated`. It has no time, so the last one handled wins.
 

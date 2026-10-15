@@ -6,7 +6,12 @@ import { controlPlaneHomeservers } from './control-plane.ts'
 const seen: { url: string | undefined; auth: string | undefined }[] = []
 const server = createServer((request, response) => {
   seen.push({ url: request.url, auth: request.headers.authorization })
-  const status = request.url?.includes('org_acme')
+  const chatUrl = request.url?.includes('org_chat')
+    ? { chatUrl: 'https://chat-org_chat.example.com' }
+    : request.url?.includes('org_bad')
+      ? { chatUrl: 'chat' }
+      : {}
+  const status = /org_(acme|chat|bad)/.test(request.url ?? '')
     ? 200
     : request.url?.includes('org_down')
       ? 503
@@ -18,7 +23,8 @@ const server = createServer((request, response) => {
           homeserverUrl: 'https://matrix.acme.example.com',
           serverName: 'acme.example.com',
           asToken: 'as',
-          hsToken: 'hs'
+          hsToken: 'hs',
+          ...chatUrl
         })
       : '{}'
   )
@@ -46,5 +52,23 @@ it("reads a tenant's homeserver, none while chat is not deployed", async () => {
   expect(seen[0]).toEqual({
     url: '/api/deployment/org_acme/twake-space',
     auth: 'Bearer cp'
+  })
+})
+
+it("reads a tenant's Chat address when it has one", async () => {
+  const tenants = controlPlaneHomeservers({ url, token: 'cp' })
+
+  expect(await tenants.homeserverOf('org_chat')).toMatchObject({
+    chatUrl: 'https://chat-org_chat.example.com'
+  })
+  expect(await tenants.homeserverOf('org_acme')).not.toHaveProperty('chatUrl')
+})
+
+it('keeps the homeserver when its Chat address is not a URL', async () => {
+  const tenants = controlPlaneHomeservers({ url, token: 'cp' })
+
+  expect(await tenants.homeserverOf('org_bad')).toMatchObject({
+    hsToken: 'hs',
+    chatUrl: undefined
   })
 })

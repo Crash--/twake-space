@@ -334,7 +334,8 @@ export function registerSpaceRoutes(
             .select({
               chat: organizations.chatAvailable,
               mail: organizations.mailAvailable,
-              homeserverUrl: homeservers.url
+              homeserverUrl: homeservers.url,
+              chatUrl: homeservers.chatUrl
             })
             .from(organizations)
             .leftJoin(
@@ -362,6 +363,7 @@ export function registerSpaceRoutes(
         chat: organization?.chat ?? false,
         mail: organization?.mail ?? false,
         homeserverUrl: organization?.homeserverUrl ?? null,
+        chatUrl: organization?.chatUrl ?? null,
         // Changes with the image, so that a client can tell it needs the new one.
         banner: banner?.updatedAt.toISOString() ?? null,
         members: members.map(member => ({

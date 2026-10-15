@@ -26,6 +26,7 @@ const roadmap: Space = {
   chat: true,
   mail: true,
   homeserverUrl: 'https://matrix.acme.test',
+  chatUrl: null,
   banner: null,
   members: [],
   groups: [],
@@ -88,11 +89,15 @@ function renderAt(
   drive: { template: string | null; fqdn: string | null } = {
     template: 'https://{slug}-drive.{domain}/',
     fqdn: 'alice.twake.test'
-  }
+  },
+  {
+    known = [roadmap, other],
+    chatUrl = `${CHAT}/`
+  }: { known?: Space[]; chatUrl?: string | null } = {}
 ) {
-  const spaces = fakeSpaces([roadmap, other])
+  const spaces = fakeSpaces(known)
   vi.mocked(spaces.get).mockImplementation(id => {
-    const space = [roadmap, other].find(item => item.id === id)
+    const space = known.find(item => item.id === id)
     return space
       ? Promise.resolve(space)
       : Promise.reject(Object.assign(new Error('not found'), { status: 404 }))
@@ -116,6 +121,7 @@ function renderAt(
       spaces,
       notifications,
       tasksUrl,
+      chatUrl,
       driveUrlTemplate: drive.template,
       session: fakeSession(() =>
         Promise.resolve({ ...fakeUser(), workplaceFqdn: drive.fqdn })
@@ -457,6 +463,33 @@ describe('EmbeddedApps', () => {
       'src',
       'https://chat.test/embed/overlay.html'
     )
+  })
+
+  it("frames the organization's own Chat when the space has one, off the space too", async () => {
+    const own = 'https://chat-acme.test'
+    renderAt('/spaces/a1/chat', `${TASKS}/`, undefined, {
+      known: [
+        { ...roadmap, chatUrl: `${own}/` },
+        { ...other, chatUrl: `${own}/` }
+      ],
+      chatUrl: null
+    })
+
+    const chat = await screen.findByTitle('Chat')
+    expect(chat).toHaveAttribute('src', `${own}/embed/rooms/!s%3Aacme`)
+    postFromFrame(embedPath('!s:acme', '', true), own, 'Chat')
+    const post = spyOnFrame('Chat')
+
+    go('/')
+    await screen.findByText('Home')
+    expect(screen.getByTitle('Chat')).toBe(chat)
+    go('/spaces/b2/tasks')
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        { type: 'twake-embed:load', resourceId: '!o:acme', path: '' },
+        own
+      )
+    })
   })
 
   it("floats Chat's call in a window while Chat asks for the page, from its frame only", async () => {

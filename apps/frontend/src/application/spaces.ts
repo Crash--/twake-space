@@ -106,6 +106,8 @@ export interface Space extends SpaceSummary {
   mail: boolean
   /** The organization's Matrix homeserver, once known. */
   homeserverUrl: string | null
+  /** The organization's own Chat; null falls back to the deployment's. */
+  chatUrl: string | null
   /** The version of the banner an admin uploaded; null for the default art. */
   banner: string | null
   members: Member[]

@@ -62,9 +62,9 @@ export function SpaceScreen(): ReactElement {
   const { t } = useI18n()
   const navigate = useNavigate()
   const { spaceId = '', tab } = useParams()
-  const appUrls = useAppUrls()
   const badges = useBadges()
   const space = useSpace(spaceId)
+  const appUrls = useAppUrls(space.data?.chatUrl ?? null)
   useMarkOpened(spaceId, space.isSuccess)
   useDocumentTitle(space.data?.name ?? null)
   const now = useNowAfter(

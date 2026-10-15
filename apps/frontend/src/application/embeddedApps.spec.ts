@@ -180,6 +180,22 @@ describe('reconcile', () => {
     }
   })
 
+  it('replaces the frame when the app moved to another origin', () => {
+    expect(
+      reconcile(
+        frame({ path: '/b' }),
+        shown({ path: '/b' }),
+        tasks,
+        'https://tasks-acme.test/',
+        false,
+        '/spaces/a1/tasks/b'
+      )
+    ).toEqual({
+      kind: 'replace',
+      src: 'https://tasks-acme.test/embed/projects/p1/b'
+    })
+  })
+
   it('leaves the frame alone until the address it wrote shows', () => {
     expect(
       reconcile(
@@ -295,6 +311,15 @@ describe('reconcileHidden', () => {
         src: 'https://tasks.test/embed/projects/p2'
       })
     }
+  })
+
+  it('replaces the frame when the app moved to another origin', () => {
+    expect(
+      reconcileHidden(frame(), 'p1', tasks, 'https://tasks-acme.test/')
+    ).toEqual({
+      kind: 'replace',
+      src: 'https://tasks-acme.test/embed/projects/p1'
+    })
   })
 
   it('never asks to navigate or to adopt an address', () => {

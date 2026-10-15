@@ -24,6 +24,7 @@ const roadmap: Space = {
   chat: true,
   mail: true,
   homeserverUrl: null,
+  chatUrl: null,
   banner: null,
   // I reach this space through a linked group, not as a direct member.
   members: [],

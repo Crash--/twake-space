@@ -11,6 +11,9 @@ export const homeservers = pgTable('homeservers', {
   asToken: bytea('as_token').notNull(),
   hsToken: bytea('hs_token').notNull(),
   hsTokenHash: text('hs_token_hash').notNull().unique(),
+  // Where the browser frames Chat for this homeserver's organizations; none
+  // falls back to the deployment's CHAT_URL.
+  chatUrl: text('chat_url'),
   updatedAt: timestamptz('updated_at').notNull().defaultNow()
 })
 

@@ -52,7 +52,6 @@ type Frames = Partial<Record<EmbeddedApp, FrameState>>
 // change: only the frame shown ever writes the address.
 export function EmbeddedApps(): ReactElement | null {
   const { t } = useI18n()
-  const appUrls = useAppUrls()
   const location = useLocation()
   const popped = useNavigationType() === NavigationType.Pop
   const navigate = useNavigate()
@@ -89,6 +88,11 @@ export function EmbeddedApps(): ReactElement | null {
   const match = matchPath(SPACE_ROUTE, location.pathname)
   const spaceId = match?.params.spaceId ?? ''
   const space = useSpace(spaceId)
+  // Off a space, Chat's frame stays on the address of the last one shown
+  const [lastChatUrl, setLastChatUrl] = useState<string | null>(null)
+  const spaceChatUrl = space.data ? space.data.chatUrl : lastChatUrl
+  if (spaceChatUrl !== lastChatUrl) setLastChatUrl(spaceChatUrl)
+  const appUrls = useAppUrls(spaceChatUrl)
 
   const spec = embeddedApp(match?.params.tab)
   const appUrl = spec ? appUrls[spec.app] : null

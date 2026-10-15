@@ -74,6 +74,7 @@ const detail = (id: string, name: string, mailbox: string): Space => ({
   chat: true,
   mail: true,
   homeserverUrl: null,
+  chatUrl: null,
   banner: null,
   members: [],
   groups: [],

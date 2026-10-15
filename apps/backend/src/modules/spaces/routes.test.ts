@@ -522,7 +522,8 @@ describe('GET /spaces/:id', () => {
         serverName: 'org-1.example.com',
         asToken: Buffer.from('as'),
         hsToken: Buffer.from('hs'),
-        hsTokenHash: 'hash'
+        hsTokenHash: 'hash',
+        chatUrl: 'https://chat-org-1.example.com'
       })
       .returning({ id: homeservers.id })
     await testDb.db.insert(organizations).values({
@@ -534,9 +535,10 @@ describe('GET /spaces/:id', () => {
 
     const after = await get(`/spaces/${DESIGN}`)
 
-    expect(before.json()).toMatchObject({ homeserverUrl: null })
+    expect(before.json()).toMatchObject({ homeserverUrl: null, chatUrl: null })
     expect(after.json()).toMatchObject({
-      homeserverUrl: 'https://matrix.org-1.example.com'
+      homeserverUrl: 'https://matrix.org-1.example.com',
+      chatUrl: 'https://chat-org-1.example.com'
     })
   })
 

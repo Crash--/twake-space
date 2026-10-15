@@ -88,6 +88,7 @@ export function memorySpaces(
         chat: true,
         mail: false,
         homeserverUrl: spaces[0]?.homeserverUrl ?? null,
+        chatUrl: spaces[0]?.chatUrl ?? null,
         banner: null,
         members: [],
         groups: [],

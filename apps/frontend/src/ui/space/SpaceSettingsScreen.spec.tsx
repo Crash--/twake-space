@@ -21,6 +21,7 @@ const space: Space = {
   chat: true,
   mail: true,
   homeserverUrl: null,
+  chatUrl: null,
   banner: null,
   members: [
     {

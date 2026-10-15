@@ -8,6 +8,7 @@ export interface HomeserverConfig {
   serverName: string
   asToken: string
   hsToken: string
+  chatUrl?: string | undefined
 }
 
 async function writeHomeserver(
@@ -22,6 +23,7 @@ async function writeHomeserver(
     asToken: encrypt(key, homeserver.asToken),
     hsToken: encrypt(key, homeserver.hsToken),
     hsTokenHash: hashSecret(homeserver.hsToken),
+    chatUrl: homeserver.chatUrl ?? null,
     updatedAt: sql`now()`
   }
   const [row] = existingId

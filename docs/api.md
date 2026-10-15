@@ -114,7 +114,7 @@ The refusals look like this.
 - Path: `id` is a UUID.
 - `404 {"error":"not_found"}` when `id` is not a UUID or the caller does not reach the space.
 - `description` and `color` are what was picked at creation. `apps` is the tabs picked at creation or since, as stored: the client hides the tabs whose app this deployment or the organization does not provide. A space created outside twake-space has an empty description, no color and every tab.
-- `chat` and `mail` are the organization's chat and mail availability, false when the organization is unknown. `homeserverUrl` is the organization's Matrix homeserver, or null.
+- `chat` and `mail` are the organization's chat and mail availability, false when the organization is unknown. `homeserverUrl` is the organization's Matrix homeserver, or null. `chatUrl` is the organization's Chat, which the Chat tab frames, or null when the deployment's `CHAT_URL` serves it.
 - `createdAt` is when the backend learned of the space.
 - `banner` is when the banner image last changed, or null without one. It changes with the image, so a client knows to read [the banner](#get-spacesidbanner) again.
 - `pinnedAt`, `openedAt`, `manages` and each member's `displayName` and `workplaceFqdn` are as in `GET /spaces`.
@@ -135,6 +135,7 @@ The refusals look like this.
   "chat": true,
   "mail": false,
   "homeserverUrl": "https://matrix.example.com",
+  "chatUrl": "https://chat-org-1.example.com",
   "banner": "2026-10-08T09:30:00.000Z",
   "members": [
     {

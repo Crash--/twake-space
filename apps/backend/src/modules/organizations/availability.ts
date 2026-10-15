@@ -19,6 +19,11 @@ type Lookup = Routes['platform']
 
 const aboutOrganization = z.looseObject({ organizationId: z.string().min(1) })
 
+const DEPLOYMENTS = new Set([
+  'chat.deployment.completed',
+  'chat.deployment.updated'
+])
+
 interface MeetingDeps {
   directory: Pick<Directory, 'organization'>
   // A single installation's homeserver, which serves every organization.
@@ -103,7 +108,7 @@ export function meetingOrganizations(
           await meet(tx, deps, log, about.data.organizationId)
         }
         await handler(event, tx, log)
-        if (about.success && key === 'chat.deployment.completed') {
+        if (about.success && DEPLOYMENTS.has(key)) {
           await refreshHomeserver(tx, deps, log, about.data.organizationId, {
             retry: true
           })
@@ -155,6 +160,13 @@ const onDeploymentCompleted: Handler<PlatformEvent> = async (
   await setChat(tx, organizationId, deployment.completedAt, true)
 }
 
+// Only the homeserver is refreshed: setting chat here would turn it back on
+// for a tenant being deprovisioned.
+const onDeploymentUpdated: Handler<PlatformEvent> = event => {
+  parseOrDrop(aboutOrganization, event.body, event.routingKey)
+  return Promise.resolve()
+}
+
 const deprovisioned = z.looseObject({
   organizationId: z.string().min(1),
   timestamp: z.iso.datetime({ offset: true }).transform(t => new Date(t))
@@ -194,6 +206,7 @@ export const organizationPlatformRoutes: ReadonlyMap<
   Handler<PlatformEvent>
 > = new Map([
   ['chat.deployment.completed', onDeploymentCompleted],
+  ['chat.deployment.updated', onDeploymentUpdated],
   ['chat.deprovision', onDeprovisioned],
   ['dns.validated', onDnsValidated]
 ])

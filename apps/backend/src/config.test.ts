@@ -201,6 +201,10 @@ describe('loadConfig: RabbitMQ topology', () => {
           exchange: 'chat',
           routingKey: 'deployment.completed'
         },
+        'chat.deployment.updated': {
+          exchange: 'chat',
+          routingKey: 'deployment.updated'
+        },
         'dns.validated': { routingKey: 'domain.dns.validated' }
       })
     })
@@ -208,6 +212,10 @@ describe('loadConfig: RabbitMQ topology', () => {
     expect(amqp.events['chat.deployment.completed']).toEqual({
       exchange: 'chat',
       routingKey: 'deployment.completed'
+    })
+    expect(amqp.events['chat.deployment.updated']).toEqual({
+      exchange: 'chat',
+      routingKey: 'deployment.updated'
     })
     expect(amqp.events['dns.validated']).toEqual({
       exchange: 'admin-panel',

@@ -12,7 +12,13 @@ const tenant = z.object({
   homeserverUrl: z.url({ protocol: /^https?$/ }),
   serverName: z.string().min(1),
   asToken: z.string().min(1),
-  hsToken: z.string().min(1)
+  hsToken: z.string().min(1),
+  // Absent while the tenant has no TwakeSpace chat of its own. A bad one
+  // must not cost the homeserver its tokens.
+  chatUrl: z
+    .url({ protocol: /^https?$/ })
+    .optional()
+    .catch(undefined)
 })
 
 export function controlPlaneHomeservers(controlPlane: {

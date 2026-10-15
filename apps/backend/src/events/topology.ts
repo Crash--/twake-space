@@ -20,6 +20,7 @@ export const PLATFORM_EVENTS = {
   'domain.organization.deleted': 'b2b',
   'chat.deprovision': 'b2b',
   'chat.deployment.completed': 'b2b',
+  'chat.deployment.updated': 'b2b',
   'dns.validated': 'admin-panel',
   'user.settings.updated': 'settings'
 } as const

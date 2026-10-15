@@ -1,0 +1,1 @@
+ALTER TABLE "homeservers" ADD COLUMN "chat_url" text;

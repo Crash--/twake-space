@@ -239,7 +239,11 @@ describe('subscription', () => {
       routingKey: 'twake.space.created',
       queue: 'twake-space'
     })
-    expect(options.bindings).toHaveLength(19)
+    expect(options.bindings).toHaveLength(20)
+    expect(options.bindings).toContainEqual({
+      exchange: 'b2b',
+      routingKey: 'chat.deployment.updated'
+    })
     expect(options.bindings).toContainEqual({
       exchange: 'dns',
       routingKey: 'dns.validated'

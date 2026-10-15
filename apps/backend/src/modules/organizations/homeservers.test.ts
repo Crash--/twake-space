@@ -39,6 +39,7 @@ describe('configureHomeserver', () => {
     expect(row && decrypt(key, row.asToken)).toBe('as-secret')
     expect(row && decrypt(key, row.hsToken)).toBe('hs-secret')
     expect(row?.asToken.toString()).not.toContain('as-secret')
+    expect(row?.chatUrl).toBeNull()
   })
 
   it('points every organization to it', async () => {

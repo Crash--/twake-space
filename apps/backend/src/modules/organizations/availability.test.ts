@@ -172,6 +172,65 @@ it('refreshes the homeserver on each chat deployment', async () => {
   expect(await testDb.db.$count(homeservers)).toBe(1)
 })
 
+it("keeps the tenant's Chat address with its homeserver, as the control plane gives it", async () => {
+  const homeserverOf = vi
+    .fn<TenantHomeservers['homeserverOf']>()
+    .mockResolvedValueOnce({
+      ...tenantHomeserver('hs'),
+      chatUrl: 'https://chat-org_acme.example.com'
+    })
+    .mockResolvedValueOnce(tenantHomeserver('hs'))
+  const { handle } = setUp(acme, undefined, { homeserverOf })
+  const chatUrls = () =>
+    testDb.db.select({ chatUrl: homeservers.chatUrl }).from(homeservers)
+
+  await handle('twake.space.created', { organizationId: 'org_acme' })
+  const met = await chatUrls()
+  await handle('chat.deployment.completed', {
+    organizationId: 'org_acme',
+    deployment: { completedAt: '2026-10-05T09:00:00Z' }
+  })
+
+  expect(met).toEqual([{ chatUrl: 'https://chat-org_acme.example.com' }])
+  expect(await chatUrls()).toEqual([{ chatUrl: null }])
+})
+
+it('refreshes the homeserver on a chat update, leaving chat as it is', async () => {
+  const homeserverOf = vi
+    .fn<TenantHomeservers['homeserverOf']>()
+    .mockResolvedValueOnce(tenantHomeserver('hs-1'))
+    .mockResolvedValueOnce({
+      ...tenantHomeserver('hs-2'),
+      chatUrl: 'https://chat-org_acme.example.com'
+    })
+  const { handle } = setUp({ ...acme, chat: false }, undefined, {
+    homeserverOf
+  })
+
+  await handle('twake.space.created', { organizationId: 'org_acme' })
+  await handle('chat.deployment.updated', {
+    organizationId: 'org_acme',
+    domain: 'acme.example.com',
+    deployment: { status: 'succeeded', completedAt: '2026-10-05T09:00:00Z' }
+  })
+
+  expect(await linked()).toMatchObject([{ hsTokenHash: hashSecret('hs-2') }])
+  expect(
+    await testDb.db.select({ chatUrl: homeservers.chatUrl }).from(homeservers)
+  ).toEqual([{ chatUrl: 'https://chat-org_acme.example.com' }])
+  expect(await stored()).toMatchObject([{ chat: false }])
+})
+
+it('waits for the chat control plane on a chat update', async () => {
+  const homeserverOf = vi.fn(() => Promise.reject(new Error('503')))
+  const { handle } = setUp(acme, undefined, { homeserverOf })
+  await handle('twake.space.created', { organizationId: 'org_acme' })
+
+  await expect(
+    handle('chat.deployment.updated', { organizationId: 'org_acme' })
+  ).rejects.toBeInstanceOf(NotYetKnownError)
+})
+
 it('handles the event of a new organization when the chat control plane fails', async () => {
   const homeserverOf = vi.fn(() => Promise.reject(new Error('503')))
   const { other, handle } = setUp(acme, undefined, { homeserverOf })

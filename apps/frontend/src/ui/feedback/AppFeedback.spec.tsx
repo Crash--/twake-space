@@ -33,6 +33,7 @@ const space: Space = {
   chat: false,
   mail: true,
   homeserverUrl: null,
+  chatUrl: null,
   banner: null,
   members: [],
   groups: [],

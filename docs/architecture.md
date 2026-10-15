@@ -125,7 +125,7 @@ sequenceDiagram
 
 Each app is framed once for the whole session, at its embed route for the space's resource, and kept while the person moves between spaces and tabs. The contract is [`@linagora/twake-embed`](https://github.com/linagora/twake-libs/tree/427b0508d87480dc10f972be9ef6bd7175ad853d/packages/twake-embed) ([ADR 010](https://github.com/linagora/twake-space-architecture/blob/bbcb1ffe03e5452c99325662f247dadba8fecb7c/ADR010.md), [metadata](https://github.com/linagora/twake-space-architecture/blob/f11d90c122393d20d236eca5017c25fcc338e5dd/ADR010.md)).
 
-- Chat: `CHAT_URL/embed/rooms/<Matrix space id>`
+- Chat: `<space's chatUrl or CHAT_URL>/embed/rooms/<Matrix space id>`
 - Tasks: `TASKS_URL/embed/projects/<project id>`
 - Drive: `<person's Drive>/#/embed/sharings/<sharing id>`, on each person's own platform
 - Mail: `MAIL_URL/embed/team-mailboxes/<mailbox id>`

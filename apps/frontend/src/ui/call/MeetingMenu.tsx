@@ -21,7 +21,7 @@ export function MeetingMenu({ space }: { space: Space }): ReactElement | null {
   const { t } = useI18n()
   const navigate = useNavigate()
   const { meetUrl } = useServices()
-  const appUrls = useAppUrls()
+  const appUrls = useAppUrls(space.chatUrl)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [joining, setJoining] = useState(false)
   const { leave } = useCall()

@@ -178,6 +178,12 @@ export interface ShownApp {
   path: string
 }
 
+// The app moved to another origin, as Chat does when its organization gets
+// its own: its frame cannot follow with a message.
+function moved(frame: FrameState, appUrl: string): boolean {
+  return new URL(frame.src).origin !== new URL(appUrl).origin
+}
+
 export type Reconciliation =
   | { kind: 'create'; src: string }
   | { kind: 'replace'; src: string }
@@ -199,10 +205,10 @@ export function reconcile(
 ): Reconciliation {
   if (frame?.writtenFrom === here) return { kind: 'none' }
   const src = embedUrl(appUrl, spec.embedPath(shown.resourceId), shown.path)
-  if (frame === null) {
+  if (frame === null || moved(frame, appUrl)) {
     return src === null
       ? { kind: 'adopt', to: tabPath(shown.spaceId, shown.app) }
-      : { kind: 'create', src }
+      : { kind: frame === null ? 'create' : 'replace', src }
   }
   if (frame.resourceId !== shown.resourceId) {
     if (frame.dialect === 'embed') return { kind: 'load' }
@@ -234,8 +240,9 @@ export function reconcileHidden(
   spec: EmbeddedAppSpec,
   appUrl: string
 ): HiddenReconciliation {
-  if (frame !== null && frame.resourceId === resourceId) return { kind: 'none' }
-  if (frame?.dialect === 'embed') return { kind: 'load' }
+  const stays = frame !== null && !moved(frame, appUrl)
+  if (stays && frame.resourceId === resourceId) return { kind: 'none' }
+  if (stays && frame.dialect === 'embed') return { kind: 'load' }
   const src = embedUrl(appUrl, spec.embedPath(resourceId), '')
   if (src === null) return { kind: 'none' }
   return { kind: frame === null ? 'create' : 'replace', src }
