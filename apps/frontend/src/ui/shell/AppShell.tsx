@@ -6,8 +6,7 @@ import {
   NavIcon,
   NavItem,
   NavText,
-  SearchBar,
-  IconButton
+  SearchBar
 } from '@linagora/twake-mui'
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { Outlet, NavLink as RouterNavLink, useMatch } from 'react-router'
@@ -28,6 +27,7 @@ import {
   SidebarSection
 } from '@/ds/AppFrame'
 import { FilterListIcon } from '@/ds/FilterListIcon'
+import { IconButton } from '@/ds/IconButton'
 import { AddIcon, SpaceCubeIcon } from '@/ds/icons'
 import { NavDestination } from '@/ds/NavDestination'
 import { AssistantContext, AssistantPanel } from '@/ui/assistant/AssistantPanel'
@@ -86,7 +86,7 @@ export function AppShell(): ReactElement {
                 <>
                   <IconButton
                     size="medium"
-                    aria-label={t('shell.searchSpaces')}
+                    label={t('shell.searchSpaces')}
                     aria-pressed={query !== null}
                     onClick={() => {
                       setQuery(query === null ? '' : null)
@@ -97,7 +97,7 @@ export function AppShell(): ReactElement {
                   <IconButton
                     size="medium"
                     color="primary"
-                    aria-label={t('spaces.create')}
+                    label={t('spaces.create')}
                     onClick={() => {
                       setCreating(true)
                     }}
