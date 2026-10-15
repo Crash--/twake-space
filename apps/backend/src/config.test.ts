@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from './config.ts'
 
@@ -14,10 +13,7 @@ const base = {
 
 const homeserver = {
   MATRIX_HOMESERVER_URL: 'https://matrix.example.com',
-  MATRIX_SERVER_NAME: 'example.com',
-  MATRIX_AS_TOKEN: 'as',
-  MATRIX_HS_TOKEN: 'hs',
-  SECRETS_KEY: randomBytes(32).toString('base64')
+  MATRIX_SERVER_NAME: 'example.com'
 }
 
 const controlPlane = {
@@ -36,34 +32,26 @@ describe('loadConfig', () => {
     expect(loadConfig(base).homeserver).toBeNull()
   })
 
-  it('reads a configured homeserver and its key', () => {
+  it('reads a configured homeserver', () => {
     expect(loadConfig({ ...base, ...homeserver }).homeserver).toEqual({
       url: 'https://matrix.example.com',
-      serverName: 'example.com',
-      asToken: 'as',
-      hsToken: 'hs',
-      key: Buffer.from(homeserver.SECRETS_KEY, 'base64')
+      serverName: 'example.com'
     })
   })
 
   it('refuses a homeserver configured in part', () => {
     expect(() =>
-      loadConfig({ ...base, ...homeserver, MATRIX_HS_TOKEN: undefined })
-    ).toThrow('MATRIX_HS_TOKEN')
+      loadConfig({ ...base, ...homeserver, MATRIX_SERVER_NAME: undefined })
+    ).toThrow('MATRIX_SERVER_NAME')
   })
 
   it('reads the chat control plane that gives each tenant its homeserver', () => {
-    const config = loadConfig({
-      ...base,
-      ...controlPlane,
-      SECRETS_KEY: homeserver.SECRETS_KEY
-    })
+    const config = loadConfig({ ...base, ...controlPlane })
 
     expect(config.homeserver).toBeNull()
     expect(config.controlPlane).toEqual({
       url: 'https://control-plane.example.com',
-      token: 'cp',
-      key: Buffer.from(homeserver.SECRETS_KEY, 'base64')
+      token: 'cp'
     })
   })
 
@@ -74,18 +62,9 @@ describe('loadConfig', () => {
         CHAT_CONTROL_PLANE_URL: controlPlane.CHAT_CONTROL_PLANE_URL
       })
     ).toThrow('CHAT_CONTROL_PLANE_TOKEN')
-    expect(() => loadConfig({ ...base, ...controlPlane })).toThrow(
-      'SECRETS_KEY'
-    )
     expect(() =>
       loadConfig({ ...base, ...homeserver, ...controlPlane })
     ).toThrow('CHAT_CONTROL_PLANE_URL')
-  })
-
-  it('refuses a key that is not 32 bytes', () => {
-    expect(() =>
-      loadConfig({ ...base, ...homeserver, SECRETS_KEY: 'c2hvcnQ=' })
-    ).toThrow('SECRETS_KEY')
   })
 })
 

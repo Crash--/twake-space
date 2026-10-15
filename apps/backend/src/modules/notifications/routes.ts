@@ -5,7 +5,6 @@ import type { Db } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
 import type { Authorize } from '../auth/index.ts'
 import { activityEvents } from '../feed/schema.ts'
-import type { Localpart } from '../feed/transactions.ts'
 import { homeservers, organizations } from '../organizations/schema.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { enabledByDefault, notifyUsers } from './recipients.ts'
@@ -16,6 +15,9 @@ import {
 } from './schema.ts'
 
 const PAGE = 50
+
+// How Synapse's SSO mapping builds a person's Matrix localpart.
+export type Localpart = 'uid' | 'email'
 
 const listQuery = z.object({
   // The id of the last notification of the previous page.

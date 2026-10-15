@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest'
@@ -6,7 +5,6 @@ import type { PlatformEvent } from '../../events/envelope.ts'
 import { NotYetKnownError, type Handler } from '../../events/router.ts'
 import { lastChanges } from '../../events/schema.ts'
 import type { Directory } from '../../infra/ldap-rest.ts'
-import { decrypt, hashSecret } from '../../infra/secrets.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import {
   meetingOrganizations,
@@ -28,8 +26,6 @@ beforeEach(async () => {
   await testDb.db.delete(lastChanges)
 })
 
-const KEY = randomBytes(32)
-
 function setUp(
   found: Awaited<ReturnType<Directory['organization']>>,
   homeserverId?: string,
@@ -41,7 +37,7 @@ function setUp(
     {
       directory,
       homeserverId,
-      tenants: homeservers && { homeservers, key: KEY }
+      tenants: homeservers
     },
     {
       get: key =>
@@ -83,50 +79,44 @@ it('reads an organization from the directory the first time it is seen', async (
   expect(other).toHaveBeenCalledTimes(2)
 })
 
-it("points a new organization to a single installation's homeserver", async () => {
-  const homeserverId = await configureHomeserver(testDb.db, randomBytes(32), {
+it("points a new organization to a single installation's homeserver, with chat", async () => {
+  const homeserverId = await configureHomeserver(testDb.db, {
     url: 'https://matrix.example.com',
-    serverName: 'example.com',
-    asToken: 'as',
-    hsToken: 'hs'
+    serverName: 'example.com'
   })
-  const { handle } = setUp(acme, homeserverId)
+  const { handle } = setUp({ ...acme, chat: false }, homeserverId)
 
   await handle('twake.space.created', { organizationId: 'org_acme' })
 
   expect(
     await testDb.db
-      .select({ homeserverId: organizations.homeserverId })
+      .select({
+        homeserverId: organizations.homeserverId,
+        chat: organizations.chatAvailable
+      })
       .from(organizations)
-  ).toEqual([{ homeserverId }])
+  ).toEqual([{ homeserverId, chat: true }])
 })
 
-const tenantHomeserver = (hsToken: string) => ({
+const tenantHomeserver = (serverName: string) => ({
   url: 'https://matrix.acme.example.com',
-  serverName: 'acme.example.com',
-  asToken: 'as',
-  hsToken
+  serverName
 })
 
-const linked = async () => {
-  const rows = await testDb.db
+const linked = () =>
+  testDb.db
     .select({
       homeserverId: organizations.homeserverId,
       url: homeservers.url,
-      serverName: homeservers.serverName,
-      asToken: homeservers.asToken,
-      hsTokenHash: homeservers.hsTokenHash
+      serverName: homeservers.serverName
     })
     .from(organizations)
     .leftJoin(homeservers, eq(homeservers.id, organizations.homeserverId))
-  return rows.map(({ asToken, ...row }) => ({
-    ...row,
-    asToken: asToken && decrypt(KEY, asToken)
-  }))
-}
 
 it("fetches a new organization's homeserver from the chat control plane", async () => {
-  const homeserverOf = vi.fn(() => Promise.resolve(tenantHomeserver('hs')))
+  const homeserverOf = vi.fn(() =>
+    Promise.resolve(tenantHomeserver('acme.example.com'))
+  )
   const { handle } = setUp(acme, undefined, { homeserverOf })
 
   await handle('twake.space.created', { organizationId: 'org_acme' })
@@ -136,9 +126,7 @@ it("fetches a new organization's homeserver from the chat control plane", async 
     {
       homeserverId: expect.any(String) as string,
       url: 'https://matrix.acme.example.com',
-      serverName: 'acme.example.com',
-      asToken: 'as',
-      hsTokenHash: hashSecret('hs')
+      serverName: 'acme.example.com'
     }
   ])
 })
@@ -165,10 +153,8 @@ it('refreshes the homeserver on each chat deployment', async () => {
   await deployed()
 
   expect(before).toMatchObject([{ homeserverId: null }])
-  expect(first).toMatchObject({ hsTokenHash: hashSecret('hs-1') })
-  expect(await linked()).toEqual([
-    { ...first, hsTokenHash: hashSecret('hs-2') }
-  ])
+  expect(first).toMatchObject({ serverName: 'hs-1' })
+  expect(await linked()).toEqual([{ ...first, serverName: 'hs-2' }])
   expect(await testDb.db.$count(homeservers)).toBe(1)
 })
 
@@ -214,7 +200,7 @@ it('refreshes the homeserver on a chat update, leaving chat as it is', async () 
     deployment: { status: 'succeeded', completedAt: '2026-10-05T09:00:00Z' }
   })
 
-  expect(await linked()).toMatchObject([{ hsTokenHash: hashSecret('hs-2') }])
+  expect(await linked()).toMatchObject([{ serverName: 'hs-2' }])
   expect(
     await testDb.db.select({ chatUrl: homeservers.chatUrl }).from(homeservers)
   ).toEqual([{ chatUrl: 'https://chat-org_acme.example.com' }])

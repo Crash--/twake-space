@@ -125,11 +125,7 @@ export async function notifyUsers(
   source: {
     organizationId: string | null
     spaceId: string | null
-  } & (
-    | { activityEventId: string }
-    | { matrixEventId: string }
-    | { externalId: string }
-  ),
+  } & ({ activityEventId: string } | { externalId: string }),
   payload: object = {}
 ) {
   if (wanted.length === 0) return []

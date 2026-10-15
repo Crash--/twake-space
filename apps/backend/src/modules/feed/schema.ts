@@ -10,7 +10,6 @@ import {
   uuid
 } from 'drizzle-orm/pg-core'
 import { timestamptz } from '../../infra/db.ts'
-import { homeservers } from '../organizations/schema.ts'
 
 // A user's id is null when only their email was sent and no space member has it.
 export type Actor =
@@ -28,7 +27,6 @@ export const feedCategory = pgEnum('feed_category', [
 export const activityEvents = pgTable(
   'activity_events',
   {
-    // Also the Matrix transaction id of the card: CloudEvent ids are only unique per source.
     id: uuid().primaryKey().defaultRandom(),
     source: text().notNull(),
     eventId: text('event_id').notNull(),
@@ -44,18 +42,10 @@ export const activityEvents = pgTable(
     objectId: text('object_id').notNull(),
     content: jsonb().notNull(),
     time: timestamptz('time').notNull(),
-    matrixEventId: text('matrix_event_id'),
-    // Set when the homeserver refused the card for good; it is not retried.
-    postFailedAt: timestamptz('post_failed_at'),
     createdAt: timestamptz('created_at').notNull().defaultNow()
   },
   table => [
     unique().on(table.source, table.eventId),
-    index('activity_events_unposted_idx')
-      .on(table.spaceId, table.time)
-      .where(
-        sql`${table.matrixEventId} is null and ${table.postFailedAt} is null and ${table.spaceId} is not null`
-      ),
     index().on(table.spaceId, table.objectType, table.objectId, table.time),
     // For a late provisioned event to find the events on its container.
     index('activity_events_unattached_idx')
@@ -66,38 +56,6 @@ export const activityEvents = pgTable(
       .where(sql`${table.spaceId} is null`),
     index().on(table.createdAt)
   ]
-)
-
-export const feedMessages = pgTable(
-  'feed_messages',
-  {
-    matrixEventId: text('matrix_event_id').primaryKey(),
-    organizationId: text('organization_id').notNull(),
-    spaceId: uuid('space_id').notNull(),
-    sender: text().notNull(),
-    content: jsonb().notNull(),
-    originServerTs: timestamptz('origin_server_ts').notNull(),
-    editedContent: jsonb('edited_content'),
-    editedAt: timestamptz('edited_at'),
-    redactedAt: timestamptz('redacted_at'),
-    createdAt: timestamptz('created_at').notNull().defaultNow()
-  },
-  table => [index().on(table.createdAt)]
-)
-
-export const feedReactions = pgTable(
-  'feed_reactions',
-  {
-    matrixEventId: text('matrix_event_id').primaryKey(),
-    // Null on reactions stored before reactions were scoped to their space.
-    spaceId: uuid('space_id'),
-    targetEventId: text('target_event_id').notNull(),
-    sender: text().notNull(),
-    key: text().notNull(),
-    redactedAt: timestamptz('redacted_at'),
-    createdAt: timestamptz('created_at').notNull().defaultNow()
-  },
-  table => [index().on(table.createdAt)]
 )
 
 // One per object in a space: later events about it change the card in place.
@@ -167,20 +125,4 @@ export const feedReads = pgTable(
     readAt: timestamptz('read_at').notNull()
   },
   table => [primaryKey({ columns: [table.spaceId, table.userId] })]
-)
-
-// Synapse resends a transaction until it gets a 200.
-export const appServiceTransactions = pgTable(
-  'app_service_transactions',
-  {
-    homeserverId: uuid('homeserver_id')
-      .notNull()
-      .references(() => homeservers.id, { onDelete: 'cascade' }),
-    txnId: text('txn_id').notNull(),
-    createdAt: timestamptz('created_at').notNull().defaultNow()
-  },
-  table => [
-    primaryKey({ columns: [table.homeserverId, table.txnId] }),
-    index().on(table.createdAt)
-  ]
 )

@@ -22,8 +22,6 @@ const server = createServer((request, response) => {
       ? JSON.stringify({
           homeserverUrl: 'https://matrix.acme.example.com',
           serverName: 'acme.example.com',
-          asToken: 'as',
-          hsToken: 'hs',
           ...chatUrl
         })
       : '{}'
@@ -43,9 +41,7 @@ it("reads a tenant's homeserver, none while chat is not deployed", async () => {
 
   expect(await tenants.homeserverOf('org_acme')).toEqual({
     url: 'https://matrix.acme.example.com',
-    serverName: 'acme.example.com',
-    asToken: 'as',
-    hsToken: 'hs'
+    serverName: 'acme.example.com'
   })
   expect(await tenants.homeserverOf('org_new')).toBeUndefined()
   await expect(tenants.homeserverOf('org_down')).rejects.toThrow('503')
@@ -68,7 +64,7 @@ it('keeps the homeserver when its Chat address is not a URL', async () => {
   const tenants = controlPlaneHomeservers({ url, token: 'cp' })
 
   expect(await tenants.homeserverOf('org_bad')).toMatchObject({
-    hsToken: 'hs',
+    serverName: 'acme.example.com',
     chatUrl: undefined
   })
 })

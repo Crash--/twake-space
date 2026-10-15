@@ -1,17 +1,11 @@
-import { randomBytes } from 'node:crypto'
-import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { decrypt, hashSecret } from '../../infra/secrets.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { configureHomeserver } from './homeservers.ts'
 import { homeservers, organizations } from './schema.ts'
 
-const key = randomBytes(32)
 const homeserver = {
   url: 'https://matrix.example.com',
-  serverName: 'example.com',
-  asToken: 'as-secret',
-  hsToken: 'hs-secret'
+  serverName: 'example.com'
 }
 
 let testDb: TestDb
@@ -25,60 +19,50 @@ beforeEach(async () => {
 })
 
 describe('configureHomeserver', () => {
-  it('stores the tokens encrypted, with a hash of hs_token for lookup', async () => {
-    await configureHomeserver(testDb.db, key, homeserver)
+  it('stores the homeserver', async () => {
+    await configureHomeserver(testDb.db, homeserver)
 
-    const [row] = await testDb.db
-      .select()
-      .from(homeservers)
-      .where(eq(homeservers.hsTokenHash, hashSecret('hs-secret')))
-    expect(row).toMatchObject({
-      url: 'https://matrix.example.com',
-      serverName: 'example.com'
-    })
-    expect(row && decrypt(key, row.asToken)).toBe('as-secret')
-    expect(row && decrypt(key, row.hsToken)).toBe('hs-secret')
-    expect(row?.asToken.toString()).not.toContain('as-secret')
-    expect(row?.chatUrl).toBeNull()
+    expect(await testDb.db.select().from(homeservers)).toEqual([
+      expect.objectContaining({
+        url: 'https://matrix.example.com',
+        serverName: 'example.com',
+        chatUrl: null
+      })
+    ])
   })
 
-  it('points every organization to it', async () => {
+  it('points every organization to it, with chat', async () => {
     await testDb.db.insert(organizations).values([
       { organizationId: 'linagora', domain: 'linagora.com' },
-      { organizationId: 'acme', domain: 'acme.com' }
+      { organizationId: 'acme', domain: 'acme.com', chatAvailable: false }
     ])
 
-    const id = await configureHomeserver(testDb.db, key, homeserver)
+    const id = await configureHomeserver(testDb.db, homeserver)
 
     expect(
       await testDb.db
-        .select({ homeserverId: organizations.homeserverId })
+        .select({
+          homeserverId: organizations.homeserverId,
+          chat: organizations.chatAvailable
+        })
         .from(organizations)
-    ).toEqual([{ homeserverId: id }, { homeserverId: id }])
+    ).toEqual([
+      { homeserverId: id, chat: true },
+      { homeserverId: id, chat: true }
+    ])
   })
 
   it('updates the same homeserver when its configuration changes', async () => {
-    const first = await configureHomeserver(testDb.db, key, homeserver)
+    const first = await configureHomeserver(testDb.db, homeserver)
 
-    const second = await configureHomeserver(testDb.db, key, {
-      ...homeserver,
-      hsToken: 'rotated'
-    })
-
-    expect(second).toBe(first)
-    const rows = await testDb.db.select().from(homeservers)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.hsTokenHash).toBe(hashSecret('rotated'))
-  })
-
-  it('takes a new server name with the same tokens', async () => {
-    const first = await configureHomeserver(testDb.db, key, homeserver)
-
-    const second = await configureHomeserver(testDb.db, key, {
+    const second = await configureHomeserver(testDb.db, {
       ...homeserver,
       serverName: 'renamed.example.com'
     })
 
     expect(second).toBe(first)
+    const rows = await testDb.db.select().from(homeservers)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.serverName).toBe('renamed.example.com')
   })
 })

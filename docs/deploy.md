@@ -16,7 +16,6 @@ flowchart LR
   rabbitmq[(RabbitMQ)]
   ldap[ldap-rest]
   oidc[OIDC provider]
-  hs[Matrix homeserver]
   cp[Chat control plane<br/>SaaS only]
   tasks[Tasks app]
   mail[Mail app]
@@ -40,8 +39,6 @@ flowchart LR
   be --> ldap
   be -->|discovery, introspection, userinfo, JWKS| oidc
   oidc -->|back-channel logout| be
-  be -->|client-server API| hs
-  hs -->|app service transactions| be
   be -.->|per-tenant homeserver| cp
   be -.-> sentry
 ```
@@ -148,9 +145,8 @@ Optional, with defaults:
 
 Matrix homeserver, in one of two modes. Without either, the backend runs without chat.
 
-- Single installation: set all of `MATRIX_HOMESERVER_URL`, `MATRIX_SERVER_NAME`, `MATRIX_AS_TOKEN` and `MATRIX_HS_TOKEN`. This one homeserver serves every organization.
+- Single installation: set both `MATRIX_HOMESERVER_URL` and `MATRIX_SERVER_NAME`. This one homeserver serves every organization, and every organization has chat.
 - SaaS: set both `CHAT_CONTROL_PLANE_URL` and `CHAT_CONTROL_PLANE_TOKEN`. The control plane gives each organization its homeserver.
-- Both modes need `SECRETS_KEY`: 32 random bytes in base64. The backend encrypts the homeserver tokens with it (AES-256-GCM) before storing them in Postgres. Changing it makes the stored tokens unreadable.
 - Setting only part of a group, or both groups, is a configuration error.
 
 ### RabbitMQ names
@@ -181,7 +177,7 @@ The backend starts in this order. A failure at any step stops the process.
 
 1. Validates the configuration.
 2. Applies the database migrations.
-3. In single installation mode, writes the homeserver settings to the database and links every organization to it.
+3. In single installation mode, writes the homeserver settings to the database, links every organization to it and turns their chat on.
 4. Runs OIDC discovery on `OIDC_ISSUER` (5 second timeout).
 5. Starts the API and metrics servers.
 6. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
@@ -214,7 +210,7 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 - Logs are JSON lines from pino on stdout, at `LOG_LEVEL`. RabbitMQ client logs carry `component: "amqp"`, at `warn` and above. An `access_token` in a logged URL is replaced by `[redacted]`.
 - Sentry is initialised before the app loads, so it instruments Fastify and pino. Log lines at `error` and `fatal` go to Sentry as errors. An unhandled promise rejection stops the process, as it does without Sentry.
-- ldap-rest calls time out after 5 seconds, Synapse and control plane calls after 10.
+- ldap-rest calls time out after 5 seconds, control plane calls after 10.
 
 ## What the backend reaches
 
@@ -222,7 +218,7 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 - Holds all state and the migrations.
 - Uses advisory locks so only one replica at a time runs the migrations, the single installation homeserver setup, the hourly purge and the parked event retries (every 5 seconds).
-- The hourly purge deletes feed events, cards, posts, messages and reactions after 365 days, notifications after 90 days, and Matrix app service transactions after 7 days.
+- The hourly purge deletes feed events, cards, posts and reactions after 365 days, and notifications after 90 days.
 
 ### RabbitMQ
 
@@ -246,27 +242,7 @@ The directory: organizations, users, groups and technical accounts. Calls are au
 
 ### Matrix homeserver
 
-- The backend posts nothing to Matrix: the feed lives in Postgres.
-- The homeserver pushes app service transactions to `PUT /_matrix/app/v1/transactions/:txnId` on the API port, authenticated with the homeserver token (bearer header or `access_token` query). The homeserver must reach the backend.
-- The homeserver must register the backend as an [app service](https://spec.matrix.org/v1.16/application-service-api/#registration). In SaaS, the control plane renders one registration per organization with the tokens it returns to the backend.
-  - `url`: the backend's API base URL. The homeserver appends `/_matrix/app/v1/transactions/<txnId>`.
-  - `as_token`, `hs_token`: `MATRIX_AS_TOKEN` and `MATRIX_HS_TOKEN`, or the control plane's `asToken` and `hsToken`.
-  - `id`: any name unique on the homeserver.
-  - `sender_localpart`, `namespaces`: the homeserver only sends an app service the events of rooms where a user of its namespaces (or its sender) is a member, or rooms its room or alias namespaces match. The backend needs the events of every space's Matrix room.
-
-The registration that runs in development:
-
-```yaml
-id: twake-space
-url: https://space-api.example.com
-as_token: <MATRIX_AS_TOKEN>
-hs_token: <MATRIX_HS_TOKEN>
-sender_localpart: twakespace
-namespaces:
-  users:
-    - exclusive: true
-      regex: '@twakespace:example\.com'
-```
+The backend never calls the homeserver, and the homeserver never calls the backend: the feed lives in Postgres. The backend keeps only the homeserver's URL and server name, which tell the frontend that chat is set up and match Matrix ids to members. A homeserver needs no app service registration for Twake Space.
 
 ### Chat control plane (SaaS)
 
@@ -281,5 +257,4 @@ namespaces:
 - @rezk2ll The entrypoint writes `POSTHOG_KEY` and `POSTHOG_HOST` to `/.env.js` and adds `POSTHOG_HOST` to `connect-src`, but the frontend source does not read either. Is PostHog planned, or should the script drop them?
 - @rezk2ll `twake-space.dlq` and `twake-space.activity.dlq` have no length limit or TTL. Who watches it, and should it get a limit?
 - @rezk2ll CI builds the images without a `platforms` setting. Is an arm64 image needed?
-- @rezk2ll The app service registration only covers the `twakespace` user, and the backend joins no room. Which service makes that user a member of each space's Matrix room, or should the registration match the rooms instead?
 - @rezk2ll Both a push to `main` and a release tag move `latest`, a pre-release tag included. Should deployments pin version tags only?

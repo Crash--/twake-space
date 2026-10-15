@@ -32,7 +32,6 @@ flowchart LR
   R -->|rejected, or waiting over 30 min| DLQ["twake-space.dlq, twake-space.activity.dlq"]
   R -->|after commit| L[twake-space.live exchange]
   L -->|one queue per replica| SSE[GET /stream]
-  MX[Synapse] -->|app service transactions| PG
   SSE --> B[Browser]
   B -->|HTTP routes| PG
   B -->|meeting request| M[twake-space exchange]
@@ -108,7 +107,7 @@ To replay a platform event by hand, such as one from `twake-space.dlq`, publish 
 
 Every platform handler is wrapped: when the body has an `organizationId` the copy does not know yet, the backend reads it once from the directory (ldap-rest) and inserts it with its `domain`, `chatAvailable` and `mailAvailable`. If the directory does not know it, a warning is logged and the handler still runs.
 
-- In a single installation, the organization points to the one configured homeserver.
+- In a single installation, the organization points to the one configured homeserver and has chat, whatever the directory says. No chat control plane publishes the chat events there.
 - In SaaS, the backend asks the chat control plane (`GET deployment/<organizationId>/twake-space`) for the tenant's homeserver and stores it, tokens encrypted, with its `chatUrl` (null when the control plane gives none). A 404 means chat is not deployed yet. When the control plane fails, the event still runs and the organization keeps no homeserver; on `chat.deployment.completed` and `chat.deployment.updated` the event is parked and retried instead.
 
 ### Organization availability
@@ -308,35 +307,15 @@ sequenceDiagram
 - A Drive folder digest card exists per object and member, the actor's user id. Its time is its latest window, so each window moves it to the top.
 - An event in no space makes no card. It exists for personal notifications only.
 - Posts are plain text, from editors and admins. Their authors edit and delete them. Every member reacts to cards and posts.
-- Each new or changed card, post or reaction, and each deleted post, sends a `feed` live event to the space's members. Chat messages and reactions from Matrix send none.
-- Nothing is posted to Matrix: the poster that sent cards to the space's Matrix room is off.
-
-## Matrix events back into Postgres
-
-```mermaid
-flowchart LR
-  S[Synapse] -->|"PUT /_matrix/app/v1/transactions/:txnId (hs_token)"| T[Transaction route]
-  T -->|m.room.message| FM[(feed_messages)]
-  T -->|m.reaction| FR[(feed_reactions)]
-  T -->|m.room.redaction| FM & FR
-  T -->|m.mentions| N[(notifications: message_mention)]
-```
-
-- Synapse authenticates with its `hs_token` (bearer or `access_token` query). The backend finds the homeserver by the token's hash.
-- A transaction id already seen for that homeserver is answered `{}` without processing.
-- Events are matched to a space by room id against the `matrix_space` resources of the homeserver's organizations. Events in other rooms are ignored.
-- `m.room.message` is stored. An `m.replace` edit updates the original if it is in the same space, the sender matches and it is newer.
-- `m.reaction` with `m.annotation` is stored with its space.
-- `m.room.redaction` marks the redacted message or reaction of the same space (`redacts` at the top level or, for room v11, in the content).
-- A malformed event, or one Postgres refuses to store, is skipped so Synapse does not resend the batch forever.
+- Each new or changed card, post or reaction, and each deleted post, sends a `feed` live event to the space's members.
+- The feed neither reads from nor posts to Matrix.
 
 ## Notifications
 
 ```mermaid
 flowchart LR
   AE[Activity event data.recipients] --> NR[notifyRecipients]
-  MM[Matrix message m.mentions] --> NU[notifyUsers]
-  AS[POST /notifications/suggestions] --> NU
+  AS[POST /notifications/suggestions] --> NU[notifyUsers]
   NR --> NU
   NU -->|per user settings| N[(notifications)]
   N -->|live: notification| SSE[GET /stream]
@@ -355,10 +334,6 @@ Each entry in `data.recipients` is `{ uuid?, email, reason }`. The reason sets t
 - A recipient without a `uuid` is found by email among the people the copy holds in the event's organization (space members of its spaces, and organization roles), or skipped.
 - A recipient whose `uuid` the copy holds only in other organizations is skipped. A `uuid` the copy does not hold at all is notified, since the copy does not hold every member of an organization.
 - Tasks events (`com.twake.tasks.*`) notify no one: Twake Tasks notifies its own users.
-
-### From Matrix mentions
-
-A new `m.room.message` notifies each user in `m.mentions.user_ids` who is on the same homeserver, is not the sender, and is a member of the space. The Matrix localpart is matched to the member's username (`MATRIX_LOCALPART=uid`, the default) or to the part of their email before `@` (`email`).
 
 ### From the assistant
 
@@ -410,12 +385,11 @@ sequenceDiagram
 
 A purge runs at startup and every hour, under an advisory lock so one replica purges at a time:
 
-- `activity_events`, `feed_messages`, `feed_reactions`, `feed_item_reactions`: 365 days after they were stored. A card goes with its latest event.
+- `activity_events`, `feed_item_reactions`: 365 days after they were stored. A card goes with its latest event.
 - `feed_posts`: 365 days after they were written. Their reactions go with them.
 - `notifications`: 90 days.
-- `app_service_transactions`: 7 days.
 
-The purge does not touch the copy, `processed_events` or `last_changes`, nor the events already posted in Matrix.
+The purge does not touch the copy, `processed_events` or `last_changes`.
 
 ## References
 

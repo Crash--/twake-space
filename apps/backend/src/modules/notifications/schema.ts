@@ -15,7 +15,6 @@ import { timestamptz } from '../../infra/db.ts'
 
 export const notificationType = pgEnum('notification_type', [
   'card_mention',
-  'message_mention',
   'assignment',
   'invitation',
   'attended_event_change',
@@ -33,7 +32,6 @@ export const notifications = pgTable(
     type: notificationType().notNull(),
     spaceId: uuid('space_id'),
     activityEventId: uuid('activity_event_id'),
-    matrixEventId: text('matrix_event_id'),
     // The caller's own id, for a notification pushed through the API.
     externalId: text('external_id'),
     payload: jsonb().notNull(),
@@ -43,14 +41,11 @@ export const notifications = pgTable(
   table => [
     check(
       'notifications_one_source',
-      sql`num_nonnulls(${table.activityEventId}, ${table.matrixEventId}, ${table.externalId}) = 1`
+      sql`num_nonnulls(${table.activityEventId}, ${table.externalId}) = 1`
     ),
     uniqueIndex('notifications_activity_event_idx')
       .on(table.userId, table.type, table.activityEventId)
       .where(sql`${table.activityEventId} is not null`),
-    uniqueIndex('notifications_matrix_event_idx')
-      .on(table.userId, table.type, table.matrixEventId)
-      .where(sql`${table.matrixEventId} is not null`),
     uniqueIndex('notifications_external_id_idx')
       .on(table.userId, table.externalId)
       .where(sql`${table.externalId} is not null`),

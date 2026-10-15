@@ -1,28 +1,21 @@
 import { eq, sql } from 'drizzle-orm'
 import type { Db, Tx } from '../../infra/db.ts'
-import { encrypt, hashSecret } from '../../infra/secrets.ts'
 import { homeservers, organizations } from './schema.ts'
 
 export interface HomeserverConfig {
   url: string
   serverName: string
-  asToken: string
-  hsToken: string
   chatUrl?: string | undefined
 }
 
 async function writeHomeserver(
   tx: Tx,
-  key: Buffer,
   existingId: string | null | undefined,
   homeserver: HomeserverConfig
 ): Promise<string> {
   const values = {
     url: homeserver.url,
     serverName: homeserver.serverName,
-    asToken: encrypt(key, homeserver.asToken),
-    hsToken: encrypt(key, homeserver.hsToken),
-    hsTokenHash: hashSecret(homeserver.hsToken),
     chatUrl: homeserver.chatUrl ?? null,
     updatedAt: sql`now()`
   }
@@ -41,10 +34,10 @@ async function writeHomeserver(
 }
 
 // Updates the one homeserver in place, whatever changed, and points every
-// organization to it, so organizations met before the setting post too.
+// organization to it with chat on: a single installation has no chat control
+// plane to tell which organizations have chat.
 export function configureHomeserver(
   db: Db,
-  key: Buffer,
   homeserver: HomeserverConfig
 ): Promise<string> {
   return db.transaction(async tx => {
@@ -54,8 +47,10 @@ export function configureHomeserver(
       .select({ id: homeservers.id })
       .from(homeservers)
       .limit(1)
-    const id = await writeHomeserver(tx, key, existing?.id, homeserver)
-    await tx.update(organizations).set({ homeserverId: id })
+    const id = await writeHomeserver(tx, existing?.id, homeserver)
+    await tx
+      .update(organizations)
+      .set({ homeserverId: id, chatAvailable: true, updatedAt: sql`now()` })
     return id
   })
 }
@@ -63,7 +58,6 @@ export function configureHomeserver(
 // In SaaS each tenant has its own homeserver, updated in place.
 export async function linkHomeserver(
   tx: Tx,
-  key: Buffer,
   organizationId: string,
   homeserver: HomeserverConfig
 ): Promise<void> {
@@ -73,12 +67,7 @@ export async function linkHomeserver(
     .where(eq(organizations.organizationId, organizationId))
     .for('update')
   if (!organization) return
-  const id = await writeHomeserver(
-    tx,
-    key,
-    organization.homeserverId,
-    homeserver
-  )
+  const id = await writeHomeserver(tx, organization.homeserverId, homeserver)
   await tx
     .update(organizations)
     .set({ homeserverId: id })

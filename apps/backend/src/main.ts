@@ -26,7 +26,6 @@ import { activityRoute } from './modules/feed/activity.ts'
 import { registerMetrics } from './modules/feed/metrics.ts'
 import { schedulePurge } from './modules/feed/retention.ts'
 import { registerFeedRoutes } from './modules/feed/routes.ts'
-import { registerTransactionRoutes } from './modules/feed/transactions.ts'
 import { listenForLive } from './modules/live/notify.ts'
 import { registerLiveRoutes } from './modules/live/routes.ts'
 import { createStreams } from './modules/live/streams.ts'
@@ -75,8 +74,7 @@ await migrateDb(sql)
 logger.info('database migrated')
 let homeserverId: string | undefined
 if (config.homeserver) {
-  const { key, ...homeserver } = config.homeserver
-  homeserverId = await configureHomeserver(db, key, homeserver)
+  homeserverId = await configureHomeserver(db, config.homeserver)
 }
 
 const ldapRest = createLdapRestClient(config)
@@ -92,10 +90,8 @@ const routes: Routes = {
     {
       directory,
       homeserverId,
-      tenants: config.controlPlane && {
-        homeservers: controlPlaneHomeservers(config.controlPlane),
-        key: config.controlPlane.key
-      }
+      tenants:
+        config.controlPlane && controlPlaneHomeservers(config.controlPlane)
     },
     {
       get: key =>
@@ -148,7 +144,6 @@ registerMeetingRoutes(server, {
   publish: (...message) => publish(...message)
 })
 registerSettingsRoutes(server, { db, authorize })
-registerTransactionRoutes(server, { db, localpart: config.MATRIX_LOCALPART })
 const streams = createStreams()
 registerLiveRoutes(server, { authorize, streams })
 await server.listen({ host: config.HTTP_HOST, port: config.HTTP_PORT })

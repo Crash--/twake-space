@@ -60,7 +60,6 @@ The refusals look like this.
 - `404 not_found` covers both a resource that does not exist and one the caller cannot reach. A malformed id in the path also answers 404 on the read routes.
 - Errors Fastify raises itself keep Fastify's shape, `{"statusCode":400,"code":"...","error":"Bad Request","message":"..."}`: a body that is not valid JSON (400), an unsupported content type (415), a body over the limit (413, 1 MiB except on the banner route) and an unknown route (404).
 - Any other thrown error, including an ldap-rest failure on the directory routes, answers `500 {"error":"internal"}`. The error itself goes to the log only.
-- The Matrix transaction route uses Matrix error bodies instead: `{"errcode":"M_FORBIDDEN","error":"..."}`. It checks the `hs_token` before reading the body.
 
 ## Spaces
 
@@ -230,7 +229,7 @@ All notification routes are for session callers only and act on the caller's own
 
 - Query: `before` (optional UUID, the last notification of the previous page), `limit` (1 to 100, default 50).
 - Newest first. `unread` counts every unread notification of the user, not only this page.
-- `type` is one of `card_mention`, `message_mention`, `assignment`, `invitation`, `attended_event_change`, `space_change`, `assistant_suggestion`.
+- `type` is one of `card_mention`, `assignment`, `invitation`, `attended_event_change`, `space_change`, `assistant_suggestion`.
 - `payload` is `{}` except for an `assistant_suggestion`: `{ text, pendingCallId, matrixRoomId }`.
 - `activity` comes from the activity event behind the notification. `category` is one of `messages`, `files`, `activities`, `events`.
 - `400 {"error":"invalid_request"}` when the query fails.
@@ -276,7 +275,6 @@ Returns whether each notification type is on. A type the user never chose is on,
 {
   "settings": {
     "card_mention": true,
-    "message_mention": true,
     "assignment": true,
     "invitation": true,
     "attended_event_change": true,
@@ -545,16 +543,6 @@ Revokes the token and the tokens it created, down the line. Answers `204`, or `4
 - Answers `200` with an empty body and `Cache-Control: no-store`.
 - `400 {"error":"invalid_request"}` when the body or the logout token fails.
 
-## Matrix application service
-
-### PUT /_matrix/app/v1/transactions/:txnId
-
-- Caller: the Matrix homeserver, with its `hs_token` as a Bearer token or as the `access_token` query parameter.
-- Body: `{"events":[...]}`, up to 8 MiB.
-- Stores messages, edits, reactions and redactions from rooms linked to a space, and notifies mentioned members. A transaction id seen before is acknowledged without being stored again. Malformed events are skipped.
-- Answers `200 {}`.
-- `401 {"errcode":"M_UNAUTHORIZED","error":"missing hs_token"}`, `403 {"errcode":"M_FORBIDDEN","error":"unknown hs_token"}`, `400 {"errcode":"M_BAD_JSON","error":"invalid transaction"}`.
-
 ## Health and metrics
 
 ### GET /health/live
@@ -665,7 +653,7 @@ Unlinks the group. Answers `204`.
 ## Open questions
 
 - @rezk2ll Which `code` values does ldap-rest send on a refused space write? The routes pass them through as the `error` code, so clients will match on them and they should be listed here.
-- @rezk2ll On `GET /notifications`, a `message_mention` has no activity event. Is `activity` then `null` or an object of nulls? The query left joins the activity event.
+- @rezk2ll On `GET /notifications`, an `assistant_suggestion` has no activity event. Is `activity` then `null` or an object of nulls? The query left joins the activity event.
 - @rezk2ll The read routes answer 404 on a malformed path id, the space write routes answer 400. Is that difference intended?
 - @rezk2ll `GET /organization/groups` returns group `id`s from ldap-rest, and `POST /spaces/:id/groups` requires `groupIds` to be UUIDs. Are ldap-rest group ids always UUIDs?
 - @rezk2ll On `/organization/tokens`, PATCH and DELETE answer 404 to a non admin while GET and POST answer 403. Is that intended?

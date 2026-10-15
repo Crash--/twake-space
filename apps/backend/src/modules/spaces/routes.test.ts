@@ -520,9 +520,6 @@ describe('GET /spaces/:id', () => {
       .values({
         url: 'https://matrix.org-1.example.com',
         serverName: 'org-1.example.com',
-        asToken: Buffer.from('as'),
-        hsToken: Buffer.from('hs'),
-        hsTokenHash: 'hash',
         chatUrl: 'https://chat-org-1.example.com'
       })
       .returning({ id: homeservers.id })

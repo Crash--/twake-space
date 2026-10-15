@@ -1,15 +1,6 @@
 import Fastify, { LogController, type FastifyRequest } from 'fastify'
 import type { Logger } from 'pino'
 
-// Synapse may send its hs_token as access_token in the query string.
-function loggedUrl(url: string) {
-  const [path, query] = url.split('?', 2)
-  if (query === undefined) return url
-  const params = new URLSearchParams(query)
-  if (params.has('access_token')) params.set('access_token', '[redacted]')
-  return `${path ?? ''}?${params.toString()}`
-}
-
 export function createServer(deps: {
   logger: Logger
   isReady: () => Promise<boolean>
@@ -22,7 +13,7 @@ export function createServer(deps: {
         serializers: {
           req: (request: FastifyRequest) => ({
             method: request.method,
-            url: loggedUrl(request.url),
+            url: request.url,
             host: request.host,
             remoteAddress: request.ip
           })

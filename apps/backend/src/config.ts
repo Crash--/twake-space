@@ -2,12 +2,7 @@ import { z } from 'zod'
 import { amqpTopology } from './events/topology.ts'
 import { spaceApp } from './modules/spaces/resources.ts'
 
-const HOMESERVER_KEYS = [
-  'MATRIX_HOMESERVER_URL',
-  'MATRIX_SERVER_NAME',
-  'MATRIX_AS_TOKEN',
-  'MATRIX_HS_TOKEN'
-] as const
+const HOMESERVER_KEYS = ['MATRIX_HOMESERVER_URL', 'MATRIX_SERVER_NAME'] as const
 const CONTROL_PLANE_KEYS = [
   'CHAT_CONTROL_PLANE_URL',
   'CHAT_CONTROL_PLANE_TOKEN'
@@ -19,17 +14,8 @@ const homeserver = z
   .object({
     MATRIX_HOMESERVER_URL: z.url({ protocol: /^https?$/ }).optional(),
     MATRIX_SERVER_NAME: z.string().min(1).optional(),
-    MATRIX_AS_TOKEN: z.string().min(1).optional(),
-    MATRIX_HS_TOKEN: z.string().min(1).optional(),
     CHAT_CONTROL_PLANE_URL: z.url({ protocol: /^https?$/ }).optional(),
-    CHAT_CONTROL_PLANE_TOKEN: z.string().min(1).optional(),
-    SECRETS_KEY: z
-      .base64()
-      .refine(
-        key => Buffer.from(key, 'base64').length === 32,
-        'must be 32 bytes in base64'
-      )
-      .optional()
+    CHAT_CONTROL_PLANE_TOKEN: z.string().min(1).optional()
   })
   .superRefine((env, ctx) => {
     const complain = (key: string, message: string) => {
@@ -48,28 +34,19 @@ const homeserver = z
         complain(key, 'not with a single homeserver')
       }
     }
-    if (used.length > 0 && env.SECRETS_KEY === undefined) {
-      complain('SECRETS_KEY', 'required to store homeserver tokens')
-    }
   })
   .transform(env => {
-    const key = env.SECRETS_KEY && Buffer.from(env.SECRETS_KEY, 'base64')
     const {
       MATRIX_HOMESERVER_URL: url,
       MATRIX_SERVER_NAME: serverName,
-      MATRIX_AS_TOKEN: asToken,
-      MATRIX_HS_TOKEN: hsToken,
       CHAT_CONTROL_PLANE_URL: controlPlaneUrl,
       CHAT_CONTROL_PLANE_TOKEN: controlPlaneToken
     } = env
     return {
-      homeserver:
-        url && serverName && asToken && hsToken && key
-          ? { url, serverName, asToken, hsToken, key }
-          : null,
+      homeserver: url && serverName ? { url, serverName } : null,
       controlPlane:
-        controlPlaneUrl && controlPlaneToken && key
-          ? { url: controlPlaneUrl, token: controlPlaneToken, key }
+        controlPlaneUrl && controlPlaneToken
+          ? { url: controlPlaneUrl, token: controlPlaneToken }
           : null
     }
   })

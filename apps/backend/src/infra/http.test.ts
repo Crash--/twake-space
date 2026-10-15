@@ -46,18 +46,6 @@ it('keeps the answer of an error made for the client', async () => {
   expect(response.statusCode).toBe(400)
 })
 
-it('leaves access tokens in the query string out of the request log', async () => {
-  const { lines, logger } = capturedLogs()
-  const app = createServer({ logger, isReady: () => Promise.resolve(true) })
-  app.get('/hook', () => 'ok')
-
-  await app.inject({ method: 'GET', url: '/hook?access_token=hs-secret&x=1' })
-
-  const logged = JSON.stringify(lines)
-  expect(logged).not.toContain('hs-secret')
-  expect(logged).toContain('/hook?access_token=%5Bredacted%5D&x=1')
-})
-
 it('answers 503 on liveness once the process is no longer alive', async () => {
   let alive = true
   const app = createServer({

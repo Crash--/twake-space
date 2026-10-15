@@ -2,7 +2,7 @@
 
 How to run the Twake Space backend, how it is laid out, and where new code goes.
 
-The backend is a Fastify server on Node 24 that keeps a copy of spaces, members and app activity in Postgres. It fills that copy from RabbitMQ events and from Matrix app service transactions, and serves it over HTTP to the frontend and to API token holders.
+The backend is a Fastify server on Node 24 that keeps a copy of spaces, members and app activity in Postgres. It fills that copy from RabbitMQ events and serves it over HTTP to the frontend and to API token holders.
 
 ## Run it
 
@@ -29,7 +29,6 @@ At startup the backend runs OIDC discovery against `OIDC_ISSUER`, so the issuer 
 ```mermaid
 flowchart LR
   rabbitmq[(RabbitMQ queue)] --> events["events/<br>parse, dedupe, route"]
-  synapse[Synapse] -- "app service<br>transactions" --> feed
   events --> spaces & organizations & feed & settings
   http["HTTP clients<br>frontend, API tokens"] --> auth["auth/ + tokens/<br>authorize"]
   auth --> spaces & tokens & notifications & directory["organizations/<br>directory routes"] & live & settings & meetings
@@ -51,7 +50,7 @@ What each module owns:
 - `tokens`: API tokens (account, organization and technical account tokens), the organization's token policy, the token audit log, and revoking tokens when accounts, spaces or organizations go away.
 - `spaces`: spaces, their members, linked groups, organization roles and app resources, all kept up to date from platform events, plus what stays in twake-space: each space's settings (description, color, apps), banner and state (active, archived, in the Bin), and each person's pins and visits. Serves the read routes under `/spaces` (`routes.ts`) and the write routes, which go through ldap-rest first (`writes.ts`). Sends each space's drive commands to cozy-stack (`drives.ts`).
 - `organizations`: organizations (domain, chat and mail availability), homeservers, the chat control plane client, and the directory search routes `GET /organization/members` and `GET /organization/groups`.
-- `feed`: activity cards from app events, members' posts and reactions under `/spaces/:spaceId/feed`, chat messages and reactions from Matrix transactions, the retention purge, and `/metrics`.
+- `feed`: activity cards from app events, members' posts and reactions under `/spaces/:spaceId/feed`, the retention purge, and `/metrics`.
 - `notifications`: per user notifications and settings, under `/notifications`, and the assistant's suggestions.
 - `settings`: each person's Twake Workplace settings from `user.settings.updated`, served at `GET /settings`.
 - `meetings`: `POST /spaces/:spaceId/meetings`, which publishes a meeting request for the calendar on the `twake-space` exchange.
@@ -129,7 +128,6 @@ Session revocation:
 
 Some routes do not use `authorize`:
 
-- `PUT /_matrix/app/v1/transactions/:txnId` takes the homeserver's hs_token, as a bearer token or the `access_token` query parameter.
 - `/metrics` and the health routes take no token.
 
 ## Add a route

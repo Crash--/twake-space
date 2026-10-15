@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createServer } from '../../infra/http.ts'
@@ -257,7 +256,6 @@ describe('settings', () => {
     expect(before.json()).toEqual({
       settings: {
         card_mention: true,
-        message_mention: true,
         assignment: true,
         invitation: true,
         attended_event_change: true,
@@ -297,11 +295,9 @@ describe('POST /notifications/suggestions', () => {
     await db
       .insert(organizations)
       .values({ organizationId: 'acme', domain: 'acme.example.com' })
-    await configureHomeserver(db, randomBytes(32), {
+    await configureHomeserver(db, {
       url: 'https://matrix.example.com',
-      serverName: 'example.com',
-      asToken: 'as',
-      hsToken: 'hs'
+      serverName: 'example.com'
     })
     const [hs] = await db.select({ id: homeservers.id }).from(homeservers)
     await db.update(organizations).set({ homeserverId: hs?.id ?? null })

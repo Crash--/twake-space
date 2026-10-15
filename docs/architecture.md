@@ -26,7 +26,6 @@ flowchart LR
   mq[(RabbitMQ)]
   ldap[ldap-rest]
   sso[SSO]
-  hs[Matrix homeserver]
   apps[Apps' backends]
   settings[Common settings]
   platform[Platform]
@@ -49,14 +48,13 @@ flowchart LR
   mq --> be
   be -->|meeting requests, drive commands| mq
   mq --> apps
-  hs -->|app service transactions| be
   sso -->|back-channel logout| be
   harness -->|suggestions, API token| be
 ```
 
 - The frontend draws the shell, the home, the feed and the members, and frames each app in its tab. It never calls an app's backend.
-- The backend serves the spaces, the feed, the notifications and the API tokens. It never calls an app either: apps reach it through RabbitMQ, and Matrix through the app service API.
-- Other servers call the backend's HTTP API in three cases only: the SSO for back-channel logout, the homeserver for its transactions, and API token holders, Twake Harness among them.
+- The backend serves the spaces, the feed, the notifications and the API tokens. It never calls an app either: apps reach it through RabbitMQ.
+- Other servers call the backend's HTTP API in two cases only: the SSO for back-channel logout, and API token holders, Twake Harness among them.
 
 ## Who owns what
 
@@ -159,7 +157,6 @@ sequenceDiagram
 The feed is Twake Space's own: it reads no app and no homeserver from the browser.
 
 - Apps publish activity events (CloudEvents) on the `activity` exchange. Each one updates the card of its object, in the space whose resource holds it.
-- The homeserver pushes Chat's messages, reactions and mentions as app service transactions.
 - Members post and react through the backend.
 - A card's title opens the object in its app's tab. An event card opens Calendar's preview of it.
 

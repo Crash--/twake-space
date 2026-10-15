@@ -1,18 +1,9 @@
-import { randomBytes } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { notifications } from '../notifications/schema.ts'
-import { configureHomeserver } from '../organizations/homeservers.ts'
 import { purgeExpired } from './retention.ts'
-import {
-  activityEvents,
-  appServiceTransactions,
-  feedItemReactions,
-  feedMessages,
-  feedPosts,
-  feedReactions
-} from './schema.ts'
+import { activityEvents, feedItemReactions, feedPosts } from './schema.ts'
 
 const NOW = new Date('2026-10-05T12:00:00Z')
 const daysAgo = (days: number) =>
@@ -26,8 +17,6 @@ afterAll(() => testDb.drop())
 beforeEach(async () => {
   const { db } = testDb
   await db.delete(activityEvents)
-  await db.delete(feedMessages)
-  await db.delete(feedReactions)
   await db.delete(notifications)
   await db.delete(feedPosts)
   await db.delete(feedItemReactions)
@@ -52,22 +41,6 @@ async function seed(createdAt: Date, n: string) {
       createdAt
     })
     .returning()
-  await db.insert(feedMessages).values({
-    matrixEventId: `$m${n}`,
-    organizationId: 'linagora',
-    spaceId: '3b9e2c71-5d4a-4f0e-9c8b-1a2d6e7f8091',
-    sender: '@alice:example.com',
-    content: {},
-    originServerTs: createdAt,
-    createdAt
-  })
-  await db.insert(feedReactions).values({
-    matrixEventId: `$r${n}`,
-    targetEventId: `$m${n}`,
-    sender: '@alice:example.com',
-    key: '👍',
-    createdAt
-  })
   await db.insert(notifications).values({
     userId: '8f14e45f-ceea-467a-9575-1d1c2b0c4b2e',
     type: 'card_mention',
@@ -81,8 +54,6 @@ const counts = async () => {
   const { db } = testDb
   return {
     events: await db.$count(activityEvents),
-    messages: await db.$count(feedMessages),
-    reactions: await db.$count(feedReactions),
     notifications: await db.$count(notifications)
   }
 }
@@ -95,12 +66,7 @@ describe('purgeExpired', () => {
 
     expect(await purgeExpired(testDb.db, NOW)).toBe(true)
 
-    expect(await counts()).toEqual({
-      events: 2,
-      messages: 2,
-      reactions: 2,
-      notifications: 1
-    })
+    expect(await counts()).toEqual({ events: 2, notifications: 1 })
   })
 
   it('deletes posts and reactions past 12 months, and reactions whose item is gone', async () => {
@@ -133,27 +99,6 @@ describe('purgeExpired', () => {
     expect(
       await db.select({ key: feedItemReactions.key }).from(feedItemReactions)
     ).toEqual([{ key: 'a' }])
-  })
-
-  it('forgets app service transactions past 7 days', async () => {
-    const homeserverId = await configureHomeserver(testDb.db, randomBytes(32), {
-      url: 'https://matrix.example.com',
-      serverName: 'example.com',
-      asToken: 'as',
-      hsToken: 'hs'
-    })
-    await testDb.db.insert(appServiceTransactions).values([
-      { homeserverId, txnId: 'old', createdAt: daysAgo(8) },
-      { homeserverId, txnId: 'recent', createdAt: daysAgo(6) }
-    ])
-
-    await purgeExpired(testDb.db, NOW)
-
-    expect(
-      await testDb.db
-        .select({ txnId: appServiceTransactions.txnId })
-        .from(appServiceTransactions)
-    ).toEqual([{ txnId: 'recent' }])
   })
 
   it('leaves the purge to the replica already running it', async () => {

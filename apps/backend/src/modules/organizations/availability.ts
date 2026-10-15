@@ -29,7 +29,7 @@ interface MeetingDeps {
   // A single installation's homeserver, which serves every organization.
   homeserverId?: string | undefined
   // In SaaS, where each tenant's homeserver comes from the chat control plane.
-  tenants?: { homeservers: TenantHomeservers; key: Buffer } | null | undefined
+  tenants?: TenantHomeservers | null | undefined
 }
 
 // A failing control plane leaves the organization's homeserver as it was: the
@@ -45,9 +45,9 @@ async function refreshHomeserver(
   if (!tenants) return
   try {
     await tx.transaction(async savepoint => {
-      const homeserver = await tenants.homeservers.homeserverOf(organizationId)
+      const homeserver = await tenants.homeserverOf(organizationId)
       if (homeserver) {
-        await linkHomeserver(savepoint, tenants.key, organizationId, homeserver)
+        await linkHomeserver(savepoint, organizationId, homeserver)
       }
     })
   } catch (error) {
@@ -86,7 +86,8 @@ async function meet(
     .values({
       organizationId,
       domain: found.domain,
-      chatAvailable: found.chat,
+      // A single installation's homeserver serves chat to every organization.
+      chatAvailable: found.chat || deps.homeserverId !== undefined,
       mailAvailable: found.mail,
       homeserverId: deps.homeserverId
     })

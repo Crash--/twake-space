@@ -4,12 +4,9 @@ import type { Db } from '../../infra/db.ts'
 import { notifications } from '../notifications/schema.ts'
 import {
   activityEvents,
-  appServiceTransactions,
   feedCards,
   feedItemReactions,
-  feedMessages,
-  feedPosts,
-  feedReactions
+  feedPosts
 } from './schema.ts'
 
 const PURGE_EVERY_MS = 60 * 60 * 1000
@@ -28,8 +25,6 @@ export function purgeExpired(db: Db, now = new Date()): Promise<boolean> {
     await tx
       .delete(activityEvents)
       .where(lt(activityEvents.createdAt, feedLimit))
-    await tx.delete(feedMessages).where(lt(feedMessages.createdAt, feedLimit))
-    await tx.delete(feedReactions).where(lt(feedReactions.createdAt, feedLimit))
     await tx.delete(feedPosts).where(lt(feedPosts.time, feedLimit))
     // Also those on a card whose events are all purged, or on a deleted post.
     await tx
@@ -56,9 +51,6 @@ export function purgeExpired(db: Db, now = new Date()): Promise<boolean> {
     await tx
       .delete(notifications)
       .where(lt(notifications.createdAt, daysBefore(now, 90)))
-    await tx
-      .delete(appServiceTransactions)
-      .where(lt(appServiceTransactions.createdAt, daysBefore(now, 7)))
     return true
   })
 }
