@@ -55,8 +55,8 @@ export function registerNotificationRoutes(
   const { db, localpart } = deps
   const preHandler = deps.authorize()
 
-  // The member of the caller's organization behind a Matrix id, found as Matrix
-  // mentions are (a space member's username or e-mail), on the organization's homeserver.
+  // The member of the caller's organization behind a Matrix id: a space member
+  // whose username or e-mail gives its localpart, on the organization's homeserver.
   async function userOfMatrixId(organizationId: string, matrixUserId: string) {
     const at = matrixUserId.indexOf(':')
     const name = matrixUserId.slice(1, at).toLowerCase()
