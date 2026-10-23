@@ -41,6 +41,7 @@ import { itemPlace } from '@/application/spaceTabs'
 import { NameAvatar } from '@/ds/AppFrame'
 import {
   AppAvatar,
+  AppBadge,
   DateTile,
   EventSummary,
   FeedAction,
@@ -746,27 +747,29 @@ function Card({
   const place = itemPlace(space, card)
   const open = OPEN[place.tab]
   const label = [actor ?? appName, card.object.title].filter(Boolean).join(': ')
+  const face = (
+    <NameAvatar
+      name={actor ?? '?'}
+      size="m"
+      src={actorAvatar(space, card.actor)}
+    />
+  )
 
   return (
     <FeedRow
       label={label}
       focused={focused}
       avatar={
-        // The person who acted; an app or an integration has its own.
-        card.actor?.type === 'user' && card.actor.name ? (
-          <NameAvatar
-            name={card.actor.name}
-            size="m"
-            src={actorAvatar(space, card.actor)}
-          />
-        ) : isApp(app) ? (
-          <AppAvatar icon={APPS[app].icon} app={app} label={appName ?? ''} />
+        // The person who acted, with the app as a badge; an app or an
+        // integration has its own.
+        !isApp(app) ? (
+          face
+        ) : card.actor?.type === 'user' && card.actor.name ? (
+          <AppBadge icon={APPS[app].icon} app={app} label={appName ?? ''}>
+            {face}
+          </AppBadge>
         ) : (
-          <NameAvatar
-            name={actor ?? '?'}
-            size="m"
-            src={actorAvatar(space, card.actor)}
-          />
+          <AppAvatar icon={APPS[app].icon} app={app} label={appName ?? ''} />
         )
       }
     >

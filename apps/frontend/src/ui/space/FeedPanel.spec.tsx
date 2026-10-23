@@ -277,7 +277,7 @@ describe('FeedPanel', () => {
       expect(within(card).getByText('logo.svg, banner.png')).toBeInTheDocument()
       expect(
         within(card).getByRole('link', { name: 'Open in Drive' })
-      ).toHaveAttribute('href', '/spaces/a1/drive')
+      ).toHaveAttribute('href', '/spaces/a1/drive/q4')
     })
 
     it('reads a digest with only deletions as a deletion', async () => {
@@ -356,7 +356,7 @@ describe('FeedPanel', () => {
     expect(texts.some(text => text.includes('posted an update'))).toBe(false)
   })
 
-  it('shows who acted on a card, and the app when no person did', async () => {
+  it('shows who acted on a card with the app as a badge, and the app when no person did', async () => {
     renderFeed([
       task,
       mail,
@@ -371,7 +371,7 @@ describe('FeedPanel', () => {
       name: 'Bob Durand: Write the brief'
     })
     expect(within(taskCard).getByText('BD')).toBeInTheDocument()
-    expect(within(taskCard).queryByLabelText('Tasks')).toBe(null)
+    expect(within(taskCard).getByLabelText('Tasks')).toBeInTheDocument()
 
     const mailCard = screen.getByRole('article', {
       name: 'Mail: Partner feedback'

@@ -610,11 +610,11 @@ describe('EmbeddedApps', () => {
   })
 
   it("frames the space's shared drive on the person's own Twake Drive, with its overlay", async () => {
-    renderAt('/spaces/a1/drive/folder/f1')
+    renderAt('/spaces/a1/drive/f1')
 
     expect(await screen.findByTitle('Drive')).toHaveAttribute(
       'src',
-      'https://alice-drive.twake.test/#/embed/sharings/s%2F1/folder/f1'
+      'https://alice-drive.twake.test/#/embed/sharings/s%2F1/f1'
     )
     expect(await overlayOnceReady('Drive')).toHaveAttribute(
       'src',

@@ -78,7 +78,7 @@ export function containerTab(space: Space, kind: ResourceKind): Tab | null {
 /**
  * Where a feed item opens: a card in its container's tab, anything else in
  * the feed, at the item. An event opens in Calendar's preview of it, a message
- * in Mail at the email.
+ * in Mail at the email, a folder in Drive at the folder.
  */
 export function itemPlace(
   space: Space,
@@ -93,10 +93,12 @@ export function itemPlace(
 }
 
 // The path under the tab's embed route that shows the object itself, if the
-// app can: Calendar knows its event by uid, Mail its email by JMAP id.
+// app can: Calendar knows its event by uid, Mail its email by JMAP id, Drive
+// its folder by id. A Drive file opens at the tab, as no card names its folder.
 function belowTab(tab: Tab, object: { type: string; id: string }): string {
   const id = encodeURIComponent(object.id)
   if (tab === 'calendar') return `/events/${id}`
   if (tab === 'mail' && object.type === 'message') return `/email/${id}`
+  if (tab === 'drive' && object.type === 'folder') return `/${id}`
   return ''
 }

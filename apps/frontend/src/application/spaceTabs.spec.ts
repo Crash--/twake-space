@@ -199,6 +199,30 @@ describe('itemPlace', () => {
     })
   })
 
+  it('opens a folder in the Drive tab at the folder, a file at the tab', () => {
+    const folder: FeedCard = {
+      ...card,
+      type: 'com.twake.drive.folder.changed.v1',
+      object: {
+        type: 'folder',
+        id: 'dir/1',
+        title: 'Q4 assets',
+        container: { kind: 'drive', id: 'drive-1' }
+      }
+    }
+    const file: FeedCard = {
+      ...folder,
+      type: 'com.twake.drive.file.created.v1',
+      object: { ...folder.object, type: 'file', id: 'f-1' }
+    }
+    expect(itemPlace(space, folder)).toEqual({
+      tab: 'drive',
+      path: '/spaces/a1/drive/dir%2F1',
+      feedItem: null
+    })
+    expect(itemPlace(space, file).path).toBe('/spaces/a1/drive')
+  })
+
   it('opens a post, or a card with no tab, in the feed at the item', () => {
     expect(itemPlace(space, post)).toEqual({
       tab: 'feed',

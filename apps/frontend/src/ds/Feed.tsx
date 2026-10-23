@@ -1,6 +1,7 @@
 import { Down, Icon, Send, type IconProps } from '@linagora/twake-icons'
 import {
   Avatar,
+  Badge,
   Box,
   Button,
   Checkbox,
@@ -470,6 +471,43 @@ export function AppAvatar({
     >
       <Icon icon={icon} size={18} />
     </Avatar>
+  )
+}
+
+/** A person's avatar with the app they acted in as a small badge. */
+export function AppBadge({
+  icon,
+  label,
+  app,
+  children
+}: {
+  icon: IconProps['icon']
+  label: string
+  app: keyof SpaceTokens['appColors']
+  children: ReactNode
+}): ReactElement {
+  return (
+    <Badge
+      overlap="circular"
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      sx={{ '& .MuiBadge-badge': { p: 0 } }}
+      badgeContent={
+        <Avatar
+          size={16}
+          aria-label={label}
+          title={label}
+          sx={theme => ({
+            bgcolor: 'background.default',
+            color: theme.space.appColors[app],
+            outline: `2px solid ${theme.palette.background.paper}`
+          })}
+        >
+          <Icon icon={icon} size={10} />
+        </Avatar>
+      }
+    >
+      {children}
+    </Badge>
   )
 }
 
