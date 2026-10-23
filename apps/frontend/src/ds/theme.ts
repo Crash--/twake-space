@@ -1,3 +1,4 @@
+import { dialogActionsClasses, dialogContentClasses } from '@linagora/twake-mui'
 import type { ThemeOptions } from '@mui/material/styles'
 import type { CSSProperties } from 'react'
 
@@ -79,6 +80,21 @@ export const spaceThemeOptions = {
           'radial-gradient(at 100% 0%, #193745 0px, transparent 55%)',
           'radial-gradient(at 100% 100%, #2e3648 0px, transparent 55%)'
         ]
+      }
+    }
+  },
+  components: {
+    MuiDialog: {
+      styleOverrides: {
+        // The Twake content leaves its bottom margin to the actions below it:
+        // without actions, the content keeps the margin of its sides.
+        container: ({ theme }) => ({
+          [`& .${dialogContentClasses.root}:not(:has(~ .${dialogActionsClasses.root}))`]:
+            {
+              paddingBottom: 32,
+              [theme.breakpoints.down('md')]: { paddingBottom: 16 }
+            }
+        })
       }
     }
   }
