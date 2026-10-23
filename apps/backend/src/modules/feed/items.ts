@@ -4,6 +4,7 @@ import {
   desc,
   eq,
   exists,
+  gte,
   ilike,
   inArray,
   or,
@@ -103,39 +104,62 @@ export type FeedItem =
       editedAt: Date | null
     })
 
+// Newest first by time, or by latest activity for the items active since an
+// instant.
+export type Order = 'time' | 'activity'
+
+export function orderOf(since: Date | undefined): Order {
+  return since ? 'activity' : 'time'
+}
+
 export interface Cursor {
+  order: Order
   time: Date
   id: string
 }
 
-export function encodeCursor(item: Cursor): string {
-  return Buffer.from(`${item.time.toISOString()}|${item.id}`).toString(
-    'base64url'
-  )
+// A cursor of the activity order says so, so that a page of one order never
+// follows a cursor of the other.
+export function encodeCursor(cursor: Cursor): string {
+  const fields = [cursor.time.toISOString(), cursor.id]
+  if (cursor.order === 'activity') fields.push('activity')
+  return Buffer.from(fields.join('|')).toString('base64url')
 }
 
 export function decodeCursor(cursor: string): Cursor | null {
-  const [time, id, ...rest] = Buffer.from(cursor, 'base64url')
+  const [time, id, order, ...rest] = Buffer.from(cursor, 'base64url')
     .toString()
     .split('|')
   if (!time || !id || rest.length > 0) return null
+  if (order !== undefined && order !== 'activity') return null
   const date = new Date(time)
   if (Number.isNaN(date.getTime())) return null
   if (!/^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(id)) return null
-  return { time: date, id }
+  return { order: order ?? 'time', time: date, id }
 }
 
-// Cards and posts in one order. Every time is written from a JS Date, so the
-// cursor's milliseconds lose nothing.
+// Cards and posts in one order. With since, the items active since then, newest
+// activity first: a card by its latest event, even when its first is older, a
+// post by its time. Every time is written from a JS Date, so the cursor's
+// milliseconds lose nothing.
 export async function listItems(
   db: Db,
   spaceId: string,
-  options: { category?: Category; before?: Cursor; q?: string; limit: number }
+  options: {
+    category?: Category
+    before?: Cursor
+    q?: string
+    since?: Date
+    limit: number
+  }
 ): Promise<{ items: FeedItem[]; next: string | null }> {
-  const { category, before, q, limit } = options
+  const { category, before, q, since, limit } = options
   const after = (time: Column, id: Column) =>
     before &&
     sql`(${time}, ${id}) < (${before.time.toISOString()}::timestamptz, ${before.id}::uuid)`
+  const active = (time: Column) => since && gte(time, since)
+  const order = orderOf(since)
+  const cardTime = order === 'activity' ? feedCards.latestTime : feedCards.time
   const pattern = q && `%${q.replace(/[\\%_]/g, '\\$&')}%`
   // A card matches on what it shows: its latest event's title and preview.
   const cardMatches =
@@ -162,14 +186,16 @@ export async function listItems(
     .select({
       kind: sql<'card' | 'post'>`'card'`.as('kind'),
       id: feedCards.id,
-      time: feedCards.time
+      // Named time either way, which the order and the cursor read.
+      time: sql`${cardTime}`.mapWith(cardTime).as('time')
     })
     .from(feedCards)
     .where(
       and(
         eq(feedCards.spaceId, spaceId),
         category && eq(feedCards.category, category),
-        after(feedCards.time, feedCards.id),
+        after(cardTime, feedCards.id),
+        active(cardTime),
         cardMatches
       )
     )
@@ -184,6 +210,7 @@ export async function listItems(
       and(
         eq(feedPosts.spaceId, spaceId),
         after(feedPosts.time, feedPosts.id),
+        active(feedPosts.time),
         pattern === undefined ? undefined : ilike(feedPosts.body, pattern)
       )
     )
@@ -197,7 +224,10 @@ export async function listItems(
   const last = shown.at(-1)
   return {
     items: shown.flatMap(row => items.get(row.id) ?? []),
-    next: page.length > limit && last ? encodeCursor(last) : null
+    next:
+      page.length > limit && last
+        ? encodeCursor({ order, time: last.time, id: last.id })
+        : null
   }
 }
 

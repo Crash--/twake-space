@@ -337,9 +337,10 @@ A feed item:
 
 ### GET /spaces/:spaceId/feed
 
-- Query: `category` (optional), `q` (optional, 1 to 200 characters once trimmed), `limit` (1 to 50, default 20), `before` (the `next` of the previous page).
+- Query: `category` (optional), `q` (optional, 1 to 200 characters once trimmed), `since` (optional, ISO 8601 with an offset, such as `2026-10-05T00:00:00Z`, a `+` sent as `%2B`), `limit` (1 to 50, default 20), `before` (the `next` of the previous page).
 - `q` keeps the posts whose body, and the cards whose title or preview, contain it, ignoring case.
-- Answers `{"items": [...], "next": "<cursor>"}`, newest first by `time`. `next` is `null` on the last page. A `before` that is not a cursor answers 400.
+- `since` keeps the items active since then, at that time included: a card by its latest event, its `updatedAt`, even when its `time` is older, and a post by its `time`, its edits aside. They come newest activity first.
+- Answers `{"items": [...], "next": "<cursor>"}`, newest first by `time`, or by latest activity with `since`. `next` is `null` on the last page. A `before` that is not a cursor answers 400, as does a cursor of the other order: one from a page without `since` given with it, or the reverse.
 
 ### GET /spaces/:spaceId/feed/items/:itemId
 

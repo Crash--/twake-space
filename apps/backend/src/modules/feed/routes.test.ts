@@ -14,6 +14,7 @@ import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { TokenCaller } from '../tokens/authenticator.ts'
 import { listenInMemory } from '../live/testing.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
+import { encodeCursor, type Order } from './items.ts'
 import { registerFeedRoutes } from './routes.ts'
 import {
   activityEvents,
@@ -131,14 +132,17 @@ async function aCard(
     type?: string
     files?: unknown
     samples?: unknown
+    // The time of its latest event, when a later one changed it.
+    updatedAt?: string
   } = {}
 ) {
   const spaceId = options.spaceId ?? DESIGN
+  const latest = options.updatedAt ?? time
   const [event] = await testDb.db
     .insert(activityEvents)
     .values({
       source: 'twake://drive',
-      eventId: `${spaceId}-${objectId}-${time}`,
+      eventId: `${spaceId}-${objectId}-${latest}`,
       organizationId: 'org-1',
       spaceId,
       type: options.type ?? 'com.twake.drive.file.created.v1',
@@ -158,7 +162,7 @@ async function aCard(
         files: options.files,
         samples: options.samples
       },
-      time: new Date(time)
+      time: new Date(latest)
     })
     .returning({ id: activityEvents.id })
   if (!event) throw new Error('no event')
@@ -171,7 +175,7 @@ async function aCard(
       category: options.category ?? 'files',
       time: new Date(time),
       latestEventId: event.id,
-      latestTime: new Date(time)
+      latestTime: new Date(latest)
     })
     .returning({ id: feedCards.id })
   if (!card) throw new Error('no card')
@@ -319,6 +323,77 @@ describe('GET /spaces/:spaceId/feed', () => {
     expect(messages.json<Page>().items).toMatchObject([{ body: 'Hello' }])
   })
 
+  it('lists the items active since an instant, newest activity first', async () => {
+    const roadmap = await aCard('roadmap', '2026-09-28T09:00:00Z', {
+      updatedAt: '2026-10-05T12:00:00Z'
+    })
+    await aCard('budget', '2026-09-28T10:00:00Z')
+    const minutes = await aCard('minutes', '2026-10-05T11:00:00Z')
+    const kickoff = await aCard('kickoff', '2026-10-05T00:00:00Z')
+    const post = await aPost('Hello team', '2026-10-05T10:00:00Z')
+    // A post counts from its time, its edits aside.
+    await testDb.db.insert(feedPosts).values({
+      spaceId: DESIGN,
+      authorId: ALICE,
+      body: 'Old news',
+      time: new Date('2026-09-30T10:00:00Z'),
+      editedAt: new Date('2026-10-05T13:00:00Z')
+    })
+    const get = setUp()
+    const since = 'since=2026-10-05T00:00:00Z'
+
+    const all = await get('GET', `/spaces/${DESIGN}/feed?${since}`)
+    const files = await get(
+      'GET',
+      `/spaces/${DESIGN}/feed?${since}&category=files`
+    )
+    const searched = await get('GET', `/spaces/${DESIGN}/feed?${since}&q=road`)
+
+    expect(all.statusCode).toBe(200)
+    expect(all.json<Page>()).toMatchObject({
+      items: [
+        {
+          id: roadmap,
+          time: '2026-09-28T09:00:00.000Z',
+          updatedAt: '2026-10-05T12:00:00.000Z'
+        },
+        { id: minutes },
+        { id: post },
+        { id: kickoff }
+      ],
+      next: null
+    })
+    expect(files.json<Page>().items.map(i => i.id)).toEqual([
+      roadmap,
+      minutes,
+      kickoff
+    ])
+    expect(searched.json<Page>().items.map(i => i.id)).toEqual([roadmap])
+  })
+
+  it('pages the items active since an instant by their latest activity', async () => {
+    const roadmap = await aCard('roadmap', '2026-09-28T09:00:00Z', {
+      updatedAt: '2026-10-05T12:00:00Z'
+    })
+    const post = await aPost('Hello team', '2026-10-05T10:00:00Z')
+    const minutes = await aCard('minutes', '2026-10-05T11:00:00Z')
+    const get = setUp()
+    const since = 'since=2026-10-05T00:00:00Z'
+
+    const first = (
+      await get('GET', `/spaces/${DESIGN}/feed?${since}&limit=2`)
+    ).json<Page>()
+    const second = (
+      await get(
+        'GET',
+        `/spaces/${DESIGN}/feed?${since}&limit=2&before=${first.next ?? ''}`
+      )
+    ).json<Page>()
+
+    expect(first.items.map(i => i.id)).toEqual([roadmap, minutes])
+    expect(second).toMatchObject({ items: [{ id: post }], next: null })
+  })
+
   it("leaves out another space's items", async () => {
     await aCard('secret', '2026-10-05T09:00:00Z', { spaceId: OTHER })
 
@@ -333,14 +408,40 @@ describe('GET /spaces/:spaceId/feed', () => {
     expect(response.statusCode).toBe(404)
   })
 
-  it('refuses an invalid cursor or category', async () => {
+  it('refuses an invalid cursor, category or since', async () => {
     const get = setUp()
+    const cursor = (order: Order) =>
+      encodeCursor({ order, time: new Date('2026-10-05T10:00:00Z'), id: ALICE })
 
     expect(
       (await get('GET', `/spaces/${DESIGN}/feed?before=nope`)).statusCode
     ).toBe(400)
+    // A cursor pages the order of its page alone.
+    expect(
+      (await get('GET', `/spaces/${DESIGN}/feed?before=${cursor('activity')}`))
+        .statusCode
+    ).toBe(400)
+    expect(
+      (
+        await get(
+          'GET',
+          `/spaces/${DESIGN}/feed?since=2026-10-05T00:00:00Z&before=${cursor('time')}`
+        )
+      ).statusCode
+    ).toBe(400)
+    expect(
+      (await get('GET', `/spaces/${DESIGN}/feed?since=0000-01-01T00:00:00Z`))
+        .statusCode
+    ).toBe(400)
     expect(
       (await get('GET', `/spaces/${DESIGN}/feed?category=chat`)).statusCode
+    ).toBe(400)
+    expect(
+      (await get('GET', `/spaces/${DESIGN}/feed?since=2026-10-05T00:00:00`))
+        .statusCode
+    ).toBe(400)
+    expect(
+      (await get('GET', `/spaces/${DESIGN}/feed?since=yesterday`)).statusCode
     ).toBe(400)
   })
 

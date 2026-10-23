@@ -81,7 +81,9 @@ export const feedCards = pgTable(
     unique()
       .on(table.spaceId, table.objectType, table.objectId, table.memberId)
       .nullsNotDistinct(),
-    index().on(table.spaceId, table.time, table.id)
+    index().on(table.spaceId, table.time, table.id),
+    // For the cards active since an instant, newest activity first.
+    index().on(table.spaceId, table.latestTime, table.id)
   ]
 )
 

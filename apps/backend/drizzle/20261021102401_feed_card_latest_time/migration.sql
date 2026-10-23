@@ -1,0 +1,1 @@
+CREATE INDEX "feed_cards_space_id_latest_time_id_index" ON "feed_cards" ("space_id","latest_time","id");

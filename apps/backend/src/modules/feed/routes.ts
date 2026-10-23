@@ -9,6 +9,7 @@ import {
   decodeCursor,
   findItem,
   listItems,
+  orderOf,
   type Cursor,
   type FeedItem
 } from './items.ts'
@@ -21,20 +22,32 @@ import {
   feedReads
 } from './schema.ts'
 
-const feedQuery = z.object({
-  category: z.enum(feedCategory.enumValues).optional(),
-  before: z
-    .string()
-    .transform((cursor, context): Cursor => {
-      const decoded = decodeCursor(cursor)
-      if (decoded) return decoded
-      context.addIssue({ code: 'custom', message: 'invalid cursor' })
-      return z.NEVER
-    })
-    .optional(),
-  q: z.string().trim().min(1).max(200).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20)
-})
+const feedQuery = z
+  .object({
+    category: z.enum(feedCategory.enumValues).optional(),
+    before: z
+      .string()
+      .transform((cursor, context): Cursor => {
+        const decoded = decodeCursor(cursor)
+        if (decoded) return decoded
+        context.addIssue({ code: 'custom', message: 'invalid cursor' })
+        return z.NEVER
+      })
+      .optional(),
+    since: z.iso
+      .datetime({ offset: true })
+      .transform(time => new Date(time))
+      // Postgres refuses a year toISOString writes before 1 or after 9999.
+      .refine(time => {
+        const year = time.getUTCFullYear()
+        return year >= 1 && year <= 9999
+      })
+      .optional(),
+    q: z.string().trim().min(1).max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20)
+  })
+  // A cursor pages the order of its page: by latest activity with since.
+  .refine(({ before, since }) => !before || before.order === orderOf(since))
 
 const spaceParams = z.object({ spaceId: z.uuid() })
 const itemParams = spaceParams.extend({ itemId: z.uuid() })
@@ -143,11 +156,15 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         const spaceId = (await reach(request)).space.id
-        const { category, before, q, limit } = parse(feedQuery, request.query)
+        const { category, before, since, q, limit } = parse(
+          feedQuery,
+          request.query
+        )
         const page = await listItems(db, spaceId, {
           limit,
           ...(category && { category }),
           ...(before && { before }),
+          ...(since && { since }),
           ...(q && { q })
         })
         return { items: page.items.map(serialize), next: page.next }
