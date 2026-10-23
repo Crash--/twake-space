@@ -15,6 +15,20 @@ import { NameAvatar } from '@/ds/AppFrame'
 
 const RADIUS = '20px'
 
+// A card whose link stretches over it, outlined when the link has the focus.
+const LINKED_CARD = {
+  borderRadius: RADIUS,
+  '&:hover': { boxShadow: 3 },
+  '& a': { color: 'text.primary', textDecoration: 'none' },
+  '& a::after': { content: '""', position: 'absolute', inset: 0 },
+  '&:focus-within': {
+    outline: 2,
+    outlineColor: 'primary.main',
+    outlineOffset: -2
+  },
+  '& a:focus-visible': { outline: 'none' }
+}
+
 // `maxColumns` caps the columns of a wide screen: no card is narrower than
 // its share of the row, the 16px gaps left out, less a pixel so that
 // rounding never drops a column.
@@ -74,16 +88,7 @@ export function SpaceCard({
         flexDirection: 'column',
         gap: 1.5,
         p: 1.5,
-        borderRadius: RADIUS,
-        '&:hover': { boxShadow: 3 },
-        '& a': { color: 'text.primary', textDecoration: 'none' },
-        '& a::after': { content: '""', position: 'absolute', inset: 0 },
-        '&:focus-within': {
-          outline: 2,
-          outlineColor: 'primary.main',
-          outlineOffset: -2
-        },
-        '& a:focus-visible': { outline: 'none' }
+        ...LINKED_CARD
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -137,6 +142,47 @@ export function SpaceCard({
         </Typography>
       )}
       {members}
+    </Card>
+  )
+}
+
+// A space's line in the home's summary of news: like `SpaceCard`, its name
+// links over the whole card.
+export function NewsCard({
+  avatar,
+  link,
+  news
+}: {
+  avatar: ReactNode
+  link: ReactNode
+  news: ReactNode
+}): ReactElement {
+  return (
+    <Card
+      component="li"
+      sx={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        p: 1.5,
+        ...LINKED_CARD
+      }}
+    >
+      {avatar}
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="subtitle1" component="p" noWrap>
+          {link}
+        </Typography>
+        <Typography
+          variant="caption"
+          component="p"
+          color="textSecondary"
+          noWrap
+        >
+          {news}
+        </Typography>
+      </Box>
     </Card>
   )
 }

@@ -64,6 +64,14 @@ describe('httpFeed', () => {
     expect(requested().url).toBe('https://api.test/spaces/a1/feed/items/p1')
   })
 
+  it('reads what is new in every space', async () => {
+    const news = [{ spaceId: 'a1', items: 3, mentions: 1 }]
+    fetchMock.mockResolvedValue(Response.json({ spaces: news }))
+
+    await expect(feed.news()).resolves.toEqual(news)
+    expect(requested().url).toBe('https://api.test/feed/unread')
+  })
+
   it('answers a new post with the item', async () => {
     fetchMock.mockResolvedValue(Response.json(post, { status: 201 }))
 

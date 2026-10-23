@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 
 import { useServices } from '@/ui/services/Services'
-import { followFeedChange } from '@/ui/space/feedQueries'
+import { FEED_NEWS, followFeedChange } from '@/ui/space/feedQueries'
 import { SUGGESTIONS } from '@/ui/assistant/queries'
 import { SPACES } from '@/ui/spaces/queries'
 
@@ -19,8 +19,12 @@ export function useLiveUpdates(): void {
           }
           if (event === 'notification') {
             void queryClient.invalidateQueries({ queryKey: SUGGESTIONS })
+            void queryClient.invalidateQueries({ queryKey: FEED_NEWS })
           }
-          if (event === 'feed') followFeedChange(queryClient, feed, data)
+          if (event === 'feed') {
+            followFeedChange(queryClient, feed, data)
+            void queryClient.invalidateQueries({ queryKey: FEED_NEWS })
+          }
         },
         onReconnect: () => void queryClient.invalidateQueries()
       }),

@@ -22,12 +22,15 @@ export function memoryFeed(
     me,
     roles,
     readAt = {},
+    mentions = {},
     pageSize = 10
   }: {
     me: { id: string; name: string | null }
     roles: Record<string, SpaceRole>
     /** By space id: the time of the newest item seen. */
     readAt?: Record<string, string>
+    /** By space id: the unread mentions. */
+    mentions?: Record<string, number>
     pageSize?: number
   }
 ): FeedService {
@@ -78,6 +81,22 @@ export function memoryFeed(
         reads.set(spaceId, readAt)
       }
       return Promise.resolve()
+    },
+    news: () => {
+      const ids = new Set([...spaces.keys(), ...Object.keys(mentions)])
+      return Promise.resolve(
+        [...ids]
+          .map(spaceId => {
+            const read = reads.get(spaceId)
+            const items = read
+              ? itemsOf(spaceId).filter(
+                  item => Date.parse(item.time) > Date.parse(read)
+                ).length
+              : 0
+            return { spaceId, items, mentions: mentions[spaceId] ?? 0 }
+          })
+          .filter(news => news.items > 0 || news.mentions > 0)
+      )
     },
     item: (spaceId, itemId) => {
       const item = find(spaceId, itemId)

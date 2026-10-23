@@ -5,7 +5,11 @@
   "home": {
     "morning": "Доброе утро, %{name}",
     "afternoon": "Добрый день, %{name}",
-    "evening": "Добрый вечер, %{name}"
+    "evening": "Добрый вечер, %{name}",
+    "news": "С вашего последнего визита",
+    "noNews": "В ваших пространствах ничего нового",
+    "newItems": "%{smart_count} новая запись |||| %{smart_count} новые записи |||| %{smart_count} новых записей",
+    "mentions": "%{smart_count} упоминание |||| %{smart_count} упоминания |||| %{smart_count} упоминаний"
   },
   "spaceHome": {
     "users": "участник |||| участника |||| участников",

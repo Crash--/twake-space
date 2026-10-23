@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { pino } from 'pino'
 import {
   afterAll,
@@ -13,6 +14,7 @@ import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { TokenCaller } from '../tokens/authenticator.ts'
 import { listenInMemory } from '../live/testing.ts'
+import { notifications } from '../notifications/schema.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { encodeCursor, type Order } from './items.ts'
 import { registerFeedRoutes } from './routes.ts'
@@ -43,6 +45,7 @@ afterAll(() => testDb.drop())
 beforeEach(async () => {
   live.mockClear()
   const { db } = testDb
+  await db.delete(notifications)
   await db.delete(feedItemReactions)
   await db.delete(feedPosts)
   await db.delete(feedReads)
@@ -565,6 +568,117 @@ describe('/spaces/:spaceId/feed/read', () => {
 
     expect(bad.statusCode).toBe(400)
     expect(outside.statusCode).toBe(404)
+  })
+})
+
+describe('GET /feed/unread', () => {
+  async function aMention(
+    userId: string,
+    spaceId: string,
+    { time = '2026-10-05T11:00:00Z', read = false } = {}
+  ) {
+    const [event] = await testDb.db
+      .insert(activityEvents)
+      .values({
+        source: 'twake://drive',
+        eventId: crypto.randomUUID(),
+        organizationId: 'org-1',
+        spaceId,
+        type: 'com.twake.drive.file.updated.v1',
+        category: 'files',
+        actor: null,
+        objectType: 'file',
+        objectId: 'roadmap',
+        content: {},
+        time: new Date(time)
+      })
+      .returning({ id: activityEvents.id })
+    if (!event) throw new Error('no event')
+    await testDb.db.insert(notifications).values({
+      organizationId: 'org-1',
+      userId,
+      type: 'card_mention',
+      spaceId,
+      activityEventId: event.id,
+      payload: {},
+      readAt: read ? new Date() : null
+    })
+  }
+
+  it('counts per space the items and the unread mentions newer than the mark', async () => {
+    await aCard('old', '2026-10-05T09:00:00Z', {
+      updatedAt: '2026-10-05T13:00:00Z'
+    })
+    await aCard('new', '2026-10-05T11:00:00Z')
+    await aPost('Hello team', '2026-10-05T12:00:00Z')
+    await testDb.db.insert(feedReads).values([
+      {
+        spaceId: DESIGN,
+        userId: ALICE,
+        readAt: new Date('2026-10-05T10:00:00Z')
+      },
+      { spaceId: DESIGN, userId: BOB, readAt: new Date('2026-10-05T12:00:00Z') }
+    ])
+    await aMention(ALICE, DESIGN)
+    await aMention(ALICE, DESIGN, { time: '2026-10-05T09:30:00Z' })
+    await aMention(ALICE, DESIGN, { read: true })
+    await aMention(BOB, DESIGN, { read: true })
+    const get = setUp()
+
+    const alice = await get('GET', '/feed/unread')
+    const bob = await get('GET', '/feed/unread', 'bob')
+    const carol = await get('GET', '/feed/unread', 'carol')
+
+    expect(alice.json()).toEqual({
+      spaces: [{ spaceId: DESIGN, items: 2, mentions: 1 }]
+    })
+    expect(bob.json()).toEqual({ spaces: [] })
+    expect(carol.json()).toEqual({ spaces: [] })
+  })
+
+  it('counts only the mentions of a feed never opened, in active spaces', async () => {
+    await testDb.db.insert(spaceMembers).values({
+      spaceId: OTHER,
+      userId: ALICE,
+      username: 'alice',
+      email: 'alice@example.com',
+      role: 'viewer'
+    })
+    await aCard('roadmap', '2026-10-05T11:00:00Z', { spaceId: OTHER })
+    await aMention(ALICE, OTHER)
+    await aMention(ALICE, DESIGN)
+    await testDb.db
+      .update(spaces)
+      .set({ state: 'archived' })
+      .where(eq(spaces.spaceId, DESIGN))
+    const get = setUp()
+
+    const unread = await get('GET', '/feed/unread')
+
+    expect(unread.json()).toEqual({
+      spaces: [{ spaceId: OTHER, items: 0, mentions: 1 }]
+    })
+  })
+
+  it('leaves out the spaces of another organization', async () => {
+    await testDb.db
+      .update(spaces)
+      .set({ organizationId: 'org-2' })
+      .where(eq(spaces.spaceId, DESIGN))
+    await aMention(ALICE, DESIGN)
+    const get = setUp()
+
+    const unread = await get('GET', '/feed/unread')
+
+    expect(unread.json()).toEqual({ spaces: [] })
+  })
+
+  it('is for people only', async () => {
+    const call = setUp(aTokenCaller({ userId: ALICE, scopes: ['feed:read'] }))
+
+    const unread = await call('GET', '/feed/unread', 'tws_bot')
+
+    expect(unread.statusCode).toBe(403)
   })
 })
 

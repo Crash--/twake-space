@@ -1,6 +1,9 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { FeedItem } from '@/application/feed'
+import type { SpaceSummary } from '@/application/spaces'
+import { fakeFeed } from '@/testing/fakeFeed'
 import { fakeSettings } from '@/testing/fakeSettings'
 import { fakeSpaces } from '@/testing/fakeSpaces'
 import { renderRoute, renderWithProviders } from '@/testing/renderWithProviders'
@@ -183,6 +186,103 @@ describe('HomeScreen', () => {
 
     await screen.findByRole('region', { name: 'All spaces' })
     expect(screen.queryByRole('region', { name: 'Pinned' })).toBe(null)
+  })
+
+  describe('since the last visit', () => {
+    const space = (id: string, name: string): SpaceSummary => ({
+      id,
+      name,
+      role: 'editor',
+      color: null,
+      description: '',
+      pinnedAt: null,
+      openedAt: null,
+      manages: false,
+      members: []
+    })
+    const post = (id: string, time: string): FeedItem => ({
+      id,
+      kind: 'post',
+      category: 'messages',
+      time,
+      updatedAt: time,
+      reactions: [],
+      author: { type: 'user', id: 'u-bob', name: 'Bob' },
+      body: 'Hello',
+      editedAt: null
+    })
+
+    it('lists the spaces with news, those with mentions first, each opening the space', async () => {
+      renderWithProviders(<HomeScreen />, {
+        spaces: fakeSpaces([
+          space('a1', 'Design Sprint'),
+          space('b2', 'Roadmap'),
+          space('c3', 'Quiet')
+        ]),
+        feed: fakeFeed(
+          {
+            a1: [
+              post('p1', '2026-10-05T09:00:00.000Z'),
+              post('p2', '2026-10-05T11:00:00.000Z'),
+              post('p3', '2026-10-05T12:00:00.000Z')
+            ],
+            b2: [post('p4', '2026-10-05T11:00:00.000Z')],
+            c3: [post('p5', '2026-10-05T09:00:00.000Z')]
+          },
+          {
+            readAt: {
+              a1: '2026-10-05T10:00:00.000Z',
+              c3: '2026-10-05T10:00:00.000Z'
+            },
+            mentions: { b2: 1 }
+          }
+        )
+      })
+
+      const news = await screen.findByRole('region', {
+        name: 'Since your last visit'
+      })
+      await waitFor(() => {
+        expect(
+          within(news)
+            .getAllByRole('listitem')
+            .map(item => item.textContent)
+        ).toEqual([
+          expect.stringContaining('Roadmap1 mention'),
+          expect.stringContaining('Design Sprint2 new items')
+        ])
+      })
+      expect(
+        within(news).getByRole('link', { name: 'Roadmap' })
+      ).toHaveAttribute('href', '/spaces/b2')
+    })
+
+    it('says when nothing is new', async () => {
+      renderWithProviders(<HomeScreen />, {
+        spaces: fakeSpaces([space('a1', 'Design Sprint')])
+      })
+
+      expect(
+        await screen.findByText('Nothing new in your spaces')
+      ).toBeInTheDocument()
+    })
+
+    it('leaves the summary out when it cannot be read', async () => {
+      const feed = fakeFeed()
+      vi.mocked(feed.news).mockRejectedValue(new Error('down'))
+      renderWithProviders(<HomeScreen />, {
+        spaces: fakeSpaces([space('a1', 'Design Sprint')]),
+        feed
+      })
+
+      await screen.findByRole('region', { name: 'All spaces' })
+      await waitFor(() => {
+        expect(feed.news).toHaveBeenCalled()
+      })
+      expect(
+        screen.queryByRole('region', { name: 'Since your last visit' })
+      ).toBe(null)
+    })
   })
 
   it('shows an empty state with the create action when there is no space', async () => {

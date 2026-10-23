@@ -4,7 +4,9 @@ import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
 import type { Authorize } from '../auth/index.ts'
+import { notifications } from '../notifications/schema.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
+import { spaceMembers, spaces } from '../spaces/schema.ts'
 import {
   decodeCursor,
   findItem,
@@ -15,6 +17,7 @@ import {
 } from './items.ts'
 import { tellFeed } from './live.ts'
 import {
+  activityEvents,
   feedCards,
   feedCategory,
   feedItemReactions,
@@ -188,6 +191,52 @@ export function registerFeedRoutes(
       }
     }
   )
+
+  // A feed never opened has no mark, so nothing in it counts as new, as in
+  // the feed itself; its mentions still do. A mention older than the mark was
+  // seen in the feed, even though its notification may stay unread.
+  app.get('/feed/unread', { preHandler }, async request => {
+    const caller = request.caller
+    if (caller?.kind !== 'session') {
+      throw new Error('authorize let a request through')
+    }
+    const newer = (table: typeof feedCards | typeof feedPosts) =>
+      sql<number>`(select count(*)::int from ${table}
+        where ${table.spaceId} = ${spaceMembers.spaceId}
+        and ${table.time} > ${feedReads.readAt})`
+    const rows = await db
+      .select({
+        spaceId: spaceMembers.spaceId,
+        items: sql<number>`${newer(feedCards)} + ${newer(feedPosts)}`,
+        mentions: sql<number>`(select count(*)::int from ${notifications}
+          join ${activityEvents}
+            on ${activityEvents.id} = ${notifications.activityEventId}
+          where ${notifications.userId} = ${caller.userId}
+          and ${notifications.spaceId} = ${spaceMembers.spaceId}
+          and ${notifications.type} = 'card_mention'
+          and ${notifications.readAt} is null
+          and (${feedReads.readAt} is null
+            or ${activityEvents.time} > ${feedReads.readAt}))`
+      })
+      .from(spaceMembers)
+      .innerJoin(
+        spaces,
+        and(
+          eq(spaces.spaceId, spaceMembers.spaceId),
+          eq(spaces.organizationId, caller.organizationId),
+          eq(spaces.state, 'active')
+        )
+      )
+      .leftJoin(
+        feedReads,
+        and(
+          eq(feedReads.spaceId, spaceMembers.spaceId),
+          eq(feedReads.userId, spaceMembers.userId)
+        )
+      )
+      .where(eq(spaceMembers.userId, caller.userId))
+    return { spaces: rows.filter(row => row.items > 0 || row.mentions > 0) }
+  })
 
   app.get(
     '/spaces/:spaceId/feed/read',

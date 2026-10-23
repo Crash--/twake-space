@@ -5,7 +5,11 @@
   "home": {
     "morning": "Good morning, %{name}",
     "afternoon": "Good afternoon, %{name}",
-    "evening": "Good evening, %{name}"
+    "evening": "Good evening, %{name}",
+    "news": "Since your last visit",
+    "noNews": "Nothing new in your spaces",
+    "newItems": "%{smart_count} new item |||| %{smart_count} new items",
+    "mentions": "%{smart_count} mention |||| %{smart_count} mentions"
   },
   "spaceHome": {
     "users": "Space user |||| Space users",

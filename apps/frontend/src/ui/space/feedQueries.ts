@@ -50,6 +50,13 @@ export function useFeedReadAt(spaceId: string) {
   })
 }
 
+export const FEED_NEWS: QueryKey = ['feedNews']
+
+export function useFeedNews() {
+  const { feed } = useServices()
+  return useQuery({ queryKey: FEED_NEWS, queryFn: () => feed.news() })
+}
+
 // Kept apart from `feedKey`: live changes write into every query under it.
 const searchQuery = (
   feed: FeedService,

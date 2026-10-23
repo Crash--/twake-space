@@ -77,6 +77,13 @@ export interface FeedPage {
   next: string | null
 }
 
+/** A space's items newer than the user's read time, and unread mentions. */
+export interface SpaceNews {
+  spaceId: string
+  items: number
+  mentions: number
+}
+
 export interface FeedService {
   list: (
     spaceId: string,
@@ -93,6 +100,8 @@ export interface FeedService {
   readAt: (spaceId: string) => Promise<string | null>
   /** Keeps the later of the stored time and this one. */
   markRead: (spaceId: string, readAt: string) => Promise<void>
+  /** Only the spaces with something new; a feed never opened has no new items. */
+  news: () => Promise<SpaceNews[]>
   /** Editors and admins only: a viewer is refused with `cannot_post`. */
   post: (spaceId: string, body: string) => Promise<FeedItem>
   edit: (spaceId: string, postId: string, body: string) => Promise<FeedItem>

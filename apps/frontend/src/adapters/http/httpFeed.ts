@@ -1,6 +1,11 @@
 import type { KyInstance } from 'ky'
 
-import type { FeedItem, FeedPage, FeedService } from '@/application/feed'
+import type {
+  FeedItem,
+  FeedPage,
+  FeedService,
+  SpaceNews
+} from '@/application/feed'
 
 export function httpFeed(api: KyInstance): FeedService {
   const feed = (spaceId: string, ...rest: string[]) =>
@@ -28,6 +33,8 @@ export function httpFeed(api: KyInstance): FeedService {
         .readAt,
     markRead: (spaceId, readAt) =>
       send(api.put(feed(spaceId, 'read'), { json: { readAt } })),
+    news: async () =>
+      (await api.get('feed/unread').json<{ spaces: SpaceNews[] }>()).spaces,
     post: (spaceId, body) =>
       api.post(feed(spaceId, 'posts'), { json: { body } }).json<FeedItem>(),
     edit: (spaceId, postId, body) =>

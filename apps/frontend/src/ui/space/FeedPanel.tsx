@@ -15,7 +15,7 @@ import {
   type IconProps
 } from '@linagora/twake-icons'
 import { Alert, Button, IconButton, Menu } from '@linagora/twake-mui'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useEffect, useRef, useState, type ReactElement } from 'react'
 import { Link as RouterLink, useLocation } from 'react-router'
 
@@ -76,7 +76,12 @@ import { ConnectionDetailsDialog } from '@/ui/call/ConnectionDetailsDialog'
 import { useI18n, type TranslationKey } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
 import { useSession } from '@/ui/session/SessionGate'
-import { useFeed, useFeedCache, useFeedReadAt } from '@/ui/space/feedQueries'
+import {
+  FEED_NEWS,
+  useFeed,
+  useFeedCache,
+  useFeedReadAt
+} from '@/ui/space/feedQueries'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
 
 const FILTERS: FeedFilter[] = ['all', ...FEED_CATEGORIES]
@@ -138,8 +143,10 @@ export function FeedPanel({ space }: { space: Space }): ReactElement {
   const feed = useFeed(space.id, filter)
   const readAt = useFeedReadAt(space.id)
   const { feed: feedService } = useServices()
+  const queryClient = useQueryClient()
   const { mutate: markRead } = useMutation({
-    mutationFn: (time: string) => feedService.markRead(space.id, time)
+    mutationFn: (time: string) => feedService.markRead(space.id, time),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: FEED_NEWS })
   })
   const myId = useSession().user.id
   // Held here: the setup prompt goes away with the feed's first item.

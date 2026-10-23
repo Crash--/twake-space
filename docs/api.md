@@ -355,6 +355,18 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 - Body: `{"readAt": "<time>"}`, an ISO 8601 time.
 - Keeps the later of the stored time and this one, so a tab left on older items never moves it back. A time in the future counts as now. Answers `204`.
 
+### GET /feed/unread
+
+- Caller: session only.
+- Answers, for each active space of the caller's organization they are a member of, with something new:
+  - `items`, the feed items whose `time` is after the caller's [read time](#get-spacesspaceidfeedread);
+  - `mentions`, the caller's unread `card_mention` notifications in the space whose event is after that read time.
+- A feed the caller never opened has no read time: its items count as none, and its unread mentions all count.
+
+```json
+{ "spaces": [{ "spaceId": "<uuid>", "items": 4, "mentions": 1 }] }
+```
+
 ### POST /spaces/:spaceId/feed/posts
 
 - Body: `{"body": "..."}`, 1 to 4000 characters once trimmed.

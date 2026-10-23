@@ -5,7 +5,11 @@
   "home": {
     "morning": "Buongiorno, %{name}",
     "afternoon": "Buon pomeriggio, %{name}",
-    "evening": "Buonasera, %{name}"
+    "evening": "Buonasera, %{name}",
+    "news": "Dalla tua ultima visita",
+    "noNews": "Niente di nuovo nei tuoi spazi",
+    "newItems": "%{smart_count} nuovo elemento |||| %{smart_count} nuovi elementi",
+    "mentions": "%{smart_count} menzione |||| %{smart_count} menzioni"
   },
   "spaceHome": {
     "users": "Membro dello spazio |||| Membri dello spazio",

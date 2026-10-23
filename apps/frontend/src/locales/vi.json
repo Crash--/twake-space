@@ -5,7 +5,11 @@
   "home": {
     "morning": "Chào buổi sáng, %{name}",
     "afternoon": "Chào buổi chiều, %{name}",
-    "evening": "Chào buổi tối, %{name}"
+    "evening": "Chào buổi tối, %{name}",
+    "news": "Từ lần truy cập trước",
+    "noNews": "Không có gì mới trong các không gian của bạn",
+    "newItems": "%{smart_count} mục mới",
+    "mentions": "%{smart_count} lượt nhắc đến"
   },
   "spaceHome": {
     "users": "Thành viên",
