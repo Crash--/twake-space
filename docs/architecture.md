@@ -159,6 +159,7 @@ The feed is Twake Space's own: it reads no app and no homeserver from the browse
 - Apps publish activity events (CloudEvents) on the `activity` exchange. Each one updates the card of its object, in the space whose resource holds it.
 - Members post and react through the backend.
 - A card's title opens the object in its app's tab. An event card opens Calendar's preview of it.
+- A post with a link shows a preview of it. The backend fetches the page, so the browser never asks the linked site for anything ([API](api.md#get-link-preview)).
 
 [Events](events.md#activity-events) has the CloudEvent fields and the card rules.
 

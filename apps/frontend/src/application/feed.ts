@@ -108,6 +108,30 @@ export interface FeedService {
   remove: (spaceId: string, postId: string) => Promise<void>
   react: (spaceId: string, itemId: string, key: string) => Promise<void>
   unreact: (spaceId: string, itemId: string, key: string) => Promise<void>
+  /** Null when the page cannot be read or has no title. */
+  linkPreview: (url: string) => Promise<LinkPreview | null>
+}
+
+/** Read by the backend: `image` is a `data:` URL. */
+export interface LinkPreview {
+  url: string
+  title: string
+  description: string | null
+  image: string | null
+  site: string
+}
+
+/** The first web link in a post's text, without the punctuation that ends a sentence. */
+export function firstLink(text: string): string | null {
+  let link = /\bhttps?:\/\/[^\s<>"]+/i.exec(text)?.[0]
+  if (link === undefined) return null
+  // A closing parenthesis the link opened is part of it, as in Wikipedia's.
+  while (/[.,;:!?')\]]$/.test(link)) {
+    if (link.endsWith(')') && link.split(')').length <= link.split('(').length)
+      break
+    link = link.slice(0, -1)
+  }
+  return link
 }
 
 /** The `feed` live event. */

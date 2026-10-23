@@ -78,6 +78,32 @@ describe('httpFeed', () => {
     await expect(feed.post('a1', 'Hello')).resolves.toEqual(post)
   })
 
+  it("reads a link's preview", async () => {
+    const preview = {
+      url: 'https://example.com/a',
+      title: 'Example',
+      description: null,
+      image: null,
+      site: 'example.com'
+    }
+    fetchMock.mockResolvedValue(Response.json(preview))
+
+    await expect(feed.linkPreview('https://example.com/a')).resolves.toEqual(
+      preview
+    )
+    expect(requested().url).toBe(
+      'https://api.test/link-preview?url=https%3A%2F%2Fexample.com%2Fa'
+    )
+  })
+
+  it('reads no preview for a link the backend cannot read', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({ error: 'no_preview' }, { status: 404 })
+    )
+
+    await expect(feed.linkPreview('https://example.com/')).resolves.toBeNull()
+  })
+
   const thumbsUp = '%F0%9F%91%8D'
 
   it.each([

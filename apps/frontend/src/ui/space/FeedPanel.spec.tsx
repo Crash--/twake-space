@@ -853,4 +853,26 @@ describe('FeedPanel', () => {
       expect(screen.getAllByText('Hi')).toHaveLength(1)
     })
   })
+
+  it("previews a post's first link, opening it in a new tab", async () => {
+    const { feed } = renderFeed([
+      post(5, { body: 'Plan: https://example.com/plan. Thoughts?' }),
+      post(6)
+    ])
+    vi.mocked(feed.linkPreview).mockResolvedValue({
+      url: 'https://example.com/plan',
+      title: 'The plan',
+      description: 'What comes next',
+      image: null,
+      site: 'Example'
+    })
+
+    const link = await screen.findByRole('link', { name: /The plan/ })
+    expect(link).toHaveAttribute('href', 'https://example.com/plan')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(within(link).getByText('What comes next')).toBeInTheDocument()
+    expect(feed.linkPreview).toHaveBeenCalledExactlyOnceWith(
+      'https://example.com/plan'
+    )
+  })
 })

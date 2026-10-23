@@ -15,7 +15,7 @@ import {
   type IconProps
 } from '@linagora/twake-icons'
 import { Alert, Button, IconButton, Menu } from '@linagora/twake-mui'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useEffect, useRef, useState, type ReactElement } from 'react'
 import { Link as RouterLink, useLocation } from 'react-router'
 
@@ -24,6 +24,7 @@ import {
   cardApp,
   FEED_CATEGORIES,
   fileExtension,
+  firstLink,
   firstUnread,
   toEventState,
   type Actor,
@@ -56,6 +57,7 @@ import {
   FeedFooter,
   FeedHeader,
   FeedLayout,
+  FeedLinkPreview,
   FeedMoreButton,
   FeedNewMark,
   FeedRow,
@@ -552,7 +554,10 @@ function Post({
         }
       />
       {draft === null ? (
-        <FeedBody>{post.body}</FeedBody>
+        <>
+          <FeedBody>{post.body}</FeedBody>
+          <PostLink body={post.body} />
+        </>
       ) : (
         <FeedEditForm
           label={t('feed.edit')}
@@ -585,6 +590,28 @@ function Post({
         <Reactions item={post} spaceId={space.id} myId={myId} />
       </FeedFooter>
     </FeedRow>
+  )
+}
+
+function PostLink({ body }: { body: string }): ReactElement | null {
+  const { feed } = useServices()
+  const link = firstLink(body)
+  const { data } = useQuery({
+    queryKey: ['link-preview', link],
+    queryFn: () => (link ? feed.linkPreview(link) : null),
+    enabled: link !== null,
+    staleTime: Infinity,
+    retry: false
+  })
+  if (!data) return null
+  return (
+    <FeedLinkPreview
+      href={data.url}
+      site={data.site}
+      title={data.title}
+      description={data.description}
+      image={data.image}
+    />
   )
 }
 

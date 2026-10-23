@@ -26,6 +26,7 @@ import { activityRoute } from './modules/feed/activity.ts'
 import { registerMetrics } from './modules/feed/metrics.ts'
 import { schedulePurge } from './modules/feed/retention.ts'
 import { registerFeedRoutes } from './modules/feed/routes.ts'
+import { registerLinkRoutes } from './modules/links/routes.ts'
 import { listenForLive } from './modules/live/notify.ts'
 import { registerLiveRoutes } from './modules/live/routes.ts'
 import { createStreams } from './modules/live/streams.ts'
@@ -136,6 +137,7 @@ registerNotificationRoutes(server, {
   localpart: config.MATRIX_LOCALPART
 })
 registerFeedRoutes(server, { db, authorize })
+registerLinkRoutes(server, { authorize })
 // Publishing reuses the consumer's client, which starts after the server listens.
 let publish: Publish = () => Promise.reject(new Error('not connected yet'))
 registerMeetingRoutes(server, {

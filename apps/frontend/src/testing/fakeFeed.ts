@@ -36,6 +36,7 @@ export function fakeFeed(
     edit: vi.fn(feed.edit),
     remove: vi.fn(feed.remove),
     react: vi.fn(feed.react),
-    unreact: vi.fn(feed.unreact)
+    unreact: vi.fn(feed.unreact),
+    linkPreview: vi.fn(feed.linkPreview)
   }
 }

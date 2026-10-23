@@ -1,9 +1,10 @@
-import type { KyInstance } from 'ky'
+import { HTTPError, type KyInstance } from 'ky'
 
 import type {
   FeedItem,
   FeedPage,
   FeedService,
+  LinkPreview,
   SpaceNews
 } from '@/application/feed'
 
@@ -46,6 +47,18 @@ export function httpFeed(api: KyInstance): FeedService {
     react: (spaceId, itemId, key) =>
       send(api.put(feed(spaceId, 'items', itemId, 'reactions', key))),
     unreact: (spaceId, itemId, key) =>
-      send(api.delete(feed(spaceId, 'items', itemId, 'reactions', key)))
+      send(api.delete(feed(spaceId, 'items', itemId, 'reactions', key))),
+    linkPreview: async url => {
+      try {
+        return await api
+          .get('link-preview', { searchParams: { url } })
+          .json<LinkPreview>()
+      } catch (error) {
+        if (error instanceof HTTPError && error.response.status === 404) {
+          return null
+        }
+        throw error
+      }
+    }
   }
 }

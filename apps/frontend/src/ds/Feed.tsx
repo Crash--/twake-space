@@ -607,6 +607,14 @@ export function FeedTitle({
   )
 }
 
+const clamp = (lines: number) => ({
+  overflow: 'hidden',
+  display: '-webkit-box',
+  WebkitLineClamp: lines,
+  WebkitBoxOrient: 'vertical',
+  overflowWrap: 'anywhere'
+})
+
 /** A file the card is about: its type icon, its name over two lines, a detail. */
 export function FeedFile({
   icon,
@@ -630,11 +638,7 @@ export function FeedFile({
             lineHeight: '20px',
             letterSpacing: 0.25,
             maxHeight: 40,
-            overflow: 'hidden',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflowWrap: 'anywhere'
+            ...clamp(2)
           }}
         >
           {name}
@@ -699,6 +703,91 @@ export function FeedAttachment({
         >
           {detail}
         </Typography>
+      </Box>
+    </Box>
+  )
+}
+
+/** A link's page as a card that opens it in a new tab. */
+export function FeedLinkPreview({
+  href,
+  site,
+  title,
+  description,
+  image
+}: {
+  href: string
+  site: string
+  title: string
+  description: string | null
+  image: string | null
+}): ReactElement {
+  return (
+    <Box
+      component="a"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      sx={{
+        display: 'block',
+        width: 360,
+        maxWidth: '100%',
+        mt: 0.5,
+        border: 1,
+        borderColor: 'border.disabled',
+        borderRadius: '10px',
+        overflow: 'hidden',
+        bgcolor: 'background.paper',
+        color: 'inherit',
+        textDecoration: 'none',
+        '&:hover, &:focus-visible': { borderColor: 'primary.main' }
+      }}
+    >
+      {image && (
+        <Box
+          component="img"
+          src={image}
+          alt=""
+          sx={{
+            display: 'block',
+            width: '100%',
+            maxHeight: 180,
+            objectFit: 'cover',
+            bgcolor: 'background.default',
+            borderBottom: 1,
+            borderColor: 'border.disabled'
+          }}
+        />
+      )}
+      <Box sx={{ p: 1.5 }}>
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          noWrap
+          sx={{ display: 'block', lineHeight: '16px', letterSpacing: 0.4 }}
+        >
+          {site}
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            fontWeight: 600,
+            lineHeight: '20px',
+            letterSpacing: 0.25,
+            ...clamp(2)
+          }}
+        >
+          {title}
+        </Typography>
+        {description && (
+          <Typography
+            variant="caption"
+            color="textSecondary"
+            sx={{ lineHeight: '16px', ...clamp(2) }}
+          >
+            {description}
+          </Typography>
+        )}
       </Box>
     </Box>
   )

@@ -4,6 +4,7 @@ import {
   cardAction,
   cardApp,
   fileExtension,
+  firstLink,
   toEventState,
   toFeedChange,
   withReaction,
@@ -156,5 +157,20 @@ describe('fileExtension', () => {
     expect(fileExtension('README')).toBe(null)
     expect(fileExtension('.env')).toBe(null)
     expect(fileExtension('Q4: plan. Final version')).toBe(null)
+  })
+})
+
+describe('firstLink', () => {
+  it.each([
+    ['See https://example.com/a?b=1.', 'https://example.com/a?b=1'],
+    ['(http://example.com/x), then https://two.test', 'http://example.com/x'],
+    ['Read "https://example.com/doc"!', 'https://example.com/doc'],
+    [
+      '(see https://en.wikipedia.org/wiki/Mercury_(planet)).',
+      'https://en.wikipedia.org/wiki/Mercury_(planet)'
+    ],
+    ['No link here, nor in ftp://example.com', null]
+  ])('reads %j', (text, link) => {
+    expect(firstLink(text)).toBe(link)
   })
 })

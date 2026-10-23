@@ -391,6 +391,15 @@ Deletes the post and its reactions. Its author only, otherwise `403 {"error":"no
 
 Takes the caller's reaction back. Answers `204`.
 
+### GET /link-preview
+
+The card a post shows for the first link in its body. Session callers only.
+
+- Query: `url`, an `http` or `https` URL of up to 2048 characters. Its fragment is left out.
+- Answers `{url, title, description, image, site}`. `url` is the page reached after redirects, `description` is `null` when the page has none, `site` falls back on the host name, and `image` is a `data:` URL of a PNG, JPEG, GIF or WebP image, or `null`.
+- `404 {"error":"no_preview"}` when the page cannot be read, is not HTML or has no title.
+- The backend fetches the page itself: only public addresses on ports 80 and 443, checked after DNS resolution and on every redirect (three at most), the first 512 KiB of the page, an image of up to 200 KiB, five seconds in all. It keeps a preview for an hour, and tries a link with none again after five minutes.
+
 ## Meetings
 
 ### POST /spaces/:spaceId/meetings

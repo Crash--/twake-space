@@ -153,6 +153,7 @@ export function memoryFeed(
         )
         .filter(r => r.userIds.length > 0)
       return Promise.resolve()
-    }
+    },
+    linkPreview: () => Promise.resolve(null)
   }
 }
