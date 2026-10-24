@@ -12,6 +12,7 @@ import {
 import { outgoingActivity } from '../../events/schema.ts'
 import { createServer } from '../../infra/http.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
+import { fixedWindows, perHour } from '../auth/index.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { TokenCaller } from '../tokens/authenticator.ts'
 import { apiTokens } from '../tokens/schema.ts'
@@ -102,7 +103,10 @@ const USERS: Record<string, string> = {
   dan: DAN
 }
 
-function setUp(tokenCaller: TokenCaller | null = null) {
+function setUp(
+  tokenCaller: TokenCaller | null = null,
+  limiter = fixedWindows()
+) {
   const app = createServer({
     logger: pino({ level: 'silent' }),
     isReady: () => Promise.resolve(true)
@@ -115,7 +119,7 @@ function setUp(tokenCaller: TokenCaller | null = null) {
     },
     token => (token === 'tws_bot' ? tokenCaller : null)
   )
-  registerFeedRoutes(app, { db: testDb.db, authorize })
+  registerFeedRoutes(app, { db: testDb.db, authorize, limiter })
   return (
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     url: string,
@@ -1116,6 +1120,47 @@ describe('mentions', () => {
     expect(unread.json()).toEqual({
       spaces: [{ spaceId: DESIGN, items: 0, mentions: 1 }]
     })
+  })
+
+  const spentOnBob = () => {
+    const limiter = fixedWindows()
+    for (let i = 0; i < 20; i++) {
+      void limiter(`mention:${ALICE}:${BOB}`, perHour(20))
+    }
+    return limiter
+  }
+
+  it('stops notifying a member after 20 mentions by one author in an hour', async () => {
+    const send = setUp(null, spentOnBob())
+
+    const response = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      {
+        body: '@Bob @Carol',
+        mentions: [BOB, CAROL]
+      }
+    )
+
+    expect(response.statusCode).toBe(201)
+    expect(await mentioned()).toEqual([{ userId: CAROL, type: 'card_mention' }])
+    expect(
+      (await outgoing()).map(event => event.data as { recipients: unknown })
+    ).toMatchObject([{ recipients: [{ uuid: CAROL }] }])
+  })
+
+  it('still asks an approver past the mention limit', async () => {
+    const send = setUp(null, spentOnBob())
+
+    await send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'Approve the Q4 budget?',
+      approval: { approvers: [BOB] }
+    })
+
+    expect(await mentioned()).toEqual([
+      { userId: BOB, type: 'approval_request' }
+    ])
   })
 
   it('cuts the preview to 280 characters', async () => {

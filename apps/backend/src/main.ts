@@ -155,7 +155,7 @@ registerNotificationRoutes(server, {
   authorize,
   localpart: config.MATRIX_LOCALPART
 })
-registerFeedRoutes(server, { db, authorize })
+registerFeedRoutes(server, { db, authorize, limiter })
 registerLinkRoutes(server, { authorize, limiter })
 // Publishing reuses the consumer's client, which starts after the server listens.
 let publish: Publish = () => Promise.reject(new Error('not connected yet'))

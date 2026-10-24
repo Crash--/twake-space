@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { publishLater, type OutgoingEvent } from '../../events/outbox.ts'
 import { outgoingActivity } from '../../events/schema.ts'
 import type { Tx } from '../../infra/db.ts'
+import { perHour, type Limiter } from '../auth/index.ts'
 import { tell } from '../live/notify.ts'
 import { notifyUsers } from '../notifications/recipients.ts'
 import { notifications } from '../notifications/schema.ts'
@@ -9,6 +10,10 @@ import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { activityEvents, type Actor } from './schema.ts'
 
 const SOURCE = 'twake://space'
+// What one author can send one member in an hour, across posts. Past it the
+// post still names them, without a notification. The count lives outside the
+// database, so deleting the posts does not give it back.
+const MENTIONS = perHour(20)
 
 const REASONS = {
   mentioned: {
@@ -30,9 +35,14 @@ interface Post {
   body: string
 }
 
-export const mentionMembers = (tx: Tx, post: Post, userIds: string[]) =>
-  notifyMembers(tx, post, userIds, 'mentioned')
+export const mentionMembers = (
+  tx: Tx,
+  post: Post,
+  userIds: string[],
+  limiter: Limiter
+) => notifyMembers(tx, post, userIds, 'mentioned', limiter)
 
+// An approver who is never told cannot decide, so these are never limited.
 export const askApprovers = (tx: Tx, post: Post, userIds: string[]) =>
   notifyMembers(tx, post, userIds, 'approval')
 
@@ -43,7 +53,8 @@ async function notifyMembers(
   tx: Tx,
   post: Post,
   userIds: string[],
-  reason: keyof typeof REASONS
+  reason: keyof typeof REASONS,
+  limiter?: Limiter
 ): Promise<void> {
   const { type, notification, eventId } = REASONS[reason]
   const others = userIds.filter(id => id !== post.authorId)
@@ -73,7 +84,7 @@ async function notifyMembers(
   }
   const preview = Array.from(post.body).slice(0, 280).join('')
   const time = new Date()
-  const events: OutgoingEvent[] = []
+  const fresh: { member: (typeof members)[number]; id: string }[] = []
   for (const member of members) {
     if (member.userId === author.userId) continue
     const [stored] = await tx
@@ -93,15 +104,26 @@ async function notifyMembers(
       })
       .onConflictDoNothing()
       .returning({ id: activityEvents.id })
-    if (!stored) continue
+    if (stored) fresh.push({ member, id: stored.id })
+  }
+  const waits = await Promise.all(
+    fresh.map(async ({ member }) =>
+      limiter
+        ? limiter(`mention:${author.userId}:${member.userId}`, MENTIONS)
+        : 0
+    )
+  )
+  const events: OutgoingEvent[] = []
+  for (const [i, { member, id }] of fresh.entries()) {
+    if (waits[i]) continue
     await notifyUsers(tx, [{ userId: member.userId, type: notification }], {
       organizationId: space.organizationId,
       spaceId: post.spaceId,
-      activityEventId: stored.id
+      activityEventId: id
     })
     events.push({
       specversion: '1.0',
-      id: stored.id,
+      id,
       source: SOURCE,
       type,
       time: time.toISOString(),

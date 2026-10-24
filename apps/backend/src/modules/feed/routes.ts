@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
-import { perMinute, type Authorize } from '../auth/index.ts'
+import { perMinute, type Authorize, type Limiter } from '../auth/index.ts'
 import type { Caller } from '../auth/routes.ts'
 import { notifications } from '../notifications/schema.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
@@ -185,9 +185,9 @@ const serialize = (item: FeedItem) => ({
 
 export function registerFeedRoutes(
   app: HttpServer,
-  deps: { db: Db; authorize: Authorize }
+  deps: { db: Db; authorize: Authorize; limiter: Limiter }
 ) {
-  const { db } = deps
+  const { db, limiter } = deps
   const read = deps.authorize('feed:read')
   const write = deps.authorize('feed:write')
   // Reactions, votes and read marks are a person's own, so no token gets them.
@@ -527,7 +527,8 @@ export function registerFeedRoutes(
             await mentionMembers(
               tx,
               sent,
-              mentions.filter(id => !approval?.approvers.includes(id))
+              mentions.filter(id => !approval?.approvers.includes(id)),
+              limiter
             )
             if (approval) await askApprovers(tx, sent, approval.approvers)
           }
@@ -569,7 +570,8 @@ export function registerFeedRoutes(
             await mentionMembers(
               tx,
               { id: postId, spaceId, authorId: speaker, body },
-              mentions
+              mentions,
+              limiter
             )
           }
           await tellFeed(tx, spaceId, postId, 'changed')
