@@ -1,6 +1,6 @@
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useLocation } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MeetingsService } from '@/application/meetings'
 import type { Space } from '@/application/spaces'
@@ -72,9 +72,19 @@ async function join(link: string) {
 
 const meeting = () => screen.getByRole('region', { name: 'Video meeting' })
 
+// The pickers keep their value in a hidden input beside the label's group
+const field = (dialog: HTMLElement, label: string) =>
+  within(dialog)
+    .getByRole('group', { name: label })
+    .parentElement?.querySelector('input') ?? dialog
+
 describe('MeetingMenu', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('is not shown without Meet nor a conversation', () => {
@@ -152,6 +162,10 @@ describe('MeetingMenu', () => {
   })
 
   it('schedules a meeting in the space, retrying with the same UID', async () => {
+    vi.useFakeTimers({
+      toFake: ['Date'],
+      now: new Date('2026-10-01T08:00:00Z')
+    })
     const schedule = vi
       .fn<MeetingsService['schedule']>()
       .mockRejectedValueOnce({ status: 503, code: 'unavailable' })
@@ -164,11 +178,12 @@ describe('MeetingMenu', () => {
     await choose('Schedule a meeting')
     const dialog = screen.getByRole('dialog', { name: 'Schedule a meeting' })
     expect(within(dialog).getByLabelText('Title')).toHaveValue('Roadmap')
-    fireEvent.change(within(dialog).getByLabelText('Date'), {
-      target: { value: '2026-10-14' }
-    })
-    fireEvent.change(within(dialog).getByLabelText('Start time'), {
-      target: { value: '10:00' }
+    fireEvent.click(within(dialog).getByRole('group', { name: 'Date' }))
+    fireEvent.click(await screen.findByRole('gridcell', { name: '14' }))
+    fireEvent.click(within(dialog).getByRole('group', { name: 'Start time' }))
+    fireEvent.click(await screen.findByRole('option', { name: '10:00' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Schedule' }))
 
@@ -191,6 +206,34 @@ describe('MeetingMenu', () => {
     expect(first?.[1].start).toMatch(/^2026-10-14T10:00:00[+-]\d\d:\d\d$/)
     expect(first?.[1].end).toMatch(/^2026-10-14T10:30:00[+-]\d\d:\d\d$/)
     expect(second?.[1].uid).toBe(first?.[1].uid)
+  })
+
+  it('starts at the next half hour, and takes a typed time to come', async () => {
+    vi.useFakeTimers({
+      toFake: ['Date'],
+      now: new Date('2026-10-01T11:00:00Z')
+    })
+    const schedule = vi
+      .fn<MeetingsService['schedule']>()
+      .mockResolvedValue(undefined)
+    renderWithProviders(<MeetingMenu space={withCalendar} />, {
+      meetings: { schedule },
+      path: '/spaces/a1'
+    })
+
+    await choose('Schedule a meeting')
+    const dialog = screen.getByRole('dialog', { name: 'Schedule a meeting' })
+    const time = field(dialog, 'Start time')
+    expect((time as HTMLInputElement).value).toMatch(/^\d\d:(00|30)$/)
+    const submit = within(dialog).getByRole('button', { name: 'Schedule' })
+    fireEvent.change(time, { target: { value: '00:00' } })
+    expect(submit).toBeDisabled()
+    fireEvent.change(time, { target: { value: '23:45' } })
+    fireEvent.click(submit)
+
+    await waitFor(() => {
+      expect(schedule.mock.calls[0]?.[1].start).toMatch(/T23:45:00/)
+    })
   })
 
   it('offers scheduling to editors and admins only', async () => {

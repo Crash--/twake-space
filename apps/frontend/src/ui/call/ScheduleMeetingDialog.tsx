@@ -4,6 +4,7 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  FormHelperText,
   Stack,
   TextField
 } from '@linagora/twake-mui'
@@ -14,11 +15,13 @@ import {
   fromInputs,
   MEETING_MINUTES,
   MINUTE,
+  nextSlot,
   toInputs,
   withOffset
 } from '@/application/meetings'
 import { isRefusal, type Space } from '@/application/spaces'
 import { DialogHeader } from '@/ds/Dialog'
+import { DayField, TimeField } from '@/ds/Pickers'
 import { useI18n, type TranslationKey } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
 import { useCommonSettings } from '@/ui/settings/useCommonSettings'
@@ -45,8 +48,11 @@ export function ScheduleMeetingDialog({
   const { settings } = useCommonSettings()
   const zone =
     settings.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  const [opened] = useState(() => new Date())
+  const today = toInputs(opened, zone)
+  // A slot of the time list, at least half an hour ahead
   const [start] = useState(() =>
-    toInputs(new Date(Date.now() + 30 * MINUTE), zone)
+    toInputs(nextSlot(new Date(opened.getTime() + 30 * MINUTE), zone, 30), zone)
   )
   const [title, setTitle] = useState(space.name)
   const [date, setDate] = useState(start.date)
@@ -69,6 +75,7 @@ export function ScheduleMeetingDialog({
     onSuccess: onScheduled
   })
   const begin = fromInputs(date, time, zone)
+  const past = begin !== null && begin <= opened
   const code = isRefusal(schedule.error) ? schedule.error.code : null
   const refusal = code ? REFUSALS[code] : undefined
   // Reopened, the dialog has a new UID: closing mid-request could schedule twice
@@ -82,7 +89,7 @@ export function ScheduleMeetingDialog({
         noValidate
         onSubmit={event => {
           event.preventDefault()
-          if (begin) schedule.mutate(begin)
+          if (begin && !past) schedule.mutate(begin)
         }}
       >
         <DialogHeader
@@ -101,27 +108,25 @@ export function ScheduleMeetingDialog({
                 setTitle(event.target.value)
               }}
             />
-            <Stack direction="row" spacing={2}>
-              <TextField
-                fullWidth
-                type="date"
-                label={t('call.date')}
-                value={date}
-                onChange={event => {
-                  setDate(event.target.value)
-                }}
-              />
-              <TextField
-                fullWidth
-                type="time"
-                label={t('call.time')}
-                value={time}
-                helperText={t('call.duration', { minutes: MEETING_MINUTES })}
-                onChange={event => {
-                  setTime(event.target.value)
-                }}
-              />
-            </Stack>
+            <div>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <DayField
+                  label={t('call.date')}
+                  value={date}
+                  min={today.date}
+                  onChange={setDate}
+                />
+                <TimeField
+                  label={t('call.time')}
+                  value={time}
+                  min={date === today.date ? today.time : undefined}
+                  onChange={setTime}
+                />
+              </Stack>
+              <FormHelperText>
+                {t('call.duration', { minutes: MEETING_MINUTES })}
+              </FormHelperText>
+            </div>
             <TextField
               fullWidth
               multiline
@@ -151,7 +156,9 @@ export function ScheduleMeetingDialog({
           <Button
             type="submit"
             variant="contained"
-            disabled={title.trim() === '' || !begin || schedule.isPending}
+            disabled={
+              title.trim() === '' || !begin || past || schedule.isPending
+            }
           >
             {t('call.scheduleAction')}
           </Button>

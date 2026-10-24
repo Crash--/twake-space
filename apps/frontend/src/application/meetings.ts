@@ -72,6 +72,12 @@ export function toInputs(
   }
 }
 
+/** The first instant at or after `instant` whose `zone` minutes are a multiple of `step`. */
+export function nextSlot(instant: Date, zone: string, step: number): Date {
+  const past = wallClock(instant, zone).getTime() % (step * MINUTE)
+  return new Date(instant.getTime() + (past && step * MINUTE - past))
+}
+
 export function fromInputs(
   date: string,
   time: string,
