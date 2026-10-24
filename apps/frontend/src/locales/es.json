@@ -372,7 +372,6 @@
     },
     "emoji": "Añadir un emoji",
     "poll": {
-      "create": "Crear una encuesta",
       "title": "Nueva encuesta",
       "publish": "Publicar",
       "question": "Haz una pregunta",
@@ -383,7 +382,34 @@
       "choice": "%{label}: %{smart_count} voto |||| %{label}: %{smart_count} votos",
       "closed": "Cerrada",
       "close": "Cerrar la encuesta",
-      "voteFailed": "No se pudo guardar tu voto."
+      "voteFailed": "No se pudo guardar tu voto.",
+      "menu": "Encuesta"
+    },
+    "add": "Añadir",
+    "yesNo": {
+      "menu": "Pregunta de sí o no",
+      "title": "Nueva pregunta de sí o no",
+      "yes": "Sí",
+      "no": "No"
+    },
+    "approval": {
+      "menu": "Solicitud de aprobación",
+      "title": "Nueva solicitud de aprobación",
+      "request": "¿Qué hay que aprobar?",
+      "approvers": "Aprobadores",
+      "noApprovers": "No se encontró ningún miembro",
+      "publish": "Enviar",
+      "comment": "Comentario (opcional)",
+      "approve": "Aprobar",
+      "reject": "Rechazar",
+      "pending": "Pendiente",
+      "approved": "Aprobada",
+      "rejected": "Rechazada",
+      "waiting": "Esperando una decisión",
+      "summary": "%{approved} de %{total} aprobado",
+      "closed": "Cerrada",
+      "close": "Cerrar la solicitud",
+      "decideFailed": "No se pudo guardar tu decisión."
     },
     "mention": "Mencionar a un miembro",
     "members": {

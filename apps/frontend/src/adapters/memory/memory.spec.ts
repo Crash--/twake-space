@@ -66,7 +66,8 @@ const message = (minute: number): FeedItem => ({
   author: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
   body: `Message ${String(minute)}`,
   editedAt: null,
-  poll: null
+  poll: null,
+  approval: null
 })
 
 const file: FeedItem = {

@@ -1,4 +1,5 @@
 import {
+  approvalState,
   searchedText,
   shows,
   withVote,
@@ -16,19 +17,22 @@ const refuse = (status: number, code: string) =>
 const newestFirst = (a: FeedItem, b: FeedItem) => b.time.localeCompare(a.time)
 
 // Writes behave like the backend's: viewers cannot post, only the author edits
-// or deletes a post or closes its poll, and a closed poll takes no vote.
-// Nothing arrives live.
+// or deletes a post or closes its poll, a closed poll takes no vote, and an
+// approver decides once. Nothing arrives live.
 export function memoryFeed(
   seed: Record<string, FeedItem[]>,
   {
     me,
     roles,
+    names = {},
     readAt = {},
     mentions = {},
     pageSize = 10
   }: {
     me: { id: string; name: string | null }
     roles: Record<string, SpaceRole>
+    /** By user id: the name an approver shows with. */
+    names?: Record<string, string>
     /** By space id: the time of the newest item seen. */
     readAt?: Record<string, string>
     /** By space id: the unread mentions. */
@@ -112,7 +116,7 @@ export function memoryFeed(
         ? Promise.resolve(structuredClone(item))
         : refuse(404, 'not_found')
     },
-    post: (spaceId, body, _mentions, poll) => {
+    post: (spaceId, body, _mentions, ask) => {
       if (roles[spaceId] === 'viewer') return refuse(403, 'cannot_post')
       const time = new Date().toISOString()
       const post: FeedPost = {
@@ -125,18 +129,47 @@ export function memoryFeed(
         author: { type: 'user', ...me },
         body,
         editedAt: null,
-        poll: poll
-          ? {
-              options: poll.options.map(label => ({ label, userIds: [] })),
-              closedAt: null
-            }
-          : null
+        poll:
+          ask && 'poll' in ask
+            ? 'options' in ask.poll
+              ? {
+                  kind: 'choice',
+                  options: ask.poll.options.map(label => ({
+                    label,
+                    userIds: []
+                  })),
+                  closedAt: null
+                }
+              : {
+                  kind: 'yes_no',
+                  options: [
+                    { label: 'yes', userIds: [] },
+                    { label: 'no', userIds: [] }
+                  ],
+                  closedAt: null
+                }
+            : null,
+        approval:
+          ask && 'approval' in ask
+            ? {
+                state: 'pending',
+                approvers: ask.approval.approvers.map(id => ({
+                  id,
+                  name: names[id] ?? null,
+                  decision: null,
+                  comment: null,
+                  decidedAt: null
+                })),
+                closedAt: null
+              }
+            : null
       }
       itemsOf(spaceId).push(post)
       return Promise.resolve(structuredClone(post))
     },
     edit: async (spaceId, postId, body) => {
       const post = await myPost(spaceId, postId)
+      if (post.approval) return refuse(409, 'cannot_edit_approval')
       post.body = body
       post.editedAt = post.updatedAt = new Date().toISOString()
       return structuredClone(post)
@@ -159,9 +192,26 @@ export function memoryFeed(
     },
     closePoll: async (spaceId, postId) => {
       const post = await myPost(spaceId, postId)
-      if (!post.poll) return refuse(404, 'not_found')
-      post.poll.closedAt ??= new Date().toISOString()
+      const closing = post.poll ?? post.approval
+      if (!closing) return refuse(404, 'not_found')
+      closing.closedAt ??= new Date().toISOString()
       return structuredClone(post)
+    },
+    decide: (spaceId, postId, decision, comment) => {
+      const post = find(spaceId, postId)
+      const approval = post?.kind === 'post' ? post.approval : null
+      if (!approval) return refuse(404, 'not_found')
+      if (approval.closedAt) return refuse(409, 'poll_closed')
+      const approver = approval.approvers.find(a => a.id === me.id)
+      if (!approver) return refuse(403, 'not_approver')
+      if (approver.decision) return refuse(409, 'already_decided')
+      Object.assign(approver, {
+        decision,
+        comment: comment.trim() || null,
+        decidedAt: new Date().toISOString()
+      })
+      approval.state = approvalState(approval.approvers)
+      return Promise.resolve()
     },
     react: (spaceId, itemId, key) => {
       const item = find(spaceId, itemId)

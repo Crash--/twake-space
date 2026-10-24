@@ -19,7 +19,8 @@ export const notificationType = pgEnum('notification_type', [
   'invitation',
   'attended_event_change',
   'space_change',
-  'assistant_suggestion'
+  'assistant_suggestion',
+  'approval_request'
 ])
 
 export const notifications = pgTable(

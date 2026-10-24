@@ -8,8 +8,20 @@ import { notifications } from '../notifications/schema.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { activityEvents, type Actor } from './schema.ts'
 
-const POST_MENTIONED = 'com.twake.space.post.mentioned.v1'
 const SOURCE = 'twake://space'
+
+const REASONS = {
+  mentioned: {
+    type: 'com.twake.space.post.mentioned.v1',
+    notification: 'card_mention',
+    eventId: (postId: string, userId: string) => `${postId}:${userId}`
+  },
+  approval: {
+    type: 'com.twake.space.post.approval_requested.v1',
+    notification: 'approval_request',
+    eventId: (postId: string, userId: string) => `${postId}:approval:${userId}`
+  }
+} as const
 
 interface Post {
   id: string
@@ -18,14 +30,22 @@ interface Post {
   body: string
 }
 
-// One activity event per post and member: an edit that mentions someone again
-// makes none, and the event backs their notification in the feed's unread
-// mentions. It makes no card.
-export async function mentionMembers(
+export const mentionMembers = (tx: Tx, post: Post, userIds: string[]) =>
+  notifyMembers(tx, post, userIds, 'mentioned')
+
+export const askApprovers = (tx: Tx, post: Post, userIds: string[]) =>
+  notifyMembers(tx, post, userIds, 'approval')
+
+// One activity event per post, member and reason: an edit that mentions
+// someone again makes none, and the event backs their notification in the
+// feed's unread mentions. It makes no card.
+async function notifyMembers(
   tx: Tx,
   post: Post,
-  userIds: string[]
+  userIds: string[],
+  reason: keyof typeof REASONS
 ): Promise<void> {
+  const { type, notification, eventId } = REASONS[reason]
   const others = userIds.filter(id => id !== post.authorId)
   if (others.length === 0) return
   const [space] = await tx
@@ -60,10 +80,10 @@ export async function mentionMembers(
       .insert(activityEvents)
       .values({
         source: SOURCE,
-        eventId: `${post.id}:${member.userId}`,
+        eventId: eventId(post.id, member.userId),
         organizationId: space.organizationId,
         spaceId: post.spaceId,
-        type: POST_MENTIONED,
+        type,
         category: 'messages',
         actor,
         objectType: object.type,
@@ -74,7 +94,7 @@ export async function mentionMembers(
       .onConflictDoNothing()
       .returning({ id: activityEvents.id })
     if (!stored) continue
-    await notifyUsers(tx, [{ userId: member.userId, type: 'card_mention' }], {
+    await notifyUsers(tx, [{ userId: member.userId, type: notification }], {
       organizationId: space.organizationId,
       spaceId: post.spaceId,
       activityEventId: stored.id
@@ -83,7 +103,7 @@ export async function mentionMembers(
       specversion: '1.0',
       id: stored.id,
       source: SOURCE,
-      type: POST_MENTIONED,
+      type,
       time: time.toISOString(),
       twakeorg: space.organizationId,
       twakeactorid: author.userId,
@@ -91,9 +111,7 @@ export async function mentionMembers(
       data: {
         object,
         preview,
-        recipients: [
-          { uuid: member.userId, email: member.email, reason: 'mentioned' }
-        ]
+        recipients: [{ uuid: member.userId, email: member.email, reason }]
       }
     })
   }

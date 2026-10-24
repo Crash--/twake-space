@@ -107,7 +107,8 @@ describe('SpotSpace', () => {
       author: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
       body: 'The plan is ready',
       editedAt: null,
-      poll: null
+      poll: null,
+      approval: null
     }
     const card: FeedItem = {
       id: 'card-1',

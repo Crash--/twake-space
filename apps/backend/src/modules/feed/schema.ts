@@ -90,6 +90,13 @@ export const feedCards = pgTable(
   ]
 )
 
+export const feedPostKind = pgEnum('feed_post_kind', [
+  'text',
+  'poll',
+  'yes_no',
+  'approval'
+])
+
 export const feedPosts = pgTable(
   'feed_posts',
   {
@@ -99,14 +106,18 @@ export const feedPosts = pgTable(
     authorId: uuid('author_id'),
     // Set for a post an API token wrote: the token signs it, not its account.
     authorTokenId: uuid('author_token_id').references(() => apiTokens.id),
-    // On a poll, its question.
+    kind: feedPostKind().notNull().default('text'),
+    // On a poll, a yes/no question or an approval request, its question.
     body: text().notNull(),
     // Written from a JS Date, at the milliseconds the feed cursor carries.
     time: timestamptz('time').notNull(),
     editedAt: timestamptz('edited_at'),
-    // Set on a poll only.
+    // Set on a poll only: a yes/no question's two answers are fixed, not stored.
     pollOptions: text('poll_options').array(),
-    pollClosedAt: timestamptz('poll_closed_at')
+    // Closes a poll, a yes/no question or an approval request.
+    pollClosedAt: timestamptz('poll_closed_at'),
+    // Set on an approval request only.
+    approverIds: uuid('approver_ids').array()
   },
   table => [
     index().on(table.spaceId, table.time, table.id),
@@ -117,7 +128,8 @@ export const feedPosts = pgTable(
   ]
 )
 
-// One per member: a vote again changes it.
+// One per member: a vote again changes it. An approver's decision is a vote
+// too, which stays.
 export const feedPollVotes = pgTable(
   'feed_poll_votes',
   {
@@ -125,8 +137,11 @@ export const feedPollVotes = pgTable(
       .notNull()
       .references(() => feedPosts.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    // The index of the option in the post's poll options.
+    // The index of the option in the post's poll options; on a yes/no
+    // question 0 is yes, on an approval request 0 approves and 1 rejects.
     option: integer().notNull(),
+    // An approver's, with their decision.
+    comment: text(),
     createdAt: timestamptz('created_at').notNull().defaultNow()
   },
   table => [primaryKey({ columns: [table.postId, table.userId] })]

@@ -779,7 +779,8 @@ describe('SpaceScreen', () => {
         author: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
         body: 'The launch plan is ready',
         editedAt: null,
-        poll: null
+        poll: null,
+        approval: null
       },
       {
         id: 'card-1',
@@ -858,7 +859,8 @@ describe('SpaceScreen', () => {
         author: { type: 'user', id: 'u-bob', name: `Author ${String(i)}` },
         body: i === 0 ? 'The oldest note' : `Note ${String(i)}`,
         editedAt: null,
-        poll: null
+        poll: null,
+        approval: null
       }))
       renderAt('/spaces/a1/feed', roadmap, posts)
       await search('oldest')

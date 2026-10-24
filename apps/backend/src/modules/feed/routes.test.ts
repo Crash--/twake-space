@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { pino } from 'pino'
 import {
   afterAll,
@@ -201,6 +201,7 @@ async function aPost(
     .values({
       spaceId: DESIGN,
       authorId,
+      kind: pollOptions ? 'poll' : 'text',
       body,
       time: new Date(time),
       pollOptions
@@ -270,6 +271,7 @@ describe('GET /spaces/:spaceId/feed', () => {
           body: 'Hello team',
           editedAt: null,
           poll: null,
+          approval: null,
           reactions: []
         },
         {
@@ -1230,6 +1232,7 @@ describe('polls', () => {
       category: 'messages',
       body: 'Lunch where?',
       poll: {
+        kind: 'choice',
         options: [
           { label: 'Pizza', userIds: [] },
           { label: 'Sushi', userIds: [] }
@@ -1280,6 +1283,7 @@ describe('polls', () => {
     await send('PUT', vote, 'bob', { option: 1 })
     expect((await send('PUT', vote, 'bob', { option: 1 })).statusCode).toBe(204)
     expect(await pollOf(send, poll)).toEqual({
+      kind: 'choice',
       options: [
         { label: 'Pizza', userIds: [CAROL] },
         { label: 'Sushi', userIds: [BOB] }
@@ -1380,6 +1384,327 @@ describe('polls', () => {
     await send('DELETE', `/spaces/${DESIGN}/feed/posts/${poll}`)
 
     expect(await testDb.db.select().from(feedPollVotes)).toEqual([])
+  })
+})
+
+describe('yes/no questions', () => {
+  it('publishes a question with a yes and a no to vote for', async () => {
+    const send = setUp()
+    const created = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      {
+        body: 'Ship on Friday?',
+        poll: { kind: 'yes_no' }
+      }
+    )
+    const id = created.json<Item>().id
+
+    await send('PUT', `/spaces/${DESIGN}/feed/posts/${id}/vote`, 'bob', {
+      option: 1
+    })
+    const outOfRange = await send(
+      'PUT',
+      `/spaces/${DESIGN}/feed/posts/${id}/vote`,
+      'carol',
+      { option: 2 }
+    )
+
+    expect(created.statusCode).toBe(201)
+    expect(outOfRange.statusCode).toBe(400)
+    const item = await send('GET', `/spaces/${DESIGN}/feed/items/${id}`)
+    expect(item.json()).toMatchObject({
+      body: 'Ship on Friday?',
+      poll: {
+        kind: 'yes_no',
+        options: [
+          { label: 'yes', userIds: [] },
+          { label: 'no', userIds: [BOB] }
+        ],
+        closedAt: null
+      },
+      approval: null
+    })
+  })
+
+  it('refuses options sent with it, and a kind it does not know', async () => {
+    const send = setUp()
+    const publish = (poll: object) =>
+      send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+        body: 'Ship?',
+        poll
+      })
+
+    expect(
+      (await publish({ kind: 'yes_no', options: ['Maybe', 'No'] })).statusCode
+    ).toBe(400)
+    expect((await publish({ kind: 'rating' })).statusCode).toBe(400)
+    expect((await publish({})).statusCode).toBe(400)
+  })
+})
+
+describe('approvals', () => {
+  interface Approval {
+    state: string
+    approvers: {
+      id: string
+      name: string | null
+      decision: string | null
+      comment: string | null
+      decidedAt: string | null
+    }[]
+    closedAt: string | null
+  }
+  const request = (send: ReturnType<typeof setUp>, approvers: string[]) =>
+    send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'Approve the Q4 budget?',
+      approval: { approvers }
+    })
+  const approvalOf = async (send: ReturnType<typeof setUp>, postId: string) =>
+    (await send('GET', `/spaces/${DESIGN}/feed/items/${postId}`)).json<{
+      approval: Approval
+    }>().approval
+  const decide = (
+    send: ReturnType<typeof setUp>,
+    postId: string,
+    token: string,
+    body: object
+  ) =>
+    send('PUT', `/spaces/${DESIGN}/feed/posts/${postId}/decision`, token, body)
+
+  it('asks each approver, who is notified and gets the event', async () => {
+    const send = setUp()
+
+    const response = await request(send, [BOB, CAROL])
+
+    expect(response.statusCode).toBe(201)
+    const post = response.json<{ id: string; approval: Approval }>()
+    expect(post.approval).toEqual({
+      state: 'pending',
+      approvers: [
+        {
+          id: BOB,
+          name: 'bob',
+          decision: null,
+          comment: null,
+          decidedAt: null
+        },
+        {
+          id: CAROL,
+          name: 'carol',
+          decision: null,
+          comment: null,
+          decidedAt: null
+        }
+      ],
+      closedAt: null
+    })
+    expect(
+      await testDb.db
+        .select({ userId: notifications.userId, type: notifications.type })
+        .from(notifications)
+        .orderBy(notifications.userId)
+    ).toEqual([
+      { userId: CAROL, type: 'approval_request' },
+      { userId: BOB, type: 'approval_request' }
+    ])
+    const events = (await testDb.db.select().from(outgoingActivity)).map(
+      row => row.event
+    )
+    expect(events).toHaveLength(2)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'com.twake.space.post.approval_requested.v1',
+        twakeactorid: ALICE,
+        data: {
+          object: {
+            type: 'post',
+            id: post.id,
+            title: 'Design',
+            space: { id: DESIGN, name: 'Design' }
+          },
+          preview: 'Approve the Q4 budget?',
+          recipients: [
+            { uuid: BOB, email: 'bob@example.com', reason: 'approval' }
+          ]
+        }
+      })
+    )
+    const unread = await send('GET', '/feed/unread', 'bob')
+    expect(unread.json()).toEqual({
+      spaces: [{ spaceId: DESIGN, items: 0, mentions: 1 }]
+    })
+  })
+
+  it('refuses approvers outside the space, the author, none or repeated ones', async () => {
+    const send = setUp()
+
+    for (const approvers of [[DAN], [ALICE], [], [BOB, BOB]]) {
+      expect((await request(send, approvers)).statusCode).toBe(400)
+    }
+    const both = await send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'Both?',
+      poll: { kind: 'yes_no' },
+      approval: { approvers: [BOB] }
+    })
+    expect(both.statusCode).toBe(400)
+    expect(await testDb.db.select().from(feedPosts)).toEqual([])
+  })
+
+  it('needs a person to ask: no organization token', async () => {
+    const response = await setUp(
+      aTokenCaller({ userId: null, role: 'editor', scopes: ['feed:write'] })
+    )('POST', `/spaces/${DESIGN}/feed/posts`, 'tws_bot', {
+      body: 'Approve?',
+      approval: { approvers: [BOB] }
+    })
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'cannot_request_approval' })
+  })
+
+  it('takes one decision per approver, with a comment, and sums them up', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB, CAROL])).json<Item>().id
+
+    const approved = await decide(send, id, 'bob', {
+      decision: 'approved',
+      comment: ' Looks good '
+    })
+    const again = await decide(send, id, 'bob', { decision: 'rejected' })
+    const outsider = await decide(send, id, 'alice', { decision: 'approved' })
+
+    expect(approved.statusCode).toBe(204)
+    expect(again.json()).toEqual({ error: 'already_decided' })
+    expect(outsider.json()).toEqual({ error: 'not_approver' })
+    const halfway = await approvalOf(send, id)
+    expect(halfway.state).toBe('pending')
+    expect(halfway.approvers[0]).toEqual({
+      id: BOB,
+      name: 'bob',
+      decision: 'approved',
+      comment: 'Looks good',
+      decidedAt: expect.any(String) as string
+    })
+    await decide(send, id, 'carol', { decision: 'approved', comment: '' })
+    const done = await approvalOf(send, id)
+    expect(done.state).toBe('approved')
+    expect(done.approvers[1]?.comment).toBeNull()
+    expect(live).toHaveBeenCalledWith(ALICE, 'feed', {
+      spaceId: DESIGN,
+      itemId: id,
+      change: 'changed'
+    })
+  })
+
+  it('is rejected by one approver', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB, CAROL])).json<Item>().id
+
+    await decide(send, id, 'carol', {
+      decision: 'rejected',
+      comment: 'Too high'
+    })
+
+    expect((await approvalOf(send, id)).state).toBe('rejected')
+  })
+
+  it('is approved without an approver who left the space undecided', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB, CAROL])).json<Item>().id
+    await decide(send, id, 'bob', { decision: 'approved' })
+
+    await testDb.db
+      .delete(spaceMembers)
+      .where(
+        and(eq(spaceMembers.spaceId, DESIGN), eq(spaceMembers.userId, CAROL))
+      )
+
+    const approval = await approvalOf(send, id)
+    expect(approval.state).toBe('approved')
+    expect(approval.approvers[1]).toMatchObject({ id: CAROL, name: null })
+  })
+
+  it('notifies a mentioned approver once, of the request', async () => {
+    const send = setUp()
+
+    await send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'Approve the Q4 budget, @bob?',
+      mentions: [BOB],
+      approval: { approvers: [BOB] }
+    })
+
+    expect(
+      await testDb.db
+        .select({ userId: notifications.userId, type: notifications.type })
+        .from(notifications)
+    ).toEqual([{ userId: BOB, type: 'approval_request' }])
+  })
+
+  it('keeps the text the approvers decide on', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB])).json<Item>().id
+
+    const edit = await send(
+      'PATCH',
+      `/spaces/${DESIGN}/feed/posts/${id}`,
+      'alice',
+      { body: 'Approve twice the Q4 budget?' }
+    )
+
+    expect(edit.statusCode).toBe(409)
+    expect(edit.json()).toEqual({ error: 'cannot_edit_approval' })
+  })
+
+  it('takes no vote, and no decision once its author closed it', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB])).json<Item>().id
+
+    const vote = await send(
+      'PUT',
+      `/spaces/${DESIGN}/feed/posts/${id}/vote`,
+      'bob',
+      { option: 0 }
+    )
+    const closed = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts/${id}/close`,
+      'alice'
+    )
+    const late = await decide(send, id, 'bob', { decision: 'approved' })
+
+    expect(vote.statusCode).toBe(404)
+    expect(closed.json<{ approval: Approval }>().approval.closedAt).toEqual(
+      expect.any(String)
+    )
+    expect(late.json()).toEqual({ error: 'poll_closed' })
+  })
+
+  it('answers 404 to a decision on a poll, and refuses an unknown decision', async () => {
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', ALICE, [
+      'Pizza',
+      'Sushi'
+    ])
+    const send = setUp()
+    const id = (await request(send, [BOB])).json<Item>().id
+
+    expect(
+      (await decide(send, poll, 'bob', { decision: 'approved' })).statusCode
+    ).toBe(404)
+    expect(
+      (await decide(send, id, 'bob', { decision: 'maybe' })).statusCode
+    ).toBe(400)
+  })
+
+  it('takes the notifications back with the request', async () => {
+    const send = setUp()
+    const id = (await request(send, [BOB])).json<Item>().id
+
+    await send('DELETE', `/spaces/${DESIGN}/feed/posts/${id}`)
+
+    expect(await testDb.db.select().from(notifications)).toEqual([])
+    expect(await testDb.db.select().from(outgoingActivity)).toEqual([])
   })
 })
 

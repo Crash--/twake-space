@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
@@ -10,6 +10,7 @@ import { reachableSpaces } from '../spaces/routes.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { apiTokens } from '../tokens/schema.ts'
 import {
+  DECISIONS,
   decodeCursor,
   findItem,
   listItems,
@@ -18,16 +19,19 @@ import {
   type FeedItem
 } from './items.ts'
 import { tellFeed } from './live.ts'
-import { forgetMentions, mentionMembers } from './mentions.ts'
+import { askApprovers, forgetMentions, mentionMembers } from './mentions.ts'
 import {
   activityEvents,
   feedCards,
   feedCategory,
   feedItemReactions,
   feedPollVotes,
+  feedPostKind,
   feedPosts,
   feedReads
 } from './schema.ts'
+
+type PostKind = (typeof feedPostKind.enumValues)[number]
 
 const feedQuery = z
   .object({
@@ -70,21 +74,41 @@ const postBody = z.object({
   // Member ids: anyone else is left out.
   mentions: z.array(z.uuid()).max(50).default([])
 })
-const newPostBody = postBody.extend({
-  poll: z
-    .object({
-      options: z
-        .array(z.string().trim().min(1).max(200))
-        .min(2)
-        .max(10)
-        .refine(
-          options =>
-            new Set(options.map(o => o.toLowerCase())).size === options.length
-        )
-    })
-    .optional()
-})
+const newPostBody = postBody
+  .extend({
+    poll: z
+      .union([
+        z.object({
+          kind: z.literal('choice').default('choice'),
+          options: z
+            .array(z.string().trim().min(1).max(200))
+            .min(2)
+            .max(10)
+            .refine(
+              options =>
+                new Set(options.map(o => o.toLowerCase())).size ===
+                options.length
+            )
+        }),
+        z.strictObject({ kind: z.literal('yes_no') })
+      ])
+      .optional(),
+    approval: z
+      .object({
+        approvers: z
+          .array(z.uuid())
+          .min(1)
+          .max(20)
+          .refine(ids => new Set(ids).size === ids.length)
+      })
+      .optional()
+  })
+  .refine(({ poll, approval }) => !poll || !approval)
 const voteBody = z.object({ option: z.int().min(0) })
+const decisionBody = z.object({
+  decision: z.enum(DECISIONS),
+  comment: z.string().trim().max(1000).optional()
+})
 const readBody = z.object({ readAt: z.iso.datetime({ offset: true }) })
 
 class Refusal extends Error {
@@ -120,6 +144,14 @@ const serialize = (item: FeedItem) => ({
     poll: item.poll && {
       ...item.poll,
       closedAt: item.poll.closedAt?.toISOString() ?? null
+    },
+    approval: item.approval && {
+      ...item.approval,
+      approvers: item.approval.approvers.map(approver => ({
+        ...approver,
+        decidedAt: approver.decidedAt?.toISOString() ?? null
+      })),
+      closedAt: item.approval.closedAt?.toISOString() ?? null
     }
   })
 })
@@ -167,7 +199,8 @@ export function registerFeedRoutes(
       .select({
         authorId: feedPosts.authorId,
         authorTokenId: feedPosts.authorTokenId,
-        tokenAccountId: apiTokens.accountId
+        tokenAccountId: apiTokens.accountId,
+        kind: feedPosts.kind
       })
       .from(feedPosts)
       .leftJoin(apiTokens, eq(apiTokens.id, feedPosts.authorTokenId))
@@ -182,22 +215,52 @@ export function registerFeedRoutes(
         : post.authorId === caller.userId ||
           post.tokenAccountId === caller.userId
     if (!authored) throw new Refusal(403, 'not_author')
-    return { spaceId, postId, caller }
+    return { spaceId, postId, caller, kind: post.kind }
   }
 
   // Shared: a vote waits for the poll's closing, and the closing for the vote.
-  async function openPoll(tx: Tx, spaceId: string, postId: string) {
+  async function openPoll(
+    tx: Tx,
+    spaceId: string,
+    postId: string,
+    kinds: PostKind[] = ['poll', 'yes_no']
+  ) {
     const [post] = await tx
       .select({
+        kind: feedPosts.kind,
         options: feedPosts.pollOptions,
+        approverIds: feedPosts.approverIds,
         closedAt: feedPosts.pollClosedAt
       })
       .from(feedPosts)
       .where(and(eq(feedPosts.id, postId), eq(feedPosts.spaceId, spaceId)))
       .for('share')
-    if (!post?.options) throw new Refusal(404, 'not_found')
+    if (!post || !kinds.includes(post.kind)) {
+      throw new Refusal(404, 'not_found')
+    }
     if (post.closedAt) throw new Refusal(409, 'poll_closed')
-    return post.options
+    return post
+  }
+
+  async function checkApprovers(
+    tx: Tx,
+    spaceId: string,
+    authorId: string,
+    approverIds: string[]
+  ) {
+    const members = await tx
+      .select({ userId: spaceMembers.userId })
+      .from(spaceMembers)
+      .where(
+        and(
+          eq(spaceMembers.spaceId, spaceId),
+          inArray(spaceMembers.userId, approverIds),
+          ne(spaceMembers.userId, authorId)
+        )
+      )
+    if (members.length < approverIds.length) {
+      throw new Refusal(400, 'invalid_approvers')
+    }
   }
 
   async function existingItem(tx: Tx, spaceId: string, itemId: string) {
@@ -258,8 +321,9 @@ export function registerFeedRoutes(
   )
 
   // A feed never opened has no mark, so nothing in it counts as new, as in
-  // the feed itself; its mentions still do. A mention older than the mark was
-  // seen in the feed, even though its notification may stay unread.
+  // the feed itself; its mentions still do, an approval asked of the member
+  // included. A mention older than the mark was seen in the feed, even though
+  // its notification may stay unread.
   app.get('/feed/unread', { preHandler }, async request => {
     const caller = request.caller
     if (caller?.kind !== 'session') {
@@ -278,7 +342,7 @@ export function registerFeedRoutes(
             on ${activityEvents.id} = ${notifications.activityEventId}
           where ${notifications.userId} = ${caller.userId}
           and ${notifications.spaceId} = ${spaceMembers.spaceId}
-          and ${notifications.type} = 'card_mention'
+          and ${notifications.type} in ('card_mention', 'approval_request')
           and ${notifications.readAt} is null
           and (${feedReads.readAt} is null
             or ${activityEvents.time} > ${feedReads.readAt}))`
@@ -356,9 +420,26 @@ export function registerFeedRoutes(
         const { caller, space } = await reach(request)
         const spaceId = space.id
         if (space.role === 'viewer') throw new Refusal(403, 'cannot_post')
-        const { body, poll, mentions } = parse(newPostBody, request.body)
+        const { body, poll, approval, mentions } = parse(
+          newPostBody,
+          request.body
+        )
         const speaker = mentioner(caller, mentions)
+        // The approvers hear from a person, as a mention does.
+        if (approval && !speaker) {
+          throw new Refusal(403, 'cannot_request_approval')
+        }
+        const kind: PostKind = approval
+          ? 'approval'
+          : poll?.kind === 'yes_no'
+            ? 'yes_no'
+            : poll
+              ? 'poll'
+              : 'text'
         const item = await db.transaction(async tx => {
+          if (approval && speaker) {
+            await checkApprovers(tx, spaceId, speaker, approval.approvers)
+          }
           const [post] = await tx
             .insert(feedPosts)
             .values({
@@ -366,18 +447,23 @@ export function registerFeedRoutes(
               ...(caller.kind === 'token'
                 ? { authorTokenId: caller.tokenId }
                 : { authorId: caller.userId }),
+              kind,
               body,
               time: new Date(),
-              pollOptions: poll?.options ?? null
+              pollOptions: poll?.kind === 'choice' ? poll.options : null,
+              approverIds: approval?.approvers ?? null
             })
             .returning({ id: feedPosts.id })
           if (!post) throw new Error('the post insert returned no row')
           if (speaker) {
+            const sent = { id: post.id, spaceId, authorId: speaker, body }
+            // An approver hears once, of the request.
             await mentionMembers(
               tx,
-              { id: post.id, spaceId, authorId: speaker, body },
-              mentions
+              sent,
+              mentions.filter(id => !approval?.approvers.includes(id))
             )
+            if (approval) await askApprovers(tx, sent, approval.approvers)
           }
           await tellFeed(tx, spaceId, post.id, 'added')
           return findItem(tx, spaceId, post.id)
@@ -396,7 +482,14 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
-          const { spaceId, postId, caller } = await authoredPost(tx, request)
+          const { spaceId, postId, caller, kind } = await authoredPost(
+            tx,
+            request
+          )
+          // The decisions answer the text the approvers read.
+          if (kind === 'approval') {
+            throw new Refusal(409, 'cannot_edit_approval')
+          }
           const { body, mentions } = parse(postBody, request.body)
           const speaker = mentioner(caller, mentions)
           await tx
@@ -451,8 +544,8 @@ export function registerFeedRoutes(
         const postId = itemOf(request)
         const { option } = parse(voteBody, request.body)
         await db.transaction(async tx => {
-          const options = await openPoll(tx, spaceId, postId)
-          if (option >= options.length) {
+          const poll = await openPoll(tx, spaceId, postId)
+          if (option >= (poll.options?.length ?? 2)) {
             throw new Refusal(400, 'invalid_request')
           }
           const [voted] = await tx
@@ -514,7 +607,7 @@ export function registerFeedRoutes(
             .where(
               and(
                 eq(feedPosts.id, postId),
-                isNotNull(feedPosts.pollOptions),
+                ne(feedPosts.kind, 'text'),
                 isNull(feedPosts.pollClosedAt)
               )
             )
@@ -522,10 +615,44 @@ export function registerFeedRoutes(
           if (closed) await tellFeed(tx, spaceId, postId, 'changed')
           return findItem(tx, spaceId, postId)
         })
-        if (item?.kind !== 'post' || !item.poll) {
+        if (item?.kind !== 'post' || (!item.poll && !item.approval)) {
           throw new Refusal(404, 'not_found')
         }
         return serialize(item)
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  // An approver decides once.
+  app.put(
+    '/spaces/:spaceId/feed/posts/:itemId/decision',
+    { preHandler },
+    async (request, reply) => {
+      try {
+        const { spaceId, userId } = await memberOf(request)
+        const postId = itemOf(request)
+        const { decision, comment } = parse(decisionBody, request.body)
+        await db.transaction(async tx => {
+          const post = await openPoll(tx, spaceId, postId, ['approval'])
+          if (!post.approverIds?.includes(userId)) {
+            throw new Refusal(403, 'not_approver')
+          }
+          const [decided] = await tx
+            .insert(feedPollVotes)
+            .values({
+              postId,
+              userId,
+              option: DECISIONS.indexOf(decision),
+              comment: comment || null
+            })
+            .onConflictDoNothing()
+            .returning({ postId: feedPollVotes.postId })
+          if (!decided) throw new Refusal(409, 'already_decided')
+          await tellFeed(tx, spaceId, postId, 'changed')
+        })
+        return await reply.code(204).send()
       } catch (error) {
         return refused(error, reply)
       }

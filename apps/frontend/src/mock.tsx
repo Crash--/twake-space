@@ -52,6 +52,9 @@ const services = {
   feed: memoryFeed(seedFeed, {
     me: { id: 'uuid-alice', name: seedUser.name },
     roles: Object.fromEntries(seedSpaces.map(space => [space.id, space.role])),
+    names: Object.fromEntries(
+      seedOrganization.people.map(p => [p.id, p.displayName])
+    ),
     readAt: seedFeedReads
   }),
   meetings: { schedule: () => Promise.resolve() },

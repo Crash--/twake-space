@@ -1,5 +1,6 @@
 import {
   Calendar,
+  CheckCircle,
   CheckList,
   Icon,
   Copy,
@@ -30,6 +31,8 @@ import {
   splitMentions,
   toEventState,
   type Actor,
+  type Approval,
+  type Decision,
   type FeedCard,
   type FeedFilter,
   type FeedItem,
@@ -54,8 +57,9 @@ import {
   FeedBody,
   FeedMention,
   FeedCentered,
+  FeedApproval,
   FeedComposer,
-  FeedComposerTool,
+  FeedComposerMenu,
   FeedDetail,
   FeedEditForm,
   FeedFilterMenu,
@@ -77,7 +81,13 @@ import {
   ReactionPicker,
   VisioChip
 } from '@/ds/Feed'
-import { CalendarIcon, FolderIcon, OpenInNewIcon, PollIcon } from '@/ds/icons'
+import {
+  CalendarIcon,
+  FolderIcon,
+  OpenInNewIcon,
+  PollIcon,
+  ThumbsUpDownIcon
+} from '@/ds/icons'
 import { MembersPanel } from '@/ds/MembersPanel'
 import { MenuEntry } from '@/ds/Menu'
 import { LoadingRows, SetupPrompt } from '@/ds/Page'
@@ -92,6 +102,7 @@ import {
   useFeedCache,
   useFeedReadAt
 } from '@/ui/space/feedQueries'
+import { ApprovalDialog } from '@/ui/space/ApprovalDialog'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
 import { PollDialog } from '@/ui/space/PollDialog'
 
@@ -385,8 +396,15 @@ function Composer({ space }: { space: Space }): ReactElement {
   const { feed } = useServices()
   const { add } = useFeedCache(space.id)
   const [body, setBody] = useState('')
-  const [polling, setPolling] = useState(false)
+  const [asking, setAsking] = useState<Ask | null>(null)
   const people = useMentionable(space)
+  const stopAsking = () => {
+    setAsking(null)
+  }
+  const published = (item: FeedItem) => {
+    add(item)
+    setAsking(null)
+  }
   const send = useMutation({
     mutationFn: (text: string) =>
       feed.post(space.id, text, mentionsIn(text, people)),
@@ -412,30 +430,47 @@ function Composer({ space }: { space: Space }): ReactElement {
         }}
         disabled={send.isPending}
         tools={
-          <FeedComposerTool
-            label={t('feed.poll.create')}
-            icon={PollIcon}
-            onClick={() => {
-              setPolling(true)
-            }}
+          <FeedComposerMenu
+            label={t('feed.add')}
+            items={ASKS.filter(
+              ask => ask.kind !== 'approval' || people.length > 0
+            ).map(ask => ({
+              label: t(ask.label),
+              icon: ask.icon,
+              onClick: () => {
+                setAsking(ask.kind)
+              }
+            }))}
           />
         }
       />
-      {polling && (
+      {(asking === 'choice' || asking === 'yes_no') && (
         <PollDialog
           spaceId={space.id}
-          onClose={() => {
-            setPolling(false)
-          }}
-          onPublished={item => {
-            add(item)
-            setPolling(false)
-          }}
+          kind={asking}
+          onClose={stopAsking}
+          onPublished={published}
+        />
+      )}
+      {asking === 'approval' && (
+        <ApprovalDialog
+          spaceId={space.id}
+          people={people}
+          onClose={stopAsking}
+          onPublished={published}
         />
       )}
     </>
   )
 }
+
+type Ask = Poll['kind'] | 'approval'
+
+const ASKS: { kind: Ask; label: TranslationKey; icon: IconProps['icon'] }[] = [
+  { kind: 'choice', label: 'feed.poll.menu', icon: PollIcon },
+  { kind: 'yes_no', label: 'feed.yesNo.menu', icon: ThumbsUpDownIcon },
+  { kind: 'approval', label: 'feed.approval.menu', icon: CheckCircle }
+]
 
 function Setup({
   space,
@@ -597,9 +632,13 @@ function Post({
         menu={
           mine && (
             <ItemMenu
-              onEdit={() => {
-                setDraft(post.body)
-              }}
+              onEdit={
+                post.approval
+                  ? null
+                  : () => {
+                      setDraft(post.body)
+                    }
+              }
               onDelete={() => {
                 remove.mutate()
               }}
@@ -616,6 +655,20 @@ function Post({
             myId={myId}
             onClose={
               mine && !post.poll.closedAt && !close.isPending
+                ? () => {
+                    close.mutate()
+                  }
+                : null
+            }
+          />
+        ) : post.approval ? (
+          <ApprovalDecisions
+            post={post}
+            approval={post.approval}
+            space={space}
+            myId={myId}
+            onClose={
+              mine && !post.approval.closedAt && !close.isPending
                 ? () => {
                     close.mutate()
                   }
@@ -738,15 +791,21 @@ function PollVotes({
     <>
       <FeedPoll
         question={post.body}
-        options={poll.options.map((option, index) => ({
-          label: option.label,
-          name: t('feed.poll.choice', {
-            label: option.label,
-            smart_count: option.userIds.length
-          }),
-          count: option.userIds.length,
-          mine: index === mine
-        }))}
+        options={poll.options.map((option, index) => {
+          const label =
+            poll.kind === 'yes_no'
+              ? t(index === 0 ? 'feed.yesNo.yes' : 'feed.yesNo.no')
+              : option.label
+          return {
+            label,
+            name: t('feed.poll.choice', {
+              label,
+              smart_count: option.userIds.length
+            }),
+            count: option.userIds.length,
+            mine: index === mine
+          }
+        })}
         summary={poll.closedAt ? `${votes} · ${t('feed.poll.closed')}` : votes}
         disabled={poll.closedAt !== null || vote.isPending}
         onVote={index => {
@@ -761,11 +820,97 @@ function PollVotes({
   )
 }
 
+function ApprovalDecisions({
+  post,
+  approval,
+  space,
+  myId,
+  onClose
+}: {
+  post: FeedPost
+  approval: Approval
+  space: Space
+  myId: string | null
+  onClose: (() => void) | null
+}): ReactElement {
+  const { t } = useI18n()
+  const { feed } = useServices()
+  const { replace } = useFeedCache(space.id)
+  const reread = () => feed.item(space.id, post.id).then(replace)
+  // A decision is final: the post is reread from the server, failed or not.
+  const decide = useMutation({
+    mutationFn: ({
+      decision,
+      comment
+    }: {
+      decision: Decision
+      comment: string
+    }) => feed.decide(space.id, post.id, decision, comment),
+    onSettled: () => reread().catch(() => undefined)
+  })
+  const mine = approval.approvers.find(approver => approver.id === myId)
+  const approved = approval.approvers.filter(
+    approver => approver.decision === 'approved'
+  ).length
+  const summary = t('feed.approval.summary', {
+    approved,
+    total: approval.approvers.length
+  })
+  return (
+    <>
+      <FeedApproval
+        question={post.body}
+        state={{
+          tone: approval.state,
+          label: t(`feed.approval.${approval.state}`)
+        }}
+        approvers={approval.approvers.map(approver => {
+          const member = space.members.find(m => m.id === approver.id)
+          return {
+            id: approver.id,
+            name: approver.name ?? t('feed.someone'),
+            avatar: member ? avatarUrl(member.workplaceFqdn) : null,
+            tone: approver.decision ?? 'pending',
+            status: t(
+              approver.decision
+                ? `feed.approval.${approver.decision}`
+                : 'feed.approval.waiting'
+            ),
+            comment: approver.comment
+          }
+        })}
+        decide={
+          mine?.decision === null && approval.closedAt === null
+            ? {
+                commentLabel: t('feed.approval.comment'),
+                approveLabel: t('feed.approval.approve'),
+                rejectLabel: t('feed.approval.reject'),
+                disabled: decide.isPending,
+                onDecide: (decision, comment) => {
+                  decide.mutate({ decision, comment: comment.trim() })
+                }
+              }
+            : null
+        }
+        summary={
+          approval.closedAt
+            ? `${summary} · ${t('feed.approval.closed')}`
+            : summary
+        }
+        close={onClose && { label: t('feed.approval.close'), onClick: onClose }}
+      />
+      {decide.isError && (
+        <Alert severity="error">{t('feed.approval.decideFailed')}</Alert>
+      )}
+    </>
+  )
+}
+
 function ItemMenu({
   onEdit,
   onDelete
 }: {
-  onEdit: () => void
+  onEdit: (() => void) | null
   onDelete: () => void
 }): ReactElement {
   const { t } = useI18n()
@@ -777,15 +922,17 @@ function ItemMenu({
     <>
       <FeedMoreButton label={t('feed.more')} onClick={setAnchor} />
       <Menu anchorEl={anchor} open={anchor !== null} onClose={close}>
-        <MenuEntry
-          icon={<Icon icon={Pen} />}
-          onClick={() => {
-            close()
-            onEdit()
-          }}
-        >
-          {t('feed.edit')}
-        </MenuEntry>
+        {onEdit && (
+          <MenuEntry
+            icon={<Icon icon={Pen} />}
+            onClick={() => {
+              close()
+              onEdit()
+            }}
+          >
+            {t('feed.edit')}
+          </MenuEntry>
+        )}
         <MenuEntry
           danger
           icon={<Icon icon={Trash} />}

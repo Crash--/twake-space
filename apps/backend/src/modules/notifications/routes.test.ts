@@ -332,7 +332,8 @@ describe('settings', () => {
         invitation: true,
         attended_event_change: true,
         space_change: false,
-        assistant_suggestion: true
+        assistant_suggestion: true,
+        approval_request: true
       }
     })
     expect(put.statusCode).toBe(204)

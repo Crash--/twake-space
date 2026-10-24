@@ -1,6 +1,8 @@
 import {
   Check,
+  CheckCircle,
   Cross,
+  CrossCircle,
   Down,
   Icon,
   Send,
@@ -16,6 +18,7 @@ import {
   InputBase,
   List,
   ListItemButton,
+  ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
@@ -40,6 +43,7 @@ import {
 } from 'react'
 
 import {
+  AddCircleIcon,
   AddReactionIcon,
   ChevronDownIcon,
   EmojiIcon,
@@ -1259,35 +1263,87 @@ export function DateTile({
   )
 }
 
-/** A button before the composer's field, as tall as the field. */
-export function FeedComposerTool({
+/**
+ * The « + » before the composer's field, as tall as the field: a menu of the
+ * kinds of post, each opening its dialog, as the chat's composer offers them.
+ */
+export function FeedComposerMenu({
   label,
-  icon,
-  onClick
+  items
 }: {
   label: string
-  icon: IconProps['icon']
-  onClick: () => void
+  items: { label: string; icon: IconProps['icon']; onClick: () => void }[]
 }): ReactElement {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const menuId = useId()
   return (
-    <Tooltip title={label}>
-      <IconButton
-        aria-label={label}
-        aria-haspopup="dialog"
-        onClick={onClick}
-        sx={{
-          flex: '0 0 44px',
-          width: 44,
-          height: 44,
-          p: 0,
-          border: 1,
-          borderColor: 'border.main',
-          color: 'text.secondary'
+    <>
+      <Tooltip title={label}>
+        <IconButton
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={anchor !== null}
+          aria-controls={anchor ? menuId : undefined}
+          onClick={event => {
+            setAnchor(event.currentTarget)
+          }}
+          sx={{
+            flex: '0 0 44px',
+            width: 44,
+            height: 44,
+            p: 0,
+            border: 1,
+            borderColor: 'border.main',
+            color: 'text.secondary'
+          }}
+        >
+          <Icon icon={AddCircleIcon} size={24} />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        anchorEl={anchor}
+        open={anchor !== null}
+        onClose={() => {
+          setAnchor(null)
+        }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        slotProps={{
+          list: { id: menuId, dense: true, sx: { p: 0 } },
+          paper: {
+            elevation: 2,
+            sx: { p: 0.25, borderRadius: 2, mb: 0.5, minWidth: 200 }
+          }
         }}
       >
-        <Icon icon={icon} size={20} />
-      </IconButton>
-    </Tooltip>
+        {items.map(item => (
+          <MenuItem
+            key={item.label}
+            aria-haspopup="dialog"
+            onClick={() => {
+              setAnchor(null)
+              item.onClick()
+            }}
+            sx={{
+              borderRadius: 1.5,
+              minHeight: 32,
+              typography: 'body2',
+              '& .MuiListItemIcon-root': {
+                width: 16,
+                minWidth: 0,
+                flexShrink: 0,
+                color: 'text.secondary'
+              }
+            }}
+          >
+            <ListItemIcon aria-hidden>
+              <Icon icon={item.icon} size={16} />
+            </ListItemIcon>
+            <ListItemText disableTypography>{item.label}</ListItemText>
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
   )
 }
 
@@ -1418,6 +1474,238 @@ export function FeedPoll({
           </Box>
         ))}
       </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          sx={{ flex: '1 1 auto', fontWeight: 500, letterSpacing: 0.4 }}
+        >
+          {summary}
+        </Typography>
+        {close && (
+          <Button size="small" color="inherit" onClick={close.onClick}>
+            {close.label}
+          </Button>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
+export type ApprovalTone = 'pending' | 'approved' | 'rejected'
+
+const TONE_COLOR = {
+  pending: 'text.secondary',
+  approved: 'success.main',
+  rejected: 'error.main'
+} as const
+
+const TONE_PALETTE = {
+  pending: 'text',
+  approved: 'success',
+  rejected: 'error'
+} as const
+
+function ApprovalStateChip({
+  tone,
+  label
+}: {
+  tone: ApprovalTone
+  label: string
+}): ReactElement {
+  return (
+    <Box
+      component="span"
+      sx={theme => ({
+        flex: '0 0 auto',
+        px: 1,
+        borderRadius: '12px',
+        fontSize: 12,
+        fontWeight: 500,
+        lineHeight: '24px',
+        letterSpacing: 0.4,
+        color: TONE_COLOR[tone],
+        bgcolor:
+          tone === 'pending'
+            ? theme.vars.palette.action.selected
+            : theme.alpha(theme.vars.palette[TONE_PALETTE[tone]].main, 0.12)
+      })}
+    >
+      {label}
+    </Box>
+  )
+}
+
+/**
+ * An approval request: each approver with what they decided, the overall
+ * state, and the buttons of an approver who has not decided yet.
+ */
+export function FeedApproval({
+  question,
+  state,
+  approvers,
+  decide,
+  summary,
+  close
+}: {
+  question: string
+  state: { tone: ApprovalTone; label: string }
+  approvers: {
+    id: string
+    name: string
+    avatar: string | null
+    tone: ApprovalTone
+    status: string
+    comment: string | null
+  }[]
+  /** For an approver who has not decided while the request is open. */
+  decide: {
+    commentLabel: string
+    approveLabel: string
+    rejectLabel: string
+    disabled: boolean
+    onDecide: (decision: 'approved' | 'rejected', comment: string) => void
+  } | null
+  summary: string
+  close: { label: string; onClick: () => void } | null
+}): ReactElement {
+  const [comment, setComment] = useState('')
+  return (
+    <Box
+      role="group"
+      aria-label={question}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+        width: 400,
+        maxWidth: '100%',
+        py: 0.5
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+        <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+          <FeedTitle large>{question}</FeedTitle>
+        </Box>
+        <ApprovalStateChip {...state} />
+      </Box>
+      <Box
+        component="ul"
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          m: 0,
+          p: 0,
+          listStyle: 'none'
+        }}
+      >
+        {approvers.map(approver => (
+          <Box
+            component="li"
+            key={approver.id}
+            sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}
+          >
+            <Badge
+              overlap="circular"
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              sx={{ '& .MuiBadge-badge': { p: 0 } }}
+              invisible={approver.tone === 'pending'}
+              badgeContent={
+                approver.tone !== 'pending' && (
+                  <Box
+                    aria-hidden
+                    sx={{
+                      display: 'flex',
+                      borderRadius: '50%',
+                      bgcolor: 'background.paper',
+                      color: TONE_COLOR[approver.tone],
+                      p: '1px'
+                    }}
+                  >
+                    <Icon
+                      icon={
+                        approver.tone === 'approved' ? CheckCircle : CrossCircle
+                      }
+                      size={14}
+                    />
+                  </Box>
+                )
+              }
+            >
+              <NameAvatar name={approver.name} size="m" src={approver.avatar} />
+            </Badge>
+            <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+              <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                {approver.name}
+              </Typography>
+              <Typography
+                variant="caption"
+                component="p"
+                sx={{ color: TONE_COLOR[approver.tone], letterSpacing: 0.4 }}
+              >
+                {approver.status}
+              </Typography>
+              {approver.comment && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    mt: 0.5,
+                    pl: 1,
+                    borderLeft: 2,
+                    borderColor: 'border.main',
+                    color: 'text.secondary',
+                    overflowWrap: 'anywhere',
+                    whiteSpace: 'pre-wrap'
+                  }}
+                >
+                  {approver.comment}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        ))}
+      </Box>
+      {decide && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <TextField
+            size="small"
+            fullWidth
+            multiline
+            maxRows={4}
+            label={decide.commentLabel}
+            value={comment}
+            slotProps={{ htmlInput: { maxLength: 1000 } }}
+            onChange={event => {
+              setComment(event.target.value)
+            }}
+          />
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+            <Button
+              variant="outlined"
+              color="error"
+              disabled={decide.disabled}
+              onClick={() => {
+                decide.onDecide('rejected', comment)
+              }}
+              sx={{ borderRadius: '50px' }}
+            >
+              {decide.rejectLabel}
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              disabled={decide.disabled}
+              onClick={() => {
+                decide.onDecide('approved', comment)
+              }}
+              sx={{ borderRadius: '50px' }}
+            >
+              {decide.approveLabel}
+            </Button>
+          </Box>
+        </Box>
+      )}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography
           variant="caption"

@@ -105,13 +105,36 @@ export type FeedItem =
       body: string
       editedAt: Date | null
       poll: Poll | null
+      approval: Approval | null
     })
 
 interface Poll {
+  // A yes/no question's labels are `yes` and `no`, for the reader's language.
+  kind: 'choice' | 'yes_no'
   // `userIds` in the order they voted.
   options: { label: string; userIds: string[] }[]
   closedAt: Date | null
 }
+
+// A decision's vote is its index.
+export const DECISIONS = ['approved', 'rejected'] as const
+
+type Decision = (typeof DECISIONS)[number]
+
+// Rejected by one approver, approved by all of them.
+interface Approval {
+  state: 'pending' | Decision
+  approvers: {
+    id: string
+    name: string | null
+    decision: Decision | null
+    comment: string | null
+    decidedAt: Date | null
+  }[]
+  closedAt: Date | null
+}
+
+const YES_NO = ['yes', 'no']
 
 // Newest first by time, or by latest activity for the items active since an
 // instant.
@@ -325,7 +348,9 @@ async function loadItems(
           .select({
             postId: feedPollVotes.postId,
             userId: feedPollVotes.userId,
-            option: feedPollVotes.option
+            option: feedPollVotes.option,
+            comment: feedPollVotes.comment,
+            createdAt: feedPollVotes.createdAt
           })
           .from(feedPollVotes)
           .where(inArray(feedPollVotes.postId, postIds))
@@ -333,7 +358,7 @@ async function loadItems(
   ])
   const userIds = [
     ...cards.map(c => (c.actor?.type === 'user' ? c.actor.id : null)),
-    ...posts.map(p => p.post.authorId)
+    ...posts.flatMap(p => [p.post.authorId, ...(p.post.approverIds ?? [])])
   ].filter(id => id !== null)
   const names = await memberNames(db, spaceId, userIds)
   const named = (actor: Actor | null): NamedActor | null => {
@@ -377,9 +402,18 @@ async function loadItems(
     })
   }
   const votesOf = Map.groupBy(votes, v => v.postId)
-  const pollOf = (post: (typeof posts)[number]['post']): Poll | null =>
-    post.pollOptions && {
-      options: post.pollOptions.map((label, index) => ({
+  type Post = (typeof posts)[number]['post']
+  const pollOf = (post: Post): Poll | null => {
+    const labels =
+      post.kind === 'yes_no'
+        ? YES_NO
+        : post.kind === 'poll'
+          ? post.pollOptions
+          : null
+    if (!labels) return null
+    return {
+      kind: post.kind === 'poll' ? 'choice' : 'yes_no',
+      options: labels.map((label, index) => ({
         label,
         userIds: (votesOf.get(post.id) ?? [])
           .filter(v => v.option === index)
@@ -387,6 +421,34 @@ async function loadItems(
       })),
       closedAt: post.pollClosedAt
     }
+  }
+  const approvalOf = (post: Post): Approval | null => {
+    if (post.kind !== 'approval' || !post.approverIds) return null
+    const votes = votesOf.get(post.id) ?? []
+    const approvers = post.approverIds.map(id => {
+      const vote = votes.find(v => v.userId === id)
+      return {
+        id,
+        name: names.get(id) ?? null,
+        decision: vote ? (DECISIONS[vote.option] ?? null) : null,
+        comment: vote?.comment ?? null,
+        decidedAt: vote?.createdAt ?? null
+      }
+    })
+    // An approver who left the space without deciding no longer holds it up.
+    const decisions = approvers
+      .filter(a => a.decision !== null || a.name !== null)
+      .map(a => a.decision)
+    return {
+      state: decisions.includes('rejected')
+        ? 'rejected'
+        : decisions.length > 0 && decisions.every(d => d === 'approved')
+          ? 'approved'
+          : 'pending',
+      approvers,
+      closedAt: post.pollClosedAt
+    }
+  }
   for (const { post, tokenName } of posts) {
     items.set(post.id, {
       id: post.id,
@@ -407,6 +469,7 @@ async function loadItems(
       body: post.body,
       editedAt: post.editedAt,
       poll: pollOf(post),
+      approval: approvalOf(post),
       reactions: reactionsOf(post.id)
     })
   }

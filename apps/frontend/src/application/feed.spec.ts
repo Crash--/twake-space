@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  approvalState,
   cardAction,
   cardApp,
   fileExtension,
@@ -11,7 +12,10 @@ import {
   toFeedChange,
   withReaction,
   withVote,
-  type FeedCard
+  type Approver,
+  type Decision,
+  type FeedCard,
+  type Poll
 } from '@/application/feed'
 
 const card: FeedCard = {
@@ -69,8 +73,31 @@ describe('withReaction', () => {
   })
 })
 
+describe('approvalState', () => {
+  const approver = (decision: Decision | null): Approver => ({
+    id: 'u1',
+    name: 'Bob',
+    decision,
+    comment: null,
+    decidedAt: null
+  })
+
+  it('is rejected by one, approved by all, pending otherwise', () => {
+    expect(approvalState([approver('approved'), approver('rejected')])).toBe(
+      'rejected'
+    )
+    expect(approvalState([approver('approved'), approver('approved')])).toBe(
+      'approved'
+    )
+    expect(approvalState([approver('approved'), approver(null)])).toBe(
+      'pending'
+    )
+  })
+})
+
 describe('withVote', () => {
-  const poll = {
+  const poll: Poll = {
+    kind: 'choice',
     options: [
       { label: 'Tuesday', userIds: ['u1', 'me'] },
       { label: 'Friday', userIds: ['u2'] }

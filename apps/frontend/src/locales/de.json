@@ -372,7 +372,6 @@
     },
     "emoji": "Emoji hinzufügen",
     "poll": {
-      "create": "Umfrage erstellen",
       "title": "Neue Umfrage",
       "publish": "Veröffentlichen",
       "question": "Eine Frage stellen",
@@ -383,7 +382,34 @@
       "choice": "%{label}: %{smart_count} Stimme |||| %{label}: %{smart_count} Stimmen",
       "closed": "Beendet",
       "close": "Umfrage beenden",
-      "voteFailed": "Ihre Stimme konnte nicht gespeichert werden."
+      "voteFailed": "Ihre Stimme konnte nicht gespeichert werden.",
+      "menu": "Umfrage"
+    },
+    "add": "Hinzufügen",
+    "yesNo": {
+      "menu": "Ja/Nein-Frage",
+      "title": "Neue Ja/Nein-Frage",
+      "yes": "Ja",
+      "no": "Nein"
+    },
+    "approval": {
+      "menu": "Freigabeanfrage",
+      "title": "Neue Freigabeanfrage",
+      "request": "Was soll freigegeben werden?",
+      "approvers": "Freigebende",
+      "noApprovers": "Kein Mitglied gefunden",
+      "publish": "Senden",
+      "comment": "Kommentar (optional)",
+      "approve": "Freigeben",
+      "reject": "Ablehnen",
+      "pending": "Ausstehend",
+      "approved": "Freigegeben",
+      "rejected": "Abgelehnt",
+      "waiting": "Wartet auf Entscheidung",
+      "summary": "%{approved} von %{total} freigegeben",
+      "closed": "Geschlossen",
+      "close": "Anfrage schließen",
+      "decideFailed": "Ihre Entscheidung konnte nicht gespeichert werden."
     },
     "mention": "Mitglied erwähnen",
     "members": {

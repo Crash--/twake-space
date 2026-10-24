@@ -65,17 +65,46 @@ export interface FileCounts {
 export interface FeedPost extends ItemBase {
   kind: 'post'
   author: Actor
-  /** On a poll, its question. */
+  /** On a poll, a yes/no question or an approval request, its question. */
   body: string
   editedAt: string | null
   poll: Poll | null
+  approval: Approval | null
 }
 
-/** One choice per member. */
+/** One choice per member. A yes/no question's labels are `yes` and `no`. */
 export interface Poll {
+  kind: 'choice' | 'yes_no'
   options: PollOption[]
   closedAt: string | null
 }
+
+export type Decision = 'approved' | 'rejected'
+
+/** Rejected by one approver, approved by all of them. */
+export interface Approval {
+  state: 'pending' | Decision
+  /** In the order the author picked them. */
+  approvers: Approver[]
+  closedAt: string | null
+}
+
+export interface Approver {
+  id: string
+  /** Null once they left the space. */
+  name: string | null
+  decision: Decision | null
+  comment: string | null
+  decidedAt: string | null
+}
+
+export const APPROVERS = { max: 20 }
+
+/** What a new post asks of the members, beyond its text. */
+export type PostAsk =
+  | { poll: { options: string[] } }
+  | { poll: { kind: 'yes_no' } }
+  | { approval: { approvers: string[] } }
 
 export interface PollOption {
   label: string
@@ -121,13 +150,14 @@ export interface FeedService {
   /**
    * Editors and admins only: a viewer is refused with `cannot_post`. Each
    * mentioned member is notified once per post, an edit included. With
-   * `poll`, the body is its question.
+   * `ask`, the body is its question; approvers are other members, each
+   * notified.
    */
   post: (
     spaceId: string,
     body: string,
     mentions: string[],
-    poll?: { options: string[] }
+    ask?: PostAsk
   ) => Promise<FeedItem>
   edit: (
     spaceId: string,
@@ -140,8 +170,18 @@ export interface FeedService {
    * closed poll refuses it with `poll_closed`. */
   vote: (spaceId: string, postId: string, option: number) => Promise<void>
   unvote: (spaceId: string, postId: string) => Promise<void>
-  /** Its author only. */
+  /** Its author only, for a poll or an approval request. */
   closePoll: (spaceId: string, postId: string) => Promise<FeedItem>
+  /**
+   * Once per approver: `already_decided` after that, `not_approver` for
+   * anyone else, `poll_closed` once the request is closed.
+   */
+  decide: (
+    spaceId: string,
+    postId: string,
+    decision: Decision,
+    comment: string
+  ) => Promise<void>
   react: (spaceId: string, itemId: string, key: string) => Promise<void>
   unreact: (spaceId: string, itemId: string, key: string) => Promise<void>
   /** Null when the page cannot be read or has no title. */
@@ -243,7 +283,8 @@ export function firstUnread(
 /** What a search matches an item on, as the backend does. */
 export function searchedText(item: FeedItem): string[] {
   if (item.kind === 'post') {
-    return [item.body, ...(item.poll?.options.map(o => o.label) ?? [])]
+    const options = item.poll?.kind === 'choice' ? item.poll.options : []
+    return [item.body, ...options.map(o => o.label)]
   }
   return [item.object.title, item.preview ?? '']
 }
@@ -261,6 +302,13 @@ export function withVote(
       return { ...o, userIds: index === option ? [...others, userId] : others }
     })
   }
+}
+
+export function approvalState(approvers: Approver[]): Approval['state'] {
+  if (approvers.some(a => a.decision === 'rejected')) return 'rejected'
+  return approvers.every(a => a.decision === 'approved')
+    ? 'approved'
+    : 'pending'
 }
 
 /** The item once a user has added (`on`) or taken back a reaction. */

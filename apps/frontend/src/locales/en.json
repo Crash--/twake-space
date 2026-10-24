@@ -372,7 +372,6 @@
     },
     "emoji": "Add an emoji",
     "poll": {
-      "create": "Create a poll",
       "title": "New poll",
       "publish": "Publish",
       "question": "Ask a question",
@@ -383,7 +382,34 @@
       "choice": "%{label}: %{smart_count} vote |||| %{label}: %{smart_count} votes",
       "closed": "Closed",
       "close": "Close the poll",
-      "voteFailed": "Could not save your vote."
+      "voteFailed": "Could not save your vote.",
+      "menu": "Poll"
+    },
+    "add": "Add",
+    "yesNo": {
+      "menu": "Yes/no question",
+      "title": "New yes/no question",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "approval": {
+      "menu": "Approval request",
+      "title": "New approval request",
+      "request": "What needs approval?",
+      "approvers": "Approvers",
+      "noApprovers": "No member found",
+      "publish": "Send",
+      "comment": "Comment (optional)",
+      "approve": "Approve",
+      "reject": "Reject",
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "waiting": "Waiting for a decision",
+      "summary": "%{approved} of %{total} approved",
+      "closed": "Closed",
+      "close": "Close the request",
+      "decideFailed": "Could not save your decision."
     },
     "mention": "Mention a member",
     "members": {

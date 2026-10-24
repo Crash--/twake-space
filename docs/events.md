@@ -36,7 +36,7 @@ flowchart LR
   B -->|HTTP routes| PG
   B -->|meeting request| M[twake-space exchange]
   PG -->|drive commands, after commit| D[drive exchange]
-  PG -->|post mentions, after commit| A
+  PG -->|post mentions and approval requests, after commit| A
 ```
 
 ## Consuming RabbitMQ
@@ -264,6 +264,44 @@ A post names the members it mentions by id ([API](api.md#post-spacesspaceidfeedp
 - An edit that drops a mention leaves its notification.
 - The event waits in `outgoing_activity`, written in the post's transaction, until the broker confirms it, as the drive commands do: after the commit and every 10 s, a replica locks the oldest row, skipping locked ones, publishes it (confirmed, mandatory) and deletes it. A refused publish keeps it for the next pass.
 - The backend's own activity queue receives the event too, and leaves it unrouted.
+
+## Approval requests
+
+A post can ask members of the space to approve it ([API](api.md#post-spacesspaceidfeedposts)). Each approver gets an `approval_request` notification, and the request is published on `activity` the way a mention is, with `reason` `approval`:
+
+```json
+{
+  "specversion": "1.0",
+  "id": "<uuid>",
+  "source": "twake://space",
+  "type": "com.twake.space.post.approval_requested.v1",
+  "time": "2026-10-24T09:00:00.000Z",
+  "twakeorg": "<organization id>",
+  "twakeactorid": "<author uuid>",
+  "twakeactor": "alice@example.com",
+  "data": {
+    "object": {
+      "type": "post",
+      "id": "<post id>",
+      "title": "Design Sprint",
+      "space": { "id": "<space id>", "name": "Design Sprint" }
+    },
+    "preview": "Approve the Q4 budget?",
+    "recipients": [
+      {
+        "uuid": "<member uuid>",
+        "email": "bob@example.com",
+        "reason": "approval"
+      }
+    ]
+  }
+}
+```
+
+- One event per request and approver, sent once, when the request is posted. The approvers never change. An approver the post also mentions gets this event only, not a mention.
+- `data.object` and `data.preview` read as for a mention, and the event is stored, counted in the feed's unread mentions, deleted with the post and sent through `outgoing_activity` the same way.
+- A member who turned `approval_request` off gets no notification in Space, and the request is published all the same.
+- A decision publishes nothing: the author sees it on the card.
 
 ## Activity events
 

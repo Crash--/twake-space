@@ -372,7 +372,6 @@
     },
     "emoji": "Thêm biểu tượng cảm xúc",
     "poll": {
-      "create": "Tạo cuộc thăm dò",
       "title": "Cuộc thăm dò mới",
       "publish": "Đăng",
       "question": "Đặt câu hỏi",
@@ -383,7 +382,34 @@
       "choice": "%{label}: %{smart_count} phiếu",
       "closed": "Đã đóng",
       "close": "Đóng cuộc thăm dò",
-      "voteFailed": "Không thể lưu phiếu bầu của bạn."
+      "voteFailed": "Không thể lưu phiếu bầu của bạn.",
+      "menu": "Bình chọn"
+    },
+    "add": "Thêm",
+    "yesNo": {
+      "menu": "Câu hỏi có/không",
+      "title": "Câu hỏi có/không mới",
+      "yes": "Có",
+      "no": "Không"
+    },
+    "approval": {
+      "menu": "Yêu cầu phê duyệt",
+      "title": "Yêu cầu phê duyệt mới",
+      "request": "Cần phê duyệt điều gì?",
+      "approvers": "Người phê duyệt",
+      "noApprovers": "Không tìm thấy thành viên",
+      "publish": "Gửi",
+      "comment": "Bình luận (không bắt buộc)",
+      "approve": "Phê duyệt",
+      "reject": "Từ chối",
+      "pending": "Đang chờ",
+      "approved": "Đã phê duyệt",
+      "rejected": "Đã từ chối",
+      "waiting": "Đang chờ quyết định",
+      "summary": "Đã phê duyệt %{approved}/%{total}",
+      "closed": "Đã đóng",
+      "close": "Đóng yêu cầu",
+      "decideFailed": "Không thể lưu quyết định của bạn."
     },
     "mention": "Nhắc đến một thành viên",
     "members": {

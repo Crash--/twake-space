@@ -372,7 +372,6 @@
     },
     "emoji": "Aggiungi un emoji",
     "poll": {
-      "create": "Crea un sondaggio",
       "title": "Nuovo sondaggio",
       "publish": "Pubblica",
       "question": "Fai una domanda",
@@ -383,7 +382,34 @@
       "choice": "%{label}: %{smart_count} voto |||| %{label}: %{smart_count} voti",
       "closed": "Chiuso",
       "close": "Chiudi il sondaggio",
-      "voteFailed": "Impossibile salvare il tuo voto."
+      "voteFailed": "Impossibile salvare il tuo voto.",
+      "menu": "Sondaggio"
+    },
+    "add": "Aggiungi",
+    "yesNo": {
+      "menu": "Domanda sì/no",
+      "title": "Nuova domanda sì/no",
+      "yes": "Sì",
+      "no": "No"
+    },
+    "approval": {
+      "menu": "Richiesta di approvazione",
+      "title": "Nuova richiesta di approvazione",
+      "request": "Cosa va approvato?",
+      "approvers": "Approvatori",
+      "noApprovers": "Nessun membro trovato",
+      "publish": "Invia",
+      "comment": "Commento (facoltativo)",
+      "approve": "Approva",
+      "reject": "Rifiuta",
+      "pending": "In attesa",
+      "approved": "Approvata",
+      "rejected": "Rifiutata",
+      "waiting": "In attesa di una decisione",
+      "summary": "%{approved} su %{total} approvato",
+      "closed": "Chiusa",
+      "close": "Chiudi la richiesta",
+      "decideFailed": "Impossibile salvare la tua decisione."
     },
     "mention": "Menziona un membro",
     "members": {

@@ -372,7 +372,6 @@
     },
     "emoji": "Ajouter un emoji",
     "poll": {
-      "create": "Créer un sondage",
       "title": "Nouveau sondage",
       "publish": "Publier",
       "question": "Poser une question",
@@ -383,7 +382,34 @@
       "choice": "%{label} : %{smart_count} vote |||| %{label} : %{smart_count} votes",
       "closed": "Clos",
       "close": "Clore le sondage",
-      "voteFailed": "Impossible d’enregistrer votre vote."
+      "voteFailed": "Impossible d’enregistrer votre vote.",
+      "menu": "Sondage"
+    },
+    "add": "Ajouter",
+    "yesNo": {
+      "menu": "Question oui/non",
+      "title": "Nouvelle question oui/non",
+      "yes": "Oui",
+      "no": "Non"
+    },
+    "approval": {
+      "menu": "Demande d’approbation",
+      "title": "Nouvelle demande d’approbation",
+      "request": "Que faut-il approuver ?",
+      "approvers": "Approbateurs",
+      "noApprovers": "Aucun membre trouvé",
+      "publish": "Envoyer",
+      "comment": "Commentaire (facultatif)",
+      "approve": "Approuver",
+      "reject": "Refuser",
+      "pending": "En attente",
+      "approved": "Approuvée",
+      "rejected": "Refusée",
+      "waiting": "En attente de décision",
+      "summary": "%{approved} sur %{total} approuvé",
+      "closed": "Close",
+      "close": "Clore la demande",
+      "decideFailed": "Impossible d’enregistrer votre décision."
     },
     "mention": "Mentionner un membre",
     "members": {

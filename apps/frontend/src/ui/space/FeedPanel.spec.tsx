@@ -1,7 +1,14 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { FeedCard, FeedItem, FeedPost } from '@/application/feed'
+import {
+  approvalState,
+  type Approver,
+  type Decision,
+  type FeedCard,
+  type FeedItem,
+  type FeedPost
+} from '@/application/feed'
 import type { Space } from '@/application/spaces'
 import { fakeFeed } from '@/testing/fakeFeed'
 import { fakeLive } from '@/testing/fakeLive'
@@ -50,6 +57,7 @@ const post = (minute: number, overrides: Partial<FeedPost> = {}): FeedPost => ({
   body: `Message ${String(minute)}`,
   editedAt: null,
   poll: null,
+  approval: null,
   ...overrides
 })
 
@@ -760,6 +768,7 @@ describe('FeedPanel', () => {
       post(1, {
         body: 'Which day?',
         poll: {
+          kind: 'choice',
           options: [
             { label: 'Tuesday', userIds: ['u-bob'] },
             { label: 'Friday', userIds: [] }
@@ -771,9 +780,8 @@ describe('FeedPanel', () => {
 
     it('publishes a question and its options from the composer', async () => {
       const { feed } = renderFeed([post(0)])
-      fireEvent.click(
-        await screen.findByRole('button', { name: 'Create a poll' })
-      )
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Poll' }))
       const dialog = screen.getByRole('dialog', { name: 'New poll' })
       const publish = within(dialog).getByRole('button', { name: 'Publish' })
 
@@ -810,7 +818,7 @@ describe('FeedPanel', () => {
         await screen.findByRole('group', { name: 'Which day?' })
       ).toBeInTheDocument()
       expect(feed.post).toHaveBeenCalledWith('a1', 'Which day?', [], {
-        options: ['Tuesday', 'Friday']
+        poll: { options: ['Tuesday', 'Friday'] }
       })
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
@@ -900,7 +908,7 @@ describe('FeedPanel', () => {
         screen.queryByRole('button', { name: 'Close the poll' })
       ).not.toBeInTheDocument()
       expect(
-        screen.queryByRole('button', { name: 'Create a poll' })
+        screen.queryByRole('button', { name: 'Add' })
       ).not.toBeInTheDocument()
 
       fireEvent.click(
@@ -910,6 +918,196 @@ describe('FeedPanel', () => {
       await waitFor(() => {
         expect(feed.vote).toHaveBeenCalledWith('a1', 'post-1', 1)
       })
+    })
+  })
+
+  it('publishes a yes/no question, answered yes or no', async () => {
+    const { feed } = renderFeed([post(0)])
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Yes/no question' }))
+    const dialog = screen.getByRole('dialog', { name: 'New yes/no question' })
+    expect(
+      within(dialog).queryByRole('textbox', { name: 'Option 1' })
+    ).not.toBeInTheDocument()
+
+    fireEvent.change(
+      within(dialog).getByRole('textbox', { name: 'Ask a question' }),
+      { target: { value: 'Keep the demo?' } }
+    )
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Publish' }))
+
+    const poll = await screen.findByRole('group', { name: 'Keep the demo?' })
+    expect(feed.post).toHaveBeenCalledWith('a1', 'Keep the demo?', [], {
+      poll: { kind: 'yes_no' }
+    })
+    fireEvent.click(within(poll).getByRole('button', { name: 'No: 0 votes' }))
+    expect(
+      await within(poll).findByRole('button', {
+        name: 'No: 1 vote',
+        pressed: true
+      })
+    ).toBeInTheDocument()
+    expect(
+      within(poll).getByRole('button', { name: 'Yes: 0 votes' })
+    ).toBeInTheDocument()
+  })
+
+  describe('an approval request', () => {
+    const bob = {
+      id: 'u-bob',
+      username: 'bob',
+      email: 'bob@acme',
+      displayName: 'Bob Durand',
+      workplaceFqdn: null,
+      role: 'editor' as const
+    }
+    const approver = (
+      id: string,
+      name: string,
+      decision: Decision | null = null,
+      comment: string | null = null
+    ): Approver => ({
+      id,
+      name,
+      decision,
+      comment,
+      decidedAt: decision && at(2)
+    })
+    const request = (
+      approvers: Approver[],
+      overrides: Partial<FeedPost> = {}
+    ) =>
+      post(1, {
+        body: 'Ship the copy?',
+        approval: {
+          state: approvalState(approvers),
+          approvers,
+          closedAt: null
+        },
+        ...overrides
+      })
+
+    it('asks the members picked to approve', async () => {
+      const { feed } = renderFeed([post(0)], {
+        space: { ...roadmap, members: [bob] }
+      })
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+      fireEvent.click(
+        screen.getByRole('menuitem', { name: 'Approval request' })
+      )
+      const dialog = screen.getByRole('dialog', {
+        name: 'New approval request'
+      })
+      const send = within(dialog).getByRole('button', { name: 'Send' })
+
+      fireEvent.change(
+        within(dialog).getByRole('textbox', { name: 'What needs approval?' }),
+        { target: { value: ' Ship the copy? ' } }
+      )
+      expect(send).toBeDisabled()
+      fireEvent.keyDown(
+        within(dialog).getByRole('combobox', { name: 'Approvers' }),
+        { key: 'ArrowDown' }
+      )
+      fireEvent.click(await screen.findByRole('option', { name: /Bob Durand/ }))
+      fireEvent.click(send)
+
+      expect(
+        await screen.findByRole('group', { name: 'Ship the copy?' })
+      ).toBeInTheDocument()
+      expect(feed.post).toHaveBeenCalledWith('a1', 'Ship the copy?', [], {
+        approval: { approvers: ['u-bob'] }
+      })
+    })
+
+    it('offers no approval request without another member', async () => {
+      renderFeed([post(0)])
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+      expect(
+        screen.getAllByRole('menuitem').map(item => item.textContent)
+      ).toEqual(['Poll', 'Yes/no question'])
+    })
+
+    it('lets an approver approve once, with a comment', async () => {
+      const { feed } = renderFeed([
+        request([
+          approver('u-me', 'Alice Martin'),
+          approver('u-carol', 'Carol Diaz', 'approved', 'Clear')
+        ])
+      ])
+      const card = await screen.findByRole('group', { name: 'Ship the copy?' })
+      expect(within(card).getByText('Pending')).toBeInTheDocument()
+      expect(
+        within(card).getByText('Waiting for a decision')
+      ).toBeInTheDocument()
+      expect(within(card).getByText('Clear')).toBeInTheDocument()
+
+      fireEvent.change(
+        within(card).getByRole('textbox', { name: 'Comment (optional)' }),
+        { target: { value: ' Looks good ' } }
+      )
+      fireEvent.click(within(card).getByRole('button', { name: 'Approve' }))
+
+      expect(await screen.findByText('2 of 2 approved')).toBeInTheDocument()
+      expect(feed.decide).toHaveBeenCalledWith(
+        'a1',
+        'post-1',
+        'approved',
+        'Looks good'
+      )
+      const decided = screen.getByRole('group', { name: 'Ship the copy?' })
+      expect(within(decided).getByText('Looks good')).toBeInTheDocument()
+      expect(within(decided).getAllByText('Approved')).toHaveLength(3)
+      expect(
+        within(decided).queryByRole('button', { name: 'Approve' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('is rejected by one, and offers nothing to decide to the others', async () => {
+      renderFeed([
+        request([
+          approver('u-bob', 'Bob Durand', 'rejected', 'Not yet'),
+          approver('u-carol', 'Carol Diaz')
+        ])
+      ])
+      const card = await screen.findByRole('group', { name: 'Ship the copy?' })
+
+      expect(within(card).getAllByText('Rejected')).toHaveLength(2)
+      expect(within(card).getByText('Not yet')).toBeInTheDocument()
+      expect(
+        within(card).queryByRole('button', { name: 'Reject' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('lets its author delete it, not edit it', async () => {
+      renderFeed([
+        request([approver('u-bob', 'Bob Durand')], {
+          author: { type: 'user', id: 'u-me', name: 'Alice Martin' }
+        })
+      ])
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'More actions' })
+      )
+
+      expect(
+        screen.getAllByRole('menuitem').map(item => item.textContent)
+      ).toEqual(['Delete'])
+    })
+
+    it('lets its author close it', async () => {
+      const { feed } = renderFeed([
+        request([approver('u-bob', 'Bob Durand')], {
+          author: { type: 'user', id: 'u-me', name: 'Alice Martin' }
+        })
+      ])
+      await screen.findByRole('group', { name: 'Ship the copy?' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close the request' }))
+
+      expect(
+        await screen.findByText('0 of 1 approved · Closed')
+      ).toBeInTheDocument()
+      expect(feed.closePoll).toHaveBeenCalledWith('a1', 'post-1')
     })
   })
 

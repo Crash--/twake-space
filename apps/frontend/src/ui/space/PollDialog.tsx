@@ -11,7 +11,7 @@ import {
 import { useMutation } from '@tanstack/react-query'
 import { useId, useRef, useState, type ReactElement } from 'react'
 
-import { POLL_OPTIONS, type FeedItem } from '@/application/feed'
+import { POLL_OPTIONS, type FeedItem, type Poll } from '@/application/feed'
 import { DialogHeader } from '@/ds/Dialog'
 import { FeedPollOption } from '@/ds/Feed'
 import { useI18n } from '@/ui/i18n/useI18n'
@@ -23,13 +23,15 @@ interface OptionField {
   text: string
 }
 
-/** A new poll: a question and different options, one to pick. */
+/** A new poll: a question and different options, one to pick, or a yes/no question. */
 export function PollDialog({
   spaceId,
+  kind,
   onClose,
   onPublished
 }: {
   spaceId: string
+  kind: Poll['kind']
   onClose: () => void
   onPublished: (item: FeedItem) => void
 }): ReactElement {
@@ -44,10 +46,17 @@ export function PollDialog({
   const options = fields.map(field => field.text.trim()).filter(Boolean)
   const valid =
     question.trim() !== '' &&
-    options.length >= POLL_OPTIONS.min &&
-    new Set(options.map(o => o.toLowerCase())).size === options.length
+    (kind === 'yes_no' ||
+      (options.length >= POLL_OPTIONS.min &&
+        new Set(options.map(o => o.toLowerCase())).size === options.length))
   const publish = useMutation({
-    mutationFn: () => feed.post(spaceId, question.trim(), [], { options }),
+    mutationFn: () =>
+      feed.post(
+        spaceId,
+        question.trim(),
+        [],
+        kind === 'yes_no' ? { poll: { kind } } : { poll: { options } }
+      ),
     onSuccess: onPublished
   })
 
@@ -62,7 +71,7 @@ export function PollDialog({
       >
         <DialogHeader
           id={titleId}
-          title={t('feed.poll.title')}
+          title={t(kind === 'yes_no' ? 'feed.yesNo.title' : 'feed.poll.title')}
           close={{ label: t('common.close'), onClick: onClose }}
         />
         <DialogContent>
@@ -76,38 +85,39 @@ export function PollDialog({
                 setQuestion(event.target.value)
               }}
             />
-            {fields.map((field, index) => (
-              <FeedPollOption
-                key={field.key}
-                removeLabel={t('feed.poll.removeOption', { n: index + 1 })}
-                onRemove={
-                  fields.length > POLL_OPTIONS.min
-                    ? () => {
-                        setFields(current =>
-                          current.filter(f => f.key !== field.key)
+            {kind === 'choice' &&
+              fields.map((field, index) => (
+                <FeedPollOption
+                  key={field.key}
+                  removeLabel={t('feed.poll.removeOption', { n: index + 1 })}
+                  onRemove={
+                    fields.length > POLL_OPTIONS.min
+                      ? () => {
+                          setFields(current =>
+                            current.filter(f => f.key !== field.key)
+                          )
+                        }
+                      : null
+                  }
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label={t('feed.poll.option', { n: index + 1 })}
+                    value={field.text}
+                    slotProps={{ htmlInput: { maxLength: 200 } }}
+                    onChange={event => {
+                      const text = event.target.value
+                      setFields(current =>
+                        current.map(f =>
+                          f.key === field.key ? { ...f, text } : f
                         )
-                      }
-                    : null
-                }
-              >
-                <TextField
-                  fullWidth
-                  size="small"
-                  label={t('feed.poll.option', { n: index + 1 })}
-                  value={field.text}
-                  slotProps={{ htmlInput: { maxLength: 200 } }}
-                  onChange={event => {
-                    const text = event.target.value
-                    setFields(current =>
-                      current.map(f =>
-                        f.key === field.key ? { ...f, text } : f
                       )
-                    )
-                  }}
-                />
-              </FeedPollOption>
-            ))}
-            {fields.length < POLL_OPTIONS.max && (
+                    }}
+                  />
+                </FeedPollOption>
+              ))}
+            {kind === 'choice' && fields.length < POLL_OPTIONS.max && (
               <div>
                 <Button
                   variant="text"

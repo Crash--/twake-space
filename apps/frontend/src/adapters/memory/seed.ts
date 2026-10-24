@@ -334,7 +334,8 @@ function roadmapFeed(): FeedItem[] {
           author: actor,
           body: `Update ${String(i)}: the release notes are ready for review.`,
           editedAt: null,
-          poll: null
+          poll: null,
+          approval: null
         }
     }
   })
@@ -607,6 +608,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       body: 'Update: the release notes are ready for review.',
       editedAt: null,
       poll: null,
+      approval: null,
       reactions: [],
       time: '',
       updatedAt: ''
@@ -619,6 +621,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       body: 'Standup moves to 10:15 from Monday.\nPlease update your calendars.',
       editedAt: iso(now - 10 * MINUTE),
       poll: null,
+      approval: null,
       reactions: [
         { key: '👍', userIds: ['uuid-alice', 'uuid-bob'] },
         { key: '🎉', userIds: ['uuid-dave'] },
@@ -635,6 +638,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       body: 'Thanks all, I am merging the landing page today. A long message follows so the bubble wraps on a narrow screen: the hero copy, the pricing table, the footer links and the cookie banner all changed.',
       editedAt: null,
       poll: null,
+      approval: null,
       reactions: [],
       time: '',
       updatedAt: ''
@@ -647,10 +651,64 @@ export function showcaseFeed(now: number): FeedItem[] {
       body: 'Which day suits the team lunch?',
       editedAt: null,
       poll: {
+        kind: 'choice',
         options: [
           { label: 'Tuesday', userIds: ['uuid-carol', 'uuid-dave'] },
           { label: 'Thursday', userIds: ['uuid-bob'] },
           { label: 'Friday', userIds: [] }
+        ],
+        closedAt: null
+      },
+      approval: null,
+      reactions: [],
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-yes-no',
+      kind: 'post',
+      category: 'messages',
+      author: person('carol'),
+      body: 'Do we keep the Friday demo?',
+      editedAt: null,
+      poll: {
+        kind: 'yes_no',
+        options: [
+          { label: 'yes', userIds: ['uuid-bob', 'uuid-dave'] },
+          { label: 'no', userIds: ['uuid-carol'] }
+        ],
+        closedAt: null
+      },
+      approval: null,
+      reactions: [],
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-approval',
+      kind: 'post',
+      category: 'messages',
+      author: person('dave'),
+      body: 'Approve the new landing page copy before Monday?',
+      editedAt: null,
+      poll: null,
+      approval: {
+        state: 'pending',
+        approvers: [
+          {
+            id: 'uuid-carol',
+            name: 'Carol Petit',
+            decision: 'approved',
+            comment: 'Clear and short, ship it.',
+            decidedAt: iso(now - 5 * MINUTE)
+          },
+          {
+            id: 'uuid-alice',
+            name: seedUser.name,
+            decision: null,
+            comment: null,
+            decidedAt: null
+          }
         ],
         closedAt: null
       },
@@ -667,6 +725,8 @@ export function showcaseFeed(now: number): FeedItem[] {
     posts[1],
     ...items.slice(18),
     posts[3],
+    posts[4],
+    posts[5],
     posts[2]
   ].filter((item): item is FeedItem => item !== undefined)
   return all.map((item, i) => {
