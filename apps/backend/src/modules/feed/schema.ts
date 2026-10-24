@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   check,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -98,10 +99,14 @@ export const feedPosts = pgTable(
     authorId: uuid('author_id'),
     // Set for a post an API token wrote: the token signs it, not its account.
     authorTokenId: uuid('author_token_id').references(() => apiTokens.id),
+    // On a poll, its question.
     body: text().notNull(),
     // Written from a JS Date, at the milliseconds the feed cursor carries.
     time: timestamptz('time').notNull(),
-    editedAt: timestamptz('edited_at')
+    editedAt: timestamptz('edited_at'),
+    // Set on a poll only.
+    pollOptions: text('poll_options').array(),
+    pollClosedAt: timestamptz('poll_closed_at')
   },
   table => [
     index().on(table.spaceId, table.time, table.id),
@@ -110,6 +115,21 @@ export const feedPosts = pgTable(
       sql`${table.authorId} is null or ${table.authorTokenId} is null`
     )
   ]
+)
+
+// One per member: a vote again changes it.
+export const feedPollVotes = pgTable(
+  'feed_poll_votes',
+  {
+    postId: uuid('post_id')
+      .notNull()
+      .references(() => feedPosts.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    // The index of the option in the post's poll options.
+    option: integer().notNull(),
+    createdAt: timestamptz('created_at').notNull().defaultNow()
+  },
+  table => [primaryKey({ columns: [table.postId, table.userId] })]
 )
 
 // On a card or a post.

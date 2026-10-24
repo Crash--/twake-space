@@ -35,6 +35,9 @@ export function fakeFeed(
     post: vi.fn(feed.post),
     edit: vi.fn(feed.edit),
     remove: vi.fn(feed.remove),
+    vote: vi.fn(feed.vote),
+    unvote: vi.fn(feed.unvote),
+    closePoll: vi.fn(feed.closePoll),
     react: vi.fn(feed.react),
     unreact: vi.fn(feed.unreact),
     linkPreview: vi.fn(feed.linkPreview)

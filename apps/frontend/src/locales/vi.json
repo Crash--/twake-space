@@ -371,6 +371,20 @@
       "deleted": "đã xóa %{count} tệp"
     },
     "emoji": "Thêm biểu tượng cảm xúc",
+    "poll": {
+      "create": "Tạo cuộc thăm dò",
+      "title": "Cuộc thăm dò mới",
+      "publish": "Đăng",
+      "question": "Đặt câu hỏi",
+      "option": "Lựa chọn %{n}",
+      "addOption": "Thêm lựa chọn",
+      "removeOption": "Xóa lựa chọn %{n}",
+      "votes": "%{smart_count} phiếu",
+      "choice": "%{label}: %{smart_count} phiếu",
+      "closed": "Đã đóng",
+      "close": "Đóng cuộc thăm dò",
+      "voteFailed": "Không thể lưu phiếu bầu của bạn."
+    },
     "members": {
       "title": "Thành viên không gian",
       "show": "Hiện thành viên",

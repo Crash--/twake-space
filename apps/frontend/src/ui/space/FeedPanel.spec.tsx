@@ -49,6 +49,7 @@ const post = (minute: number, overrides: Partial<FeedPost> = {}): FeedPost => ({
   author: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
   body: `Message ${String(minute)}`,
   editedAt: null,
+  poll: null,
   ...overrides
 })
 
@@ -718,6 +719,167 @@ describe('FeedPanel', () => {
       await screen.findByRole('button', { name: '👍 1', pressed: false })
     ).toBeInTheDocument()
     expect(feed.unreact).toHaveBeenCalledWith('a1', 'post-1', '👍')
+  })
+
+  describe('a poll', () => {
+    const lunch = (
+      overrides: Partial<FeedPost> = {},
+      closedAt: string | null = null
+    ) =>
+      post(1, {
+        body: 'Which day?',
+        poll: {
+          options: [
+            { label: 'Tuesday', userIds: ['u-bob'] },
+            { label: 'Friday', userIds: [] }
+          ],
+          closedAt
+        },
+        ...overrides
+      })
+
+    it('publishes a question and its options from the composer', async () => {
+      const { feed } = renderFeed([post(0)])
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Create a poll' })
+      )
+      const dialog = screen.getByRole('dialog', { name: 'New poll' })
+      const publish = within(dialog).getByRole('button', { name: 'Publish' })
+
+      fireEvent.change(
+        within(dialog).getByRole('textbox', { name: 'Ask a question' }),
+        { target: { value: ' Which day? ' } }
+      )
+      fireEvent.change(
+        within(dialog).getByRole('textbox', { name: 'Option 1' }),
+        { target: { value: 'Tuesday' } }
+      )
+      fireEvent.change(
+        within(dialog).getByRole('textbox', { name: 'Option 2' }),
+        { target: { value: 'Tuesday' } }
+      )
+      expect(publish).toBeDisabled()
+
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Add an option' })
+      )
+      fireEvent.change(
+        within(dialog).getByRole('textbox', { name: 'Option 3' }),
+        { target: { value: 'Friday' } }
+      )
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: 'Remove option 2' })
+      )
+      expect(
+        within(dialog).getByRole('textbox', { name: 'Option 2' })
+      ).toHaveValue('Friday')
+      fireEvent.click(publish)
+
+      expect(
+        await screen.findByRole('group', { name: 'Which day?' })
+      ).toBeInTheDocument()
+      expect(feed.post).toHaveBeenCalledWith('a1', 'Which day?', {
+        options: ['Tuesday', 'Friday']
+      })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('votes, changes the vote and takes it back', async () => {
+      const { feed } = renderFeed([lunch()])
+      const poll = await screen.findByRole('group', { name: 'Which day?' })
+
+      fireEvent.click(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      )
+      expect(
+        await within(poll).findByRole('button', {
+          name: 'Friday: 1 vote',
+          pressed: true
+        })
+      ).toBeInTheDocument()
+      expect(feed.vote).toHaveBeenCalledWith('a1', 'post-1', 1)
+
+      fireEvent.click(
+        await within(poll).findByRole('button', {
+          name: 'Tuesday: 1 vote',
+          pressed: false
+        })
+      )
+      expect(
+        await within(poll).findByRole('button', {
+          name: 'Tuesday: 2 votes',
+          pressed: true
+        })
+      ).toBeInTheDocument()
+      expect(feed.vote).toHaveBeenLastCalledWith('a1', 'post-1', 0)
+
+      fireEvent.click(
+        await within(poll).findByRole('button', { name: 'Tuesday: 2 votes' })
+      )
+      expect(
+        await within(poll).findByRole('button', {
+          name: 'Tuesday: 1 vote',
+          pressed: false
+        })
+      ).toBeInTheDocument()
+      expect(feed.unvote).toHaveBeenCalledWith('a1', 'post-1')
+    })
+
+    it("lets its author close it, and no one vote once it's closed", async () => {
+      const { feed } = renderFeed([
+        lunch({ author: { type: 'user', id: 'u-me', name: 'Alice Martin' } })
+      ])
+      const poll = await screen.findByRole('group', { name: 'Which day?' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close the poll' }))
+
+      expect(await screen.findByText('1 vote · Closed')).toBeInTheDocument()
+      expect(feed.closePoll).toHaveBeenCalledWith('a1', 'post-1')
+      expect(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      ).toBeDisabled()
+      expect(
+        screen.queryByRole('button', { name: 'Close the poll' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the poll as it is now when a vote fails', async () => {
+      const { feed } = renderFeed([lunch()])
+      const poll = await screen.findByRole('group', { name: 'Which day?' })
+      vi.mocked(feed.vote).mockRejectedValueOnce(new Error('poll_closed'))
+      vi.mocked(feed.item).mockResolvedValueOnce(lunch({}, at(5)))
+
+      fireEvent.click(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      )
+
+      expect(await screen.findByText('1 vote · Closed')).toBeInTheDocument()
+      expect(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      ).toBeDisabled()
+      expect(screen.getByText('Could not save your vote.')).toBeInTheDocument()
+    })
+
+    it('offers no one else to close it, and lets a viewer vote', async () => {
+      const { feed } = renderFeed([lunch()], {
+        space: { ...roadmap, role: 'viewer' }
+      })
+      const poll = await screen.findByRole('group', { name: 'Which day?' })
+      expect(
+        screen.queryByRole('button', { name: 'Close the poll' })
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Create a poll' })
+      ).not.toBeInTheDocument()
+
+      fireEvent.click(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      )
+
+      await waitFor(() => {
+        expect(feed.vote).toHaveBeenCalledWith('a1', 'post-1', 1)
+      })
+    })
   })
 
   it('edits and deletes my own post only', async () => {

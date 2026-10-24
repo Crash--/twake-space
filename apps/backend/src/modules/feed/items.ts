@@ -20,6 +20,7 @@ import {
   activityEvents,
   feedCards,
   feedItemReactions,
+  feedPollVotes,
   feedPosts,
   type Actor,
   type feedCategory
@@ -103,7 +104,14 @@ export type FeedItem =
       author: NamedActor
       body: string
       editedAt: Date | null
+      poll: Poll | null
     })
+
+interface Poll {
+  // `userIds` in the order they voted.
+  options: { label: string; userIds: string[] }[]
+  closedAt: Date | null
+}
 
 // Newest first by time, or by latest activity for the items active since an
 // instant.
@@ -212,7 +220,12 @@ export async function listItems(
         eq(feedPosts.spaceId, spaceId),
         after(feedPosts.time, feedPosts.id),
         active(feedPosts.time),
-        pattern === undefined ? undefined : ilike(feedPosts.body, pattern)
+        pattern === undefined
+          ? undefined
+          : or(
+              ilike(feedPosts.body, pattern),
+              sql`exists (select from unnest(${feedPosts.pollOptions}) as option where option ilike ${pattern})`
+            )
       )
     )
   const page = await (
@@ -253,7 +266,7 @@ async function loadItems(
   const postIds = rows.filter(r => r.kind === 'post').map(r => r.id)
   const items = new Map<string, FeedItem>()
   if (rows.length === 0) return items
-  const [cards, posts, reactions] = await Promise.all([
+  const [cards, posts, reactions, votes] = await Promise.all([
     cardIds.length === 0
       ? []
       : db
@@ -305,7 +318,18 @@ async function loadItems(
       .orderBy(
         asc(sql`min(${feedItemReactions.createdAt})`),
         asc(feedItemReactions.key)
-      )
+      ),
+    postIds.length === 0
+      ? []
+      : db
+          .select({
+            postId: feedPollVotes.postId,
+            userId: feedPollVotes.userId,
+            option: feedPollVotes.option
+          })
+          .from(feedPollVotes)
+          .where(inArray(feedPollVotes.postId, postIds))
+          .orderBy(asc(feedPollVotes.createdAt), asc(feedPollVotes.userId))
   ])
   const userIds = [
     ...cards.map(c => (c.actor?.type === 'user' ? c.actor.id : null)),
@@ -352,6 +376,17 @@ async function loadItems(
       reactions: reactionsOf(card.id)
     })
   }
+  const votesOf = Map.groupBy(votes, v => v.postId)
+  const pollOf = (post: (typeof posts)[number]['post']): Poll | null =>
+    post.pollOptions && {
+      options: post.pollOptions.map((label, index) => ({
+        label,
+        userIds: (votesOf.get(post.id) ?? [])
+          .filter(v => v.option === index)
+          .map(v => v.userId)
+      })),
+      closedAt: post.pollClosedAt
+    }
   for (const { post, tokenName } of posts) {
     items.set(post.id, {
       id: post.id,
@@ -371,6 +406,7 @@ async function loadItems(
             : { type: 'deleted_user' },
       body: post.body,
       editedAt: post.editedAt,
+      poll: pollOf(post),
       reactions: reactionsOf(post.id)
     })
   }

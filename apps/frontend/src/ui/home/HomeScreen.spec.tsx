@@ -209,7 +209,8 @@ describe('HomeScreen', () => {
       reactions: [],
       author: { type: 'user', id: 'u-bob', name: 'Bob' },
       body: 'Hello',
-      editedAt: null
+      editedAt: null,
+      poll: null
     })
 
     it('lists the spaces with news, those with mentions first, each opening the space', async () => {

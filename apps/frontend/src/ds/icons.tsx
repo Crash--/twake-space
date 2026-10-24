@@ -19,6 +19,15 @@ export function AddIcon(props: SVGAttributes<SVGSVGElement>): ReactElement {
   )
 }
 
+// Twake's Stats glyph sits small in its frame; this one is the chat's poll.
+export function PollIcon(props: SVGAttributes<SVGSVGElement>): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
+    </svg>
+  )
+}
+
 // Twake's calendar is a heavy 48px glyph; the mockups use a 2px stroke.
 export function CalendarIcon(
   props: SVGAttributes<SVGSVGElement>

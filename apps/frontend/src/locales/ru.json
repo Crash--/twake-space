@@ -371,6 +371,20 @@
       "deleted": "удалил %{count} файл |||| удалил %{count} файла |||| удалил %{count} файлов"
     },
     "emoji": "Добавить эмодзи",
+    "poll": {
+      "create": "Создать опрос",
+      "title": "Новый опрос",
+      "publish": "Опубликовать",
+      "question": "Задайте вопрос",
+      "option": "Вариант %{n}",
+      "addOption": "Добавить вариант",
+      "removeOption": "Удалить вариант %{n}",
+      "votes": "%{smart_count} голос |||| %{smart_count} голоса |||| %{smart_count} голосов",
+      "choice": "%{label}: %{smart_count} голос |||| %{label}: %{smart_count} голоса |||| %{label}: %{smart_count} голосов",
+      "closed": "Завершён",
+      "close": "Завершить опрос",
+      "voteFailed": "Не удалось сохранить ваш голос."
+    },
     "members": {
       "title": "Участники пространства",
       "show": "Показать участников",

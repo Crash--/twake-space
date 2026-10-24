@@ -1,6 +1,7 @@
 import {
   searchedText,
   shows,
+  withVote,
   type FeedItem,
   type FeedPost,
   type FeedService
@@ -14,8 +15,9 @@ const refuse = (status: number, code: string) =>
 
 const newestFirst = (a: FeedItem, b: FeedItem) => b.time.localeCompare(a.time)
 
-// Writes behave like the backend's: viewers cannot post, and only the author
-// edits or deletes a post. Nothing arrives live.
+// Writes behave like the backend's: viewers cannot post, only the author edits
+// or deletes a post or closes its poll, and a closed poll takes no vote.
+// Nothing arrives live.
 export function memoryFeed(
   seed: Record<string, FeedItem[]>,
   {
@@ -51,6 +53,12 @@ export function memoryFeed(
     if (post.author.type !== 'user' || post.author.id !== me.id) {
       return refuse(403, 'not_author')
     }
+    return Promise.resolve(post)
+  }
+  const openPoll = (spaceId: string, postId: string) => {
+    const post = find(spaceId, postId)
+    if (post?.kind !== 'post' || !post.poll) return refuse(404, 'not_found')
+    if (post.poll.closedAt) return refuse(409, 'poll_closed')
     return Promise.resolve(post)
   }
 
@@ -104,7 +112,7 @@ export function memoryFeed(
         ? Promise.resolve(structuredClone(item))
         : refuse(404, 'not_found')
     },
-    post: (spaceId, body) => {
+    post: (spaceId, body, poll) => {
       if (roles[spaceId] === 'viewer') return refuse(403, 'cannot_post')
       const time = new Date().toISOString()
       const post: FeedPost = {
@@ -116,7 +124,13 @@ export function memoryFeed(
         reactions: [],
         author: { type: 'user', ...me },
         body,
-        editedAt: null
+        editedAt: null,
+        poll: poll
+          ? {
+              options: poll.options.map(label => ({ label, userIds: [] })),
+              closedAt: null
+            }
+          : null
       }
       itemsOf(spaceId).push(post)
       return Promise.resolve(structuredClone(post))
@@ -133,6 +147,21 @@ export function memoryFeed(
         spaceId,
         itemsOf(spaceId).filter(item => item.id !== postId)
       )
+    },
+    vote: async (spaceId, postId, option) => {
+      const post = await openPoll(spaceId, postId)
+      if (!post.poll?.options[option]) return refuse(400, 'invalid_request')
+      post.poll = withVote(post.poll, me.id, option)
+    },
+    unvote: async (spaceId, postId) => {
+      const post = await openPoll(spaceId, postId)
+      if (post.poll) post.poll = withVote(post.poll, me.id, null)
+    },
+    closePoll: async (spaceId, postId) => {
+      const post = await myPost(spaceId, postId)
+      if (!post.poll) return refuse(404, 'not_found')
+      post.poll.closedAt ??= new Date().toISOString()
+      return structuredClone(post)
     },
     react: (spaceId, itemId, key) => {
       const item = find(spaceId, itemId)

@@ -8,6 +8,7 @@ import {
   toEventState,
   toFeedChange,
   withReaction,
+  withVote,
   type FeedCard
 } from '@/application/feed'
 
@@ -63,6 +64,30 @@ describe('withReaction', () => {
 
   it('changes nothing when mine is already there', () => {
     expect(withReaction(reacted, '🎉', 'me', true)).toEqual(reacted)
+  })
+})
+
+describe('withVote', () => {
+  const poll = {
+    options: [
+      { label: 'Tuesday', userIds: ['u1', 'me'] },
+      { label: 'Friday', userIds: ['u2'] }
+    ],
+    closedAt: null
+  }
+
+  it('moves my vote to the option, last in it', () => {
+    expect(withVote(poll, 'me', 1).options).toEqual([
+      { label: 'Tuesday', userIds: ['u1'] },
+      { label: 'Friday', userIds: ['u2', 'me'] }
+    ])
+  })
+
+  it('takes my vote back', () => {
+    expect(withVote(poll, 'me', null).options).toEqual([
+      { label: 'Tuesday', userIds: ['u1'] },
+      { label: 'Friday', userIds: ['u2'] }
+    ])
   })
 })
 

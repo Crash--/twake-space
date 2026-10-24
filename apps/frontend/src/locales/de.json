@@ -371,6 +371,20 @@
       "deleted": "hat %{count} Datei gelöscht |||| hat %{count} Dateien gelöscht"
     },
     "emoji": "Emoji hinzufügen",
+    "poll": {
+      "create": "Umfrage erstellen",
+      "title": "Neue Umfrage",
+      "publish": "Veröffentlichen",
+      "question": "Eine Frage stellen",
+      "option": "Option %{n}",
+      "addOption": "Option hinzufügen",
+      "removeOption": "Option %{n} entfernen",
+      "votes": "%{smart_count} Stimme |||| %{smart_count} Stimmen",
+      "choice": "%{label}: %{smart_count} Stimme |||| %{label}: %{smart_count} Stimmen",
+      "closed": "Beendet",
+      "close": "Umfrage beenden",
+      "voteFailed": "Ihre Stimme konnte nicht gespeichert werden."
+    },
     "members": {
       "title": "Mitglieder des Bereichs",
       "show": "Mitglieder anzeigen",

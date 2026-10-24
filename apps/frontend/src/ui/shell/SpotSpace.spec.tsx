@@ -106,7 +106,8 @@ describe('SpotSpace', () => {
       reactions: [],
       author: { type: 'user', id: 'u-bob', name: 'Bob Durand' },
       body: 'The plan is ready',
-      editedAt: null
+      editedAt: null,
+      poll: null
     }
     const card: FeedItem = {
       id: 'card-1',

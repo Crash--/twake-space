@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
@@ -22,6 +22,7 @@ import {
   feedCards,
   feedCategory,
   feedItemReactions,
+  feedPollVotes,
   feedPosts,
   feedReads
 } from './schema.ts'
@@ -63,6 +64,21 @@ const reactionParams = itemParams.extend({
 })
 
 const postBody = z.object({ body: z.string().trim().min(1).max(4000) })
+const newPostBody = postBody.extend({
+  poll: z
+    .object({
+      options: z
+        .array(z.string().trim().min(1).max(200))
+        .min(2)
+        .max(10)
+        .refine(
+          options =>
+            new Set(options.map(o => o.toLowerCase())).size === options.length
+        )
+    })
+    .optional()
+})
+const voteBody = z.object({ option: z.int().min(0) })
 const readBody = z.object({ readAt: z.iso.datetime({ offset: true }) })
 
 class Refusal extends Error {
@@ -85,7 +101,11 @@ const serialize = (item: FeedItem) => ({
   time: item.time.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
   ...(item.kind === 'post' && {
-    editedAt: item.editedAt?.toISOString() ?? null
+    editedAt: item.editedAt?.toISOString() ?? null,
+    poll: item.poll && {
+      ...item.poll,
+      closedAt: item.poll.closedAt?.toISOString() ?? null
+    }
   })
 })
 
@@ -96,7 +116,7 @@ export function registerFeedRoutes(
   const { db } = deps
   const read = deps.authorize('feed:read')
   const write = deps.authorize('feed:write')
-  // Reactions and read marks are a person's own, so no token gets them.
+  // Reactions, votes and read marks are a person's own, so no token gets them.
   const preHandler = deps.authorize()
 
   // Unknown ids answer 404 like spaces the caller is not in.
@@ -148,6 +168,21 @@ export function registerFeedRoutes(
           post.tokenAccountId === caller.userId
     if (!authored) throw new Refusal(403, 'not_author')
     return { spaceId, postId }
+  }
+
+  // Shared: a vote waits for the poll's closing, and the closing for the vote.
+  async function openPoll(tx: Tx, spaceId: string, postId: string) {
+    const [post] = await tx
+      .select({
+        options: feedPosts.pollOptions,
+        closedAt: feedPosts.pollClosedAt
+      })
+      .from(feedPosts)
+      .where(and(eq(feedPosts.id, postId), eq(feedPosts.spaceId, spaceId)))
+      .for('share')
+    if (!post?.options) throw new Refusal(404, 'not_found')
+    if (post.closedAt) throw new Refusal(409, 'poll_closed')
+    return post.options
   }
 
   async function existingItem(tx: Tx, spaceId: string, itemId: string) {
@@ -306,7 +341,7 @@ export function registerFeedRoutes(
         const { caller, space } = await reach(request)
         const spaceId = space.id
         if (space.role === 'viewer') throw new Refusal(403, 'cannot_post')
-        const { body } = parse(postBody, request.body)
+        const { body, poll } = parse(newPostBody, request.body)
         const item = await db.transaction(async tx => {
           const [post] = await tx
             .insert(feedPosts)
@@ -316,7 +351,8 @@ export function registerFeedRoutes(
                 ? { authorTokenId: caller.tokenId }
                 : { authorId: caller.userId }),
               body,
-              time: new Date()
+              time: new Date(),
+              pollOptions: poll?.options ?? null
             })
             .returning({ id: feedPosts.id })
           if (!post) throw new Error('the post insert returned no row')
@@ -368,6 +404,96 @@ export function registerFeedRoutes(
           await tellFeed(tx, spaceId, postId, 'removed')
         })
         return await reply.code(204).send()
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  app.put(
+    '/spaces/:spaceId/feed/posts/:itemId/vote',
+    { preHandler },
+    async (request, reply) => {
+      try {
+        const { spaceId, userId } = await memberOf(request)
+        const postId = itemOf(request)
+        const { option } = parse(voteBody, request.body)
+        await db.transaction(async tx => {
+          const options = await openPoll(tx, spaceId, postId)
+          if (option >= options.length) {
+            throw new Refusal(400, 'invalid_request')
+          }
+          const [voted] = await tx
+            .insert(feedPollVotes)
+            .values({ postId, userId, option })
+            .onConflictDoUpdate({
+              target: [feedPollVotes.postId, feedPollVotes.userId],
+              set: { option, createdAt: new Date() },
+              setWhere: ne(feedPollVotes.option, option)
+            })
+            .returning({ postId: feedPollVotes.postId })
+          if (voted) await tellFeed(tx, spaceId, postId, 'changed')
+        })
+        return await reply.code(204).send()
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  app.delete(
+    '/spaces/:spaceId/feed/posts/:itemId/vote',
+    { preHandler },
+    async (request, reply) => {
+      try {
+        const { spaceId, userId } = await memberOf(request)
+        const postId = itemOf(request)
+        await db.transaction(async tx => {
+          await openPoll(tx, spaceId, postId)
+          const [removed] = await tx
+            .delete(feedPollVotes)
+            .where(
+              and(
+                eq(feedPollVotes.postId, postId),
+                eq(feedPollVotes.userId, userId)
+              )
+            )
+            .returning({ postId: feedPollVotes.postId })
+          if (removed) await tellFeed(tx, spaceId, postId, 'changed')
+        })
+        return await reply.code(204).send()
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  // Closing again keeps the first time.
+  app.post(
+    '/spaces/:spaceId/feed/posts/:itemId/close',
+    { preHandler: write },
+    async (request, reply) => {
+      try {
+        const item = await db.transaction(async tx => {
+          const { spaceId, postId } = await authoredPost(tx, request)
+          const [closed] = await tx
+            .update(feedPosts)
+            .set({ pollClosedAt: new Date() })
+            .where(
+              and(
+                eq(feedPosts.id, postId),
+                isNotNull(feedPosts.pollOptions),
+                isNull(feedPosts.pollClosedAt)
+              )
+            )
+            .returning({ id: feedPosts.id })
+          if (closed) await tellFeed(tx, spaceId, postId, 'changed')
+          return findItem(tx, spaceId, postId)
+        })
+        if (item?.kind !== 'post' || !item.poll) {
+          throw new Refusal(404, 'not_found')
+        }
+        return serialize(item)
       } catch (error) {
         return refused(error, reply)
       }

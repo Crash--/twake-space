@@ -371,6 +371,20 @@
       "deleted": "eliminó %{count} archivo |||| eliminó %{count} archivos"
     },
     "emoji": "Añadir un emoji",
+    "poll": {
+      "create": "Crear una encuesta",
+      "title": "Nueva encuesta",
+      "publish": "Publicar",
+      "question": "Haz una pregunta",
+      "option": "Opción %{n}",
+      "addOption": "Añadir una opción",
+      "removeOption": "Quitar la opción %{n}",
+      "votes": "%{smart_count} voto |||| %{smart_count} votos",
+      "choice": "%{label}: %{smart_count} voto |||| %{label}: %{smart_count} votos",
+      "closed": "Cerrada",
+      "close": "Cerrar la encuesta",
+      "voteFailed": "No se pudo guardar tu voto."
+    },
     "members": {
       "title": "Miembros del espacio",
       "show": "Mostrar los miembros",

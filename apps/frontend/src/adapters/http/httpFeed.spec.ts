@@ -23,7 +23,8 @@ const post: FeedItem = {
   reactions: [],
   author: { type: 'user', id: 'u1', name: 'Bob' },
   body: 'Hello',
-  editedAt: null
+  editedAt: null,
+  poll: null
 }
 
 function requested(): Request {
@@ -112,6 +113,30 @@ describe('httpFeed', () => {
       method: 'POST',
       path: 'spaces/a1/feed/posts',
       body: { body: 'Hello' }
+    },
+    {
+      write: () => feed.post('a1', 'Lunch?', { options: ['Pizza', 'Sushi'] }),
+      method: 'POST',
+      path: 'spaces/a1/feed/posts',
+      body: { body: 'Lunch?', poll: { options: ['Pizza', 'Sushi'] } }
+    },
+    {
+      write: () => feed.vote('a1', 'p1', 1),
+      method: 'PUT',
+      path: 'spaces/a1/feed/posts/p1/vote',
+      body: { option: 1 }
+    },
+    {
+      write: () => feed.unvote('a1', 'p1'),
+      method: 'DELETE',
+      path: 'spaces/a1/feed/posts/p1/vote',
+      body: null
+    },
+    {
+      write: () => feed.closePoll('a1', 'p1'),
+      method: 'POST',
+      path: 'spaces/a1/feed/posts/p1/close',
+      body: null
     },
     {
       write: () => feed.edit('a1', 'p1', 'Hi'),

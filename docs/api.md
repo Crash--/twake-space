@@ -303,15 +303,15 @@ For the user's assistant (Twake Harness), through an API token of a technical ac
 
 ## Feed
 
-A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post and react.
+A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post, react and vote on polls. A poll is a post whose body is the question.
 
-`GET /spaces/:spaceId/feed` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes one holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
+`GET /spaces/:spaceId/feed` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes but the votes one holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
 
 A feed item:
 
 - `id`, `kind` (`card` or `post`), `category` (`messages`, `files`, `activities` or `events`; a post is a message), `time`, `updatedAt`, and `reactions`, a list of `{key, userIds}` in the order they were first added.
 - A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`), `state` (an object the app sends, such as a calendar event's time) and `files` (`{created, updated, deleted, samples}` for a Drive folder digest, or `null`). `time` is the object's first event, so the card keeps its place, except for a folder digest, whose `time` is its latest window; everything else comes from its latest event.
-- A post adds `author`, `body` (plain text) and `editedAt` (`null` until edited).
+- A post adds `author`, `body` (plain text), `editedAt` (`null` until edited) and `poll` (`null` on a plain post). A poll is `{options, closedAt}`: `options` lists `{label, userIds}` in the order they were given, `userIds` being the members who chose it in the order they voted, and `closedAt` is `null` while it is open.
 - An actor or author is `{type: "user", id, name}`, `{type: "token", id, name}`, or `{type: "deleted_user"}`. For a user, `id` is `null` when the app named them by email only and no member has it, and `name` is the member's display name or username, or `null` when they are not a member of the space.
 
 ```json
@@ -339,7 +339,7 @@ A feed item:
 ### GET /spaces/:spaceId/feed
 
 - Query: `category` (optional), `q` (optional, 1 to 200 characters once trimmed), `since` (optional, ISO 8601 with an offset, such as `2026-10-05T00:00:00Z`, a `+` sent as `%2B`), `limit` (1 to 50, default 20), `before` (the `next` of the previous page).
-- `q` keeps the posts whose body, and the cards whose title or preview, contain it, ignoring case.
+- `q` keeps the posts whose body or a poll option, and the cards whose title or preview, contain it, ignoring case.
 - `since` keeps the items active since then, at that time included: a card by its latest event, its `updatedAt`, even when its `time` is older, and a post by its `time`, its edits aside. They come newest activity first.
 - Answers `{"items": [...], "next": "<cursor>"}`, newest first by `time`, or by latest activity with `since`. `next` is `null` on the last page. A `before` that is not a cursor answers 400, as does a cursor of the other order: one from a page without `since` given with it, or the reverse.
 
@@ -370,18 +370,34 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 
 ### POST /spaces/:spaceId/feed/posts
 
-- Body: `{"body": "..."}`, 1 to 4000 characters once trimmed.
+- Body: `{"body": "..."}`, 1 to 4000 characters once trimmed. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed.
 - Editors and admins only, otherwise `403 {"error":"cannot_post"}`. An account token posts with its account's role, an organization token with its own.
 - Answers `201` with the post.
 
 ### PATCH /spaces/:spaceId/feed/posts/:itemId
 
-- Body: `{"body": "..."}`. Answers the post.
+- Body: `{"body": "..."}`. Answers the post. A poll keeps its options and votes.
 - Its author only, otherwise `403 {"error":"not_author"}`. A token's post belongs to that token, and to the person of its account, from a session, even once the token is revoked.
 
 ### DELETE /spaces/:spaceId/feed/posts/:itemId
 
-Deletes the post and its reactions. Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. Answers `204`.
+Deletes the post, its reactions and its votes. Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. Answers `204`.
+
+### PUT /spaces/:spaceId/feed/posts/:itemId/vote
+
+- Body: `{"option": 0}`, the index of the option in `poll.options`.
+- Any member, viewers included, from a session only: a vote is a person's own, so no token gets it. A member has one vote per poll: voting again moves it, and voting again for the same option changes nothing. Answers `204`.
+- `404 {"error":"not_found"}` on a post with no poll, `409 {"error":"poll_closed"}` once it is closed.
+
+### DELETE /spaces/:spaceId/feed/posts/:itemId/vote
+
+Takes the caller's vote back. Answers `204`, `404 {"error":"not_found"}` on a post with no poll, or `409 {"error":"poll_closed"}` once the poll is closed.
+
+### POST /spaces/:spaceId/feed/posts/:itemId/close
+
+- Closes the poll: its votes stay, and it takes no more. Closing it again keeps the first `closedAt`.
+- Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. `404 {"error":"not_found"}` when the author's post has no poll.
+- Answers the post.
 
 ### PUT /spaces/:spaceId/feed/items/:itemId/reactions/:key
 
@@ -431,7 +447,7 @@ The events carry no state; they tell the client what to reload.
   - the removed members, when members are removed;
   - every member and the organization's owners and admins, when the space is archived, moved to the Bin or restored;
   - the former members, when the space is deleted, and the organization's owners and admins too when it is deleted from the Bin.
-- `feed` with data `{"spaceId":"<uuid>","itemId":"<uuid>","change":"added"}`, sent to every member when a feed item is `added`, `changed` (a later event, an edit, a reaction) or `removed`. The client reads an added or changed item with `GET /spaces/:spaceId/feed/items/:itemId`.
+- `feed` with data `{"spaceId":"<uuid>","itemId":"<uuid>","change":"added"}`, sent to every member when a feed item is `added`, `changed` (a later event, an edit, a reaction, a vote, a closed poll) or `removed`. The client reads an added or changed item with `GET /spaces/:spaceId/feed/items/:itemId`.
 
 ```
 event: spaces

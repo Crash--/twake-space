@@ -17,6 +17,7 @@ import {
   activityEvents,
   feedCards,
   feedItemReactions,
+  feedPollVotes,
   feedPosts,
   feedReads
 } from '../feed/schema.ts'
@@ -373,10 +374,14 @@ describe('space events', () => {
           spaceId: SPACE_ID,
           authorId: JDOE_ID,
           body: 'Hello',
-          time: new Date()
+          time: new Date(),
+          pollOptions: ['Yes', 'No']
         })
         .returning({ id: feedPosts.id })
       if (!post) throw new Error('no post')
+      await testDb.db
+        .insert(feedPollVotes)
+        .values({ postId: post.id, userId: JDOE_ID, option: 0 })
       await testDb.db.insert(feedItemReactions).values({
         itemId: post.id,
         spaceId: SPACE_ID,
@@ -421,6 +426,7 @@ describe('space events', () => {
             .from(feedPosts)
         ).toEqual([{ authorId: null }])
         expect(await testDb.db.select().from(feedItemReactions)).toEqual([])
+        expect(await testDb.db.select().from(feedPollVotes)).toEqual([])
         expect(await testDb.db.select().from(feedReads)).toEqual([])
         const [card] = await testDb.db
           .select({ memberId: feedCards.memberId })

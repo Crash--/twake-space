@@ -65,9 +65,25 @@ export interface FileCounts {
 export interface FeedPost extends ItemBase {
   kind: 'post'
   author: Actor
+  /** On a poll, its question. */
   body: string
   editedAt: string | null
+  poll: Poll | null
 }
+
+/** One choice per member. */
+export interface Poll {
+  options: PollOption[]
+  closedAt: string | null
+}
+
+export interface PollOption {
+  label: string
+  /** In the order they voted. */
+  userIds: string[]
+}
+
+export const POLL_OPTIONS = { min: 2, max: 10 }
 
 export type FeedItem = FeedCard | FeedPost
 
@@ -90,7 +106,7 @@ export interface FeedService {
     options: {
       category?: FeedCategory
       before?: string
-      /** Matches card titles and previews, and post bodies. */
+      /** Matches card titles and previews, post bodies and poll options. */
       q?: string
       limit?: number
     }
@@ -102,10 +118,21 @@ export interface FeedService {
   markRead: (spaceId: string, readAt: string) => Promise<void>
   /** Only the spaces with something new; a feed never opened has no new items. */
   news: () => Promise<SpaceNews[]>
-  /** Editors and admins only: a viewer is refused with `cannot_post`. */
-  post: (spaceId: string, body: string) => Promise<FeedItem>
+  /** Editors and admins only: a viewer is refused with `cannot_post`. With
+   * `poll`, the body is its question. */
+  post: (
+    spaceId: string,
+    body: string,
+    poll?: { options: string[] }
+  ) => Promise<FeedItem>
   edit: (spaceId: string, postId: string, body: string) => Promise<FeedItem>
   remove: (spaceId: string, postId: string) => Promise<void>
+  /** Moves the user's vote to `option`, an index in the poll's options; a
+   * closed poll refuses it with `poll_closed`. */
+  vote: (spaceId: string, postId: string, option: number) => Promise<void>
+  unvote: (spaceId: string, postId: string) => Promise<void>
+  /** Its author only. */
+  closePoll: (spaceId: string, postId: string) => Promise<FeedItem>
   react: (spaceId: string, itemId: string, key: string) => Promise<void>
   unreact: (spaceId: string, itemId: string, key: string) => Promise<void>
   /** Null when the page cannot be read or has no title. */
@@ -175,8 +202,25 @@ export function firstUnread(
 
 /** What a search matches an item on, as the backend does. */
 export function searchedText(item: FeedItem): string[] {
-  if (item.kind === 'post') return [item.body]
+  if (item.kind === 'post') {
+    return [item.body, ...(item.poll?.options.map(o => o.label) ?? [])]
+  }
   return [item.object.title, item.preview ?? '']
+}
+
+/** The poll once a user has voted for `option`, or taken their vote back. */
+export function withVote(
+  poll: Poll,
+  userId: string,
+  option: number | null
+): Poll {
+  return {
+    ...poll,
+    options: poll.options.map((o, index) => {
+      const others = o.userIds.filter(id => id !== userId)
+      return { ...o, userIds: index === option ? [...others, userId] : others }
+    })
+  }
 }
 
 /** The item once a user has added (`on`) or taken back a reaction. */

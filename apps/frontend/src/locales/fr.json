@@ -371,6 +371,20 @@
       "deleted": "a supprimé %{count} fichier |||| a supprimé %{count} fichiers"
     },
     "emoji": "Ajouter un emoji",
+    "poll": {
+      "create": "Créer un sondage",
+      "title": "Nouveau sondage",
+      "publish": "Publier",
+      "question": "Poser une question",
+      "option": "Option %{n}",
+      "addOption": "Ajouter une option",
+      "removeOption": "Retirer l’option %{n}",
+      "votes": "%{smart_count} vote |||| %{smart_count} votes",
+      "choice": "%{label} : %{smart_count} vote |||| %{label} : %{smart_count} votes",
+      "closed": "Clos",
+      "close": "Clore le sondage",
+      "voteFailed": "Impossible d’enregistrer votre vote."
+    },
     "members": {
       "title": "Membres de l'espace",
       "show": "Afficher les membres",

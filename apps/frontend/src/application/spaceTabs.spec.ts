@@ -152,7 +152,8 @@ describe('itemPlace', () => {
     reactions: [],
     author: { type: 'deleted_user' },
     body: 'Hello',
-    editedAt: null
+    editedAt: null,
+    poll: null
   }
 
   it("opens a card in its container's tab", () => {

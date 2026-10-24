@@ -1,4 +1,11 @@
-import { Down, Icon, Send, type IconProps } from '@linagora/twake-icons'
+import {
+  Check,
+  Cross,
+  Down,
+  Icon,
+  Send,
+  type IconProps
+} from '@linagora/twake-icons'
 import {
   Avatar,
   Badge,
@@ -1229,6 +1236,183 @@ export function DateTile({
   )
 }
 
+/** A button before the composer's field, as tall as the field. */
+export function FeedComposerTool({
+  label,
+  icon,
+  onClick
+}: {
+  label: string
+  icon: IconProps['icon']
+  onClick: () => void
+}): ReactElement {
+  return (
+    <Tooltip title={label}>
+      <IconButton
+        aria-label={label}
+        aria-haspopup="dialog"
+        onClick={onClick}
+        sx={{
+          flex: '0 0 44px',
+          width: 44,
+          height: 44,
+          p: 0,
+          border: 1,
+          borderColor: 'border.main',
+          color: 'text.secondary'
+        }}
+      >
+        <Icon icon={icon} size={20} />
+      </IconButton>
+    </Tooltip>
+  )
+}
+
+/** A new poll's option field, and the button that removes it, if any. */
+export function FeedPollOption({
+  children,
+  removeLabel,
+  onRemove
+}: {
+  children: ReactNode
+  removeLabel: string
+  onRemove: (() => void) | null
+}): ReactElement {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {children}
+      {onRemove && (
+        <IconButton
+          aria-label={removeLabel}
+          onClick={onRemove}
+          sx={{ color: 'text.secondary' }}
+        >
+          <Icon icon={Cross} size={20} />
+        </IconButton>
+      )}
+    </Box>
+  )
+}
+
+/**
+ * A poll as the chat shows one: its question, a button per option (pressed:
+ * the user's vote) over a bar of its share of the votes, and a summary.
+ */
+export function FeedPoll({
+  question,
+  options,
+  summary,
+  disabled,
+  onVote,
+  close
+}: {
+  question: string
+  /** `name` is the button's accessible name, with its count. */
+  options: { label: string; name: string; count: number; mine: boolean }[]
+  summary: string
+  disabled: boolean
+  onVote: (index: number) => void
+  /** The author's button that closes the poll; null for anyone else. */
+  close: { label: string; onClick: () => void } | null
+}): ReactElement {
+  const total = options.reduce((sum, option) => sum + option.count, 0)
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        width: 400,
+        maxWidth: '100%',
+        py: 0.5
+      }}
+    >
+      <FeedTitle large>{question}</FeedTitle>
+      <Box
+        role="group"
+        aria-label={question}
+        sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+      >
+        {options.map((option, index) => (
+          <Box key={option.label}>
+            <Button
+              fullWidth
+              variant={option.mine ? 'contained' : 'outlined'}
+              color={option.mine ? 'primary' : 'inherit'}
+              aria-pressed={option.mine}
+              aria-label={option.name}
+              disabled={disabled}
+              onClick={() => {
+                onVote(index)
+              }}
+              startIcon={option.mine && <Icon icon={Check} size={16} />}
+              sx={{
+                justifyContent: 'flex-start',
+                gap: 1,
+                borderRadius: '10px',
+                textTransform: 'none',
+                textAlign: 'start',
+                ...(!option.mine && { borderColor: 'border.main' }),
+                '& .MuiButton-startIcon': { m: 0 },
+                // Closed, the results stay readable.
+                '&.Mui-disabled': {
+                  color: 'text.primary',
+                  borderColor: 'border.main',
+                  bgcolor: option.mine ? 'action.selected' : 'transparent'
+                }
+              }}
+            >
+              <Box
+                component="span"
+                sx={{ flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}
+              >
+                {option.label}
+              </Box>
+              <Box component="span" sx={{ flex: '0 0 auto' }}>
+                {option.count}
+              </Box>
+            </Button>
+            <Box
+              aria-hidden
+              sx={{
+                mt: 0.5,
+                height: 4,
+                borderRadius: 2,
+                bgcolor: 'action.hover'
+              }}
+            >
+              <Box
+                sx={{
+                  height: '100%',
+                  borderRadius: 2,
+                  bgcolor: 'primary.main',
+                  transform: `scaleX(${String(total > 0 ? option.count / total : 0)})`,
+                  transformOrigin: 'left',
+                  transition: 'transform 250ms ease-out'
+                }}
+              />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          sx={{ flex: '1 1 auto', fontWeight: 500, letterSpacing: 0.4 }}
+        >
+          {summary}
+        </Typography>
+        {close && (
+          <Button size="small" color="inherit" onClick={close.onClick}>
+            {close.label}
+          </Button>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
 export function FeedComposer({
   label,
   sendLabel,
@@ -1237,7 +1421,8 @@ export function FeedComposer({
   value,
   onChange,
   onSend,
-  disabled
+  disabled,
+  tools
 }: {
   label: string
   sendLabel: string
@@ -1247,6 +1432,8 @@ export function FeedComposer({
   onChange: (value: string) => void
   onSend: () => void
   disabled: boolean
+  /** Before the field, such as the button that makes the message a poll. */
+  tools?: ReactNode
 }): ReactElement {
   const empty = value.trim() === ''
   const field = useRef<HTMLTextAreaElement>(null)
@@ -1272,6 +1459,7 @@ export function FeedComposer({
       }}
       sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, pt: 1 }}
     >
+      {tools}
       <InputBase
         multiline
         maxRows={6}

@@ -333,7 +333,8 @@ function roadmapFeed(): FeedItem[] {
           category: 'messages',
           author: actor,
           body: `Update ${String(i)}: the release notes are ready for review.`,
-          editedAt: null
+          editedAt: null,
+          poll: null
         }
     }
   })
@@ -605,6 +606,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       author: person('bob'),
       body: 'Update: the release notes are ready for review.',
       editedAt: null,
+      poll: null,
       reactions: [],
       time: '',
       updatedAt: ''
@@ -616,6 +618,7 @@ export function showcaseFeed(now: number): FeedItem[] {
       author: person('carol'),
       body: 'Standup moves to 10:15 from Monday.\nPlease update your calendars.',
       editedAt: iso(now - 10 * MINUTE),
+      poll: null,
       reactions: [
         { key: '👍', userIds: ['uuid-alice', 'uuid-bob'] },
         { key: '🎉', userIds: ['uuid-dave'] },
@@ -631,6 +634,26 @@ export function showcaseFeed(now: number): FeedItem[] {
       author: person('alice'),
       body: 'Thanks all, I am merging the landing page today. A long message follows so the bubble wraps on a narrow screen: the hero copy, the pricing table, the footer links and the cookie banner all changed.',
       editedAt: null,
+      poll: null,
+      reactions: [],
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-poll',
+      kind: 'post',
+      category: 'messages',
+      author: person('bob'),
+      body: 'Which day suits the team lunch?',
+      editedAt: null,
+      poll: {
+        options: [
+          { label: 'Tuesday', userIds: ['uuid-carol', 'uuid-dave'] },
+          { label: 'Thursday', userIds: ['uuid-bob'] },
+          { label: 'Friday', userIds: [] }
+        ],
+        closedAt: null
+      },
       reactions: [],
       time: '',
       updatedAt: ''
@@ -643,6 +666,7 @@ export function showcaseFeed(now: number): FeedItem[] {
     ...items.slice(6, 18),
     posts[1],
     ...items.slice(18),
+    posts[3],
     posts[2]
   ].filter((item): item is FeedItem => item !== undefined)
   return all.map((item, i) => {

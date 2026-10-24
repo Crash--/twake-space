@@ -371,6 +371,20 @@
       "deleted": "deleted %{count} file |||| deleted %{count} files"
     },
     "emoji": "Add an emoji",
+    "poll": {
+      "create": "Create a poll",
+      "title": "New poll",
+      "publish": "Publish",
+      "question": "Ask a question",
+      "option": "Option %{n}",
+      "addOption": "Add an option",
+      "removeOption": "Remove option %{n}",
+      "votes": "%{smart_count} vote |||| %{smart_count} votes",
+      "choice": "%{label}: %{smart_count} vote |||| %{label}: %{smart_count} votes",
+      "closed": "Closed",
+      "close": "Close the poll",
+      "voteFailed": "Could not save your vote."
+    },
     "members": {
       "title": "Space members",
       "show": "Show the members",

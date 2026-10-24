@@ -24,6 +24,7 @@ import {
   activityEvents,
   feedCards,
   feedItemReactions,
+  feedPollVotes,
   feedPosts,
   feedReads,
   type Actor,
@@ -354,6 +355,7 @@ export async function forgetActor(
         )
       )
     await tx.delete(feedItemReactions).where(eq(feedItemReactions.userId, uuid))
+    await tx.delete(feedPollVotes).where(eq(feedPollVotes.userId, uuid))
     await tx.delete(feedReads).where(eq(feedReads.userId, uuid))
     // Not null: the unique key treats nulls as equal, so the card would clash
     // with any other card on the folder that has no member.

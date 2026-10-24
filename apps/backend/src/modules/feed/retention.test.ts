@@ -3,7 +3,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { notifications } from '../notifications/schema.ts'
 import { purgeExpired } from './retention.ts'
-import { activityEvents, feedItemReactions, feedPosts } from './schema.ts'
+import {
+  activityEvents,
+  feedItemReactions,
+  feedPollVotes,
+  feedPosts
+} from './schema.ts'
 
 const NOW = new Date('2026-10-05T12:00:00Z')
 const daysAgo = (days: number) =>
@@ -69,7 +74,7 @@ describe('purgeExpired', () => {
     expect(await counts()).toEqual({ events: 2, notifications: 1 })
   })
 
-  it('deletes posts and reactions past 12 months, and reactions whose item is gone', async () => {
+  it('deletes posts with their votes and reactions past 12 months, and reactions whose item is gone', async () => {
     const { db } = testDb
     const [old, recent] = await db
       .insert(feedPosts)
@@ -90,8 +95,16 @@ describe('purgeExpired', () => {
       },
       { itemId: old.id, spaceId: SPACE, userId: ALICE, key: 'c' }
     ])
+    await db.insert(feedPollVotes).values([
+      { postId: old.id, userId: ALICE, option: 0 },
+      { postId: recent.id, userId: ALICE, option: 1 }
+    ])
 
     await purgeExpired(db, NOW)
+
+    expect(
+      await db.select({ postId: feedPollVotes.postId }).from(feedPollVotes)
+    ).toEqual([{ postId: recent.id }])
 
     expect(await db.select({ body: feedPosts.body }).from(feedPosts)).toEqual([
       { body: 'new' }

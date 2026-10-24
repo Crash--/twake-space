@@ -33,7 +33,9 @@ import {
   type FeedItem,
   type FileCounts,
   type FeedPost,
-  withReaction
+  type Poll,
+  withReaction,
+  withVote
 } from '@/application/feed'
 import { avatarUrl } from '@/application/avatar'
 import { meetRoomUrl } from '@/application/meet'
@@ -50,6 +52,7 @@ import {
   FeedBody,
   FeedCentered,
   FeedComposer,
+  FeedComposerTool,
   FeedDetail,
   FeedEditForm,
   FeedFilterMenu,
@@ -60,6 +63,7 @@ import {
   FeedLinkPreview,
   FeedMoreButton,
   FeedNewMark,
+  FeedPoll,
   FeedRow,
   FeedTitle,
   FeedToolbar,
@@ -69,7 +73,7 @@ import {
   ReactionPicker,
   VisioChip
 } from '@/ds/Feed'
-import { CalendarIcon, FolderIcon, OpenInNewIcon } from '@/ds/icons'
+import { CalendarIcon, FolderIcon, OpenInNewIcon, PollIcon } from '@/ds/icons'
 import { MembersPanel } from '@/ds/MembersPanel'
 import { MenuEntry } from '@/ds/Menu'
 import { LoadingRows, SetupPrompt } from '@/ds/Page'
@@ -85,6 +89,7 @@ import {
   useFeedReadAt
 } from '@/ui/space/feedQueries'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
+import { PollDialog } from '@/ui/space/PollDialog'
 
 const FILTERS: FeedFilter[] = ['all', ...FEED_CATEGORIES]
 
@@ -363,6 +368,7 @@ function Composer({ space }: { space: Space }): ReactElement {
   const { feed } = useServices()
   const { add } = useFeedCache(space.id)
   const [body, setBody] = useState('')
+  const [polling, setPolling] = useState(false)
   const send = useMutation({
     mutationFn: (text: string) => feed.post(space.id, text),
     onSuccess: item => {
@@ -384,7 +390,28 @@ function Composer({ space }: { space: Space }): ReactElement {
           send.mutate(body.trim())
         }}
         disabled={send.isPending}
+        tools={
+          <FeedComposerTool
+            label={t('feed.poll.create')}
+            icon={PollIcon}
+            onClick={() => {
+              setPolling(true)
+            }}
+          />
+        }
       />
+      {polling && (
+        <PollDialog
+          spaceId={space.id}
+          onClose={() => {
+            setPolling(false)
+          }}
+          onPublished={item => {
+            add(item)
+            setPolling(false)
+          }}
+        />
+      )}
     </>
   )
 }
@@ -524,6 +551,10 @@ function Post({
       drop(post.id)
     }
   })
+  const close = useMutation({
+    mutationFn: () => feed.closePoll(space.id, post.id),
+    onSuccess: replace
+  })
 
   return (
     <FeedRow
@@ -554,10 +585,26 @@ function Post({
         }
       />
       {draft === null ? (
-        <>
-          <FeedBody>{post.body}</FeedBody>
-          <PostLink body={post.body} />
-        </>
+        post.poll ? (
+          <PollVotes
+            post={post}
+            poll={post.poll}
+            spaceId={space.id}
+            myId={myId}
+            onClose={
+              mine && !post.poll.closedAt && !close.isPending
+                ? () => {
+                    close.mutate()
+                  }
+                : null
+            }
+          />
+        ) : (
+          <>
+            <FeedBody>{post.body}</FeedBody>
+            <PostLink body={post.body} />
+          </>
+        )
       ) : (
         <FeedEditForm
           label={t('feed.edit')}
@@ -583,7 +630,7 @@ function Post({
           }
         />
       )}
-      {(edit.isError || remove.isError) && (
+      {(edit.isError || remove.isError || close.isError) && (
         <Alert severity="error">{t('feed.changeFailed')}</Alert>
       )}
       <FeedFooter time={time(post.time)}>
@@ -612,6 +659,69 @@ function PostLink({ body }: { body: string }): ReactElement | null {
       description={data.description}
       image={data.image}
     />
+  )
+}
+
+function PollVotes({
+  post,
+  poll,
+  spaceId,
+  myId,
+  onClose
+}: {
+  post: FeedPost
+  poll: Poll
+  spaceId: string
+  myId: string | null
+  onClose: (() => void) | null
+}): ReactElement {
+  const { t } = useI18n()
+  const { feed } = useServices()
+  const { replace } = useFeedCache(spaceId)
+  // Shown at once; the live event that follows brings the stored votes.
+  const vote = useMutation({
+    mutationFn: (option: number | null) =>
+      option === null
+        ? feed.unvote(spaceId, post.id)
+        : feed.vote(spaceId, post.id, option),
+    onMutate: option => {
+      if (myId) replace({ ...post, poll: withVote(poll, myId, option) })
+      return post
+    },
+    // Rereads the post: it may have closed in the meantime.
+    onError: (_error, _option, before) => {
+      if (before) replace(before)
+      feed.item(spaceId, post.id).then(replace, () => undefined)
+    }
+  })
+  const mine =
+    myId === null ? -1 : poll.options.findIndex(o => o.userIds.includes(myId))
+  const total = poll.options.reduce((sum, o) => sum + o.userIds.length, 0)
+  const votes = t('feed.poll.votes', { smart_count: total })
+  return (
+    <>
+      <FeedPoll
+        question={post.body}
+        options={poll.options.map((option, index) => ({
+          label: option.label,
+          name: t('feed.poll.choice', {
+            label: option.label,
+            smart_count: option.userIds.length
+          }),
+          count: option.userIds.length,
+          mine: index === mine
+        }))}
+        summary={poll.closedAt ? `${votes} · ${t('feed.poll.closed')}` : votes}
+        disabled={poll.closedAt !== null || vote.isPending}
+        onVote={index => {
+          vote.mutate(index === mine ? null : index)
+        }}
+        close={onClose && { label: t('feed.poll.close'), onClick: onClose }}
+      />
+      {vote.isError && (
+        <Alert severity="error">{t('feed.poll.voteFailed')}</Alert>
+      )}
+    </>
   )
 }
 

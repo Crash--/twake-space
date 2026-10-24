@@ -36,14 +36,24 @@ export function httpFeed(api: KyInstance): FeedService {
       send(api.put(feed(spaceId, 'read'), { json: { readAt } })),
     news: async () =>
       (await api.get('feed/unread').json<{ spaces: SpaceNews[] }>()).spaces,
-    post: (spaceId, body) =>
-      api.post(feed(spaceId, 'posts'), { json: { body } }).json<FeedItem>(),
+    post: (spaceId, body, poll) =>
+      api
+        .post(feed(spaceId, 'posts'), { json: { body, poll } })
+        .json<FeedItem>(),
     edit: (spaceId, postId, body) =>
       api
         .patch(feed(spaceId, 'posts', postId), { json: { body } })
         .json<FeedItem>(),
     remove: (spaceId, postId) =>
       send(api.delete(feed(spaceId, 'posts', postId))),
+    vote: (spaceId, postId, option) =>
+      send(
+        api.put(feed(spaceId, 'posts', postId, 'vote'), { json: { option } })
+      ),
+    unvote: (spaceId, postId) =>
+      send(api.delete(feed(spaceId, 'posts', postId, 'vote'))),
+    closePoll: (spaceId, postId) =>
+      api.post(feed(spaceId, 'posts', postId, 'close')).json<FeedItem>(),
     react: (spaceId, itemId, key) =>
       send(api.put(feed(spaceId, 'items', itemId, 'reactions', key))),
     unreact: (spaceId, itemId, key) =>

@@ -23,6 +23,7 @@ import {
   activityEvents,
   feedCards,
   feedItemReactions,
+  feedPollVotes,
   feedPosts,
   feedReads
 } from './schema.ts'
@@ -187,10 +188,21 @@ async function aCard(
   return card.id
 }
 
-async function aPost(body: string, time: string, authorId = ALICE) {
+async function aPost(
+  body: string,
+  time: string,
+  authorId = ALICE,
+  pollOptions: string[] | null = null
+) {
   const [post] = await testDb.db
     .insert(feedPosts)
-    .values({ spaceId: DESIGN, authorId, body, time: new Date(time) })
+    .values({
+      spaceId: DESIGN,
+      authorId,
+      body,
+      time: new Date(time),
+      pollOptions
+    })
     .returning({ id: feedPosts.id })
   if (!post) throw new Error('no post')
   return post.id
@@ -255,6 +267,7 @@ describe('GET /spaces/:spaceId/feed', () => {
           author: { type: 'user', id: ALICE, name: 'Alice Martin' },
           body: 'Hello team',
           editedAt: null,
+          poll: null,
           reactions: []
         },
         {
@@ -281,17 +294,23 @@ describe('GET /spaces/:spaceId/feed', () => {
     })
   })
 
-  it('searches card titles and previews and post bodies with q', async () => {
+  it('searches card titles and previews, post bodies and poll options with q', async () => {
     const roadmap = await aCard('Roadmap', '2026-10-05T09:00:00Z')
     await aCard('budget', '2026-10-05T09:30:00Z')
     const post = await aPost('The ROADMAP is out', '2026-10-05T10:00:00Z')
     await aPost('Lunch?', '2026-10-05T11:00:00Z')
+    const poll = await aPost('Where?', '2026-10-05T12:00:00Z', ALICE, [
+      'Room 4',
+      'Cafeteria'
+    ])
     const get = setUp()
 
     const byTitle = await get('GET', `/spaces/${DESIGN}/feed?q=roadmap`)
     const byPreview = await get('GET', `/spaces/${DESIGN}/feed?q=first%20draft`)
+    const byOption = await get('GET', `/spaces/${DESIGN}/feed?q=CAFET`)
     const wildcard = await get('GET', `/spaces/${DESIGN}/feed?q=%25`)
 
+    expect(byOption.json<Page>().items.map(i => i.id)).toEqual([poll])
     expect(byTitle.json<Page>().items.map(i => i.id)).toEqual([post, roadmap])
     expect(byPreview.json<Page>().items.map(i => i.kind)).toEqual([
       'card',
@@ -514,8 +533,19 @@ describe('with an API token', () => {
     expect(elsewhere.statusCode).toBe(404)
   })
 
-  it('posts only with feed:write, and never reacts', async () => {
+  it('posts only with feed:write, and never reacts or votes', async () => {
     const post = await aPost('Hello team', '2026-10-05T10:00:00Z')
+    const poll = await aPost('Lunch?', '2026-10-05T11:00:00Z', ALICE, [
+      'Yes',
+      'No'
+    ])
+    const voted = await bot({ userId: ALICE, scopes: ['feed:write'] })(
+      'PUT',
+      `/spaces/${DESIGN}/feed/posts/${poll}/vote`,
+      'tws_bot',
+      { option: 0 }
+    )
+    expect(voted.statusCode).toBe(403)
 
     const posted = await bot({ userId: ALICE })(
       'POST',
@@ -556,6 +586,30 @@ describe('with an API token', () => {
         .from(feedPosts)
         .where(eq(feedPosts.id, posted.json<{ id: string }>().id))
     ).toEqual([{ authorId: null }])
+  })
+
+  it('publishes a poll and closes its own', async () => {
+    await aToken()
+    const call = bot({ userId: ALICE, scopes: ['feed:write'] })
+    const posted = await call(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'tws_bot',
+      { body: 'Lunch?', poll: { options: ['Pizza', 'Sushi'] } }
+    )
+    const { id } = posted.json<{ id: string }>()
+
+    const closed = await call(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts/${id}/close`,
+      'tws_bot'
+    )
+
+    expect(closed.statusCode).toBe(200)
+    expect(closed.json()).toMatchObject({
+      author: { type: 'token' },
+      poll: { closedAt: expect.any(String) as string }
+    })
   })
 
   it('posts where its account or its own role may', async () => {
@@ -988,6 +1042,183 @@ describe('posts', () => {
     )
 
     expect(response.statusCode).toBe(404)
+  })
+})
+
+describe('polls', () => {
+  interface Poll {
+    options: { label: string; userIds: string[] }[]
+    closedAt: string | null
+  }
+  const pollOf = async (send: ReturnType<typeof setUp>, postId: string) =>
+    (await send('GET', `/spaces/${DESIGN}/feed/items/${postId}`)).json<{
+      poll: Poll
+    }>().poll
+
+  it('lets an editor publish a poll, as a post with its options', async () => {
+    const response = await setUp()(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      { body: 'Lunch where?', poll: { options: [' Pizza ', 'Sushi'] } }
+    )
+
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({
+      kind: 'post',
+      category: 'messages',
+      body: 'Lunch where?',
+      poll: {
+        options: [
+          { label: 'Pizza', userIds: [] },
+          { label: 'Sushi', userIds: [] }
+        ],
+        closedAt: null
+      }
+    })
+  })
+
+  it('refuses fewer than 2 or more than 10 options, empty or repeated ones', async () => {
+    const send = setUp()
+    const publish = (options: string[]) =>
+      send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+        body: 'Lunch?',
+        poll: { options }
+      })
+
+    expect((await publish(['Pizza'])).statusCode).toBe(400)
+    expect(
+      (await publish(Array.from({ length: 11 }, (_, i) => String(i))))
+        .statusCode
+    ).toBe(400)
+    expect((await publish(['Pizza', '  '])).statusCode).toBe(400)
+    expect((await publish(['Pizza', 'Pizza '])).statusCode).toBe(400)
+    expect((await publish(['Pizza', 'pizza'])).statusCode).toBe(400)
+    expect(
+      (
+        await send('POST', `/spaces/${DESIGN}/feed/posts`, 'bob', {
+          body: 'Lunch?',
+          poll: { options: ['Pizza', 'Sushi'] }
+        })
+      ).json()
+    ).toEqual({ error: 'cannot_post' })
+  })
+
+  it('counts one vote per member, a viewer included, who can change it or take it back', async () => {
+    // Four changes, told to the three members; a vote again for the same
+    // option is no change.
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', ALICE, [
+      'Pizza',
+      'Sushi'
+    ])
+    const send = setUp()
+    const vote = `/spaces/${DESIGN}/feed/posts/${poll}/vote`
+
+    expect((await send('PUT', vote, 'bob', { option: 0 })).statusCode).toBe(204)
+    await send('PUT', vote, 'carol', { option: 0 })
+    await send('PUT', vote, 'bob', { option: 1 })
+    expect((await send('PUT', vote, 'bob', { option: 1 })).statusCode).toBe(204)
+    expect(await pollOf(send, poll)).toEqual({
+      options: [
+        { label: 'Pizza', userIds: [CAROL] },
+        { label: 'Sushi', userIds: [BOB] }
+      ],
+      closedAt: null
+    })
+
+    expect((await send('DELETE', vote, 'bob')).statusCode).toBe(204)
+    expect((await pollOf(send, poll)).options[1]?.userIds).toEqual([])
+    await vi.waitFor(() => {
+      expect(live).toHaveBeenCalledTimes(12)
+    })
+    expect(live).toHaveBeenCalledWith(ALICE, 'feed', {
+      spaceId: DESIGN,
+      itemId: poll,
+      change: 'changed'
+    })
+  })
+
+  it('refuses an option out of range, and a vote on a post with no poll', async () => {
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', ALICE, [
+      'Pizza',
+      'Sushi'
+    ])
+    const post = await aPost('Hello', '2026-10-05T11:00:00Z')
+    const send = setUp()
+
+    const outOfRange = await send(
+      'PUT',
+      `/spaces/${DESIGN}/feed/posts/${poll}/vote`,
+      'bob',
+      { option: 2 }
+    )
+    const notAPoll = await send(
+      'PUT',
+      `/spaces/${DESIGN}/feed/posts/${post}/vote`,
+      'bob',
+      { option: 0 }
+    )
+    const outside = await send(
+      'PUT',
+      `/spaces/${OTHER}/feed/posts/${poll}/vote`,
+      'dan',
+      { option: 0 }
+    )
+
+    expect(outOfRange.statusCode).toBe(400)
+    expect(notAPoll.statusCode).toBe(404)
+    expect(outside.statusCode).toBe(404)
+  })
+
+  it('lets the author close the poll, which then takes no vote', async () => {
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', ALICE, [
+      'Pizza',
+      'Sushi'
+    ])
+    const send = setUp()
+    const close = `/spaces/${DESIGN}/feed/posts/${poll}/close`
+    const vote = `/spaces/${DESIGN}/feed/posts/${poll}/vote`
+    await send('PUT', vote, 'bob', { option: 0 })
+
+    const byAdmin = await send('POST', close, 'carol')
+    const closed = await send('POST', close, 'alice')
+    const again = await send('POST', close, 'alice')
+
+    expect(byAdmin.json()).toEqual({ error: 'not_author' })
+    const { closedAt } = closed.json<{ poll: Poll }>().poll
+    expect(closedAt).toEqual(expect.any(String))
+    expect(again.json<{ poll: Poll }>().poll.closedAt).toBe(closedAt)
+    expect((await send('PUT', vote, 'carol', { option: 1 })).json()).toEqual({
+      error: 'poll_closed'
+    })
+    expect((await send('DELETE', vote, 'bob')).statusCode).toBe(409)
+    expect((await pollOf(send, poll)).options[0]?.userIds).toEqual([BOB])
+  })
+
+  it('answers 404 to closing a post with no poll', async () => {
+    const post = await aPost('Hello', '2026-10-05T10:00:00Z')
+
+    const response = await setUp()(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts/${post}/close`
+    )
+
+    expect(response.statusCode).toBe(404)
+  })
+
+  it('deletes a poll with its votes', async () => {
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', ALICE, [
+      'Pizza',
+      'Sushi'
+    ])
+    const send = setUp()
+    await send('PUT', `/spaces/${DESIGN}/feed/posts/${poll}/vote`, 'bob', {
+      option: 0
+    })
+
+    await send('DELETE', `/spaces/${DESIGN}/feed/posts/${poll}`)
+
+    expect(await testDb.db.select().from(feedPollVotes)).toEqual([])
   })
 })
 
