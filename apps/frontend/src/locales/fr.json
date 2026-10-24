@@ -411,6 +411,32 @@
       "close": "Clore la demande",
       "decideFailed": "Impossible d’enregistrer votre décision."
     },
+    "announcement": {
+      "menu": "Annonce",
+      "title": "Nouvelle annonce",
+      "text": "Annonce",
+      "hint": "Épinglée en haut du fil jusqu’à ce que vous la désépingliez.",
+      "publish": "Annoncer",
+      "label": "Annonce",
+      "pinnedLabel": "Épinglée",
+      "pinned": "Annonces épinglées",
+      "open": "Afficher l’annonce : %{text}",
+      "pin": "Épingler en haut",
+      "unpin": "Désépingler"
+    },
+    "feedback": {
+      "menu": "Demande d’avis",
+      "title": "Demander un avis",
+      "text": "Question",
+      "hint": "Les membres répondent librement. Vous seul lisez les réponses.",
+      "publish": "Demander",
+      "answer": "Votre réponse",
+      "none": "Aucune réponse pour l’instant.",
+      "count": "%{smart_count} réponse |||| %{smart_count} réponses",
+      "closed": "Close",
+      "close": "Clore la demande",
+      "answerFailed": "Impossible d’envoyer votre réponse."
+    },
     "mention": "Mentionner un membre",
     "members": {
       "title": "Membres de l'espace",

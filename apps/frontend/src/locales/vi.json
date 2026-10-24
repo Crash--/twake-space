@@ -411,6 +411,32 @@
       "close": "Đóng yêu cầu",
       "decideFailed": "Không thể lưu quyết định của bạn."
     },
+    "announcement": {
+      "menu": "Thông báo",
+      "title": "Thông báo mới",
+      "text": "Thông báo",
+      "hint": "Được ghim ở đầu bảng tin cho đến khi bạn bỏ ghim.",
+      "publish": "Đăng thông báo",
+      "label": "Thông báo",
+      "pinnedLabel": "Đã ghim",
+      "pinned": "Thông báo đã ghim",
+      "open": "Xem thông báo: %{text}",
+      "pin": "Ghim lên đầu",
+      "unpin": "Bỏ ghim"
+    },
+    "feedback": {
+      "menu": "Góp ý",
+      "title": "Xin góp ý",
+      "text": "Câu hỏi",
+      "hint": "Thành viên trả lời bằng lời của mình. Chỉ bạn đọc được các câu trả lời.",
+      "publish": "Hỏi",
+      "answer": "Câu trả lời của bạn",
+      "none": "Chưa có câu trả lời.",
+      "count": "%{smart_count} câu trả lời",
+      "closed": "Đã đóng",
+      "close": "Đóng yêu cầu",
+      "answerFailed": "Không thể gửi câu trả lời của bạn."
+    },
     "mention": "Nhắc đến một thành viên",
     "members": {
       "title": "Thành viên không gian",

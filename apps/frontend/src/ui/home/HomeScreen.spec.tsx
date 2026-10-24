@@ -211,7 +211,9 @@ describe('HomeScreen', () => {
       body: 'Hello',
       editedAt: null,
       poll: null,
-      approval: null
+      approval: null,
+      announcement: null,
+      feedback: null
     })
 
     it('lists the spaces with news, those with mentions first, each opening the space', async () => {

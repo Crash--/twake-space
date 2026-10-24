@@ -780,7 +780,9 @@ describe('SpaceScreen', () => {
         body: 'The launch plan is ready',
         editedAt: null,
         poll: null,
-        approval: null
+        approval: null,
+        announcement: null,
+        feedback: null
       },
       {
         id: 'card-1',
@@ -860,7 +862,9 @@ describe('SpaceScreen', () => {
         body: i === 0 ? 'The oldest note' : `Note ${String(i)}`,
         editedAt: null,
         poll: null,
-        approval: null
+        approval: null,
+        announcement: null,
+        feedback: null
       }))
       renderAt('/spaces/a1/feed', roadmap, posts)
       await search('oldest')

@@ -15,6 +15,7 @@ import {
   type FeedFilter,
   type FeedItem,
   type FeedPage,
+  type FeedPost,
   type FeedService
 } from '@/application/feed'
 import { isRefusal } from '@/application/spaces'
@@ -34,6 +35,17 @@ export function useFeed(spaceId: string, filter: FeedFilter) {
       }),
     initialPageParam: '',
     getNextPageParam: page => page.next
+  })
+}
+
+// Kept apart from `feedKey`, and kept up by the same live changes.
+const pinnedKey = (spaceId: string): QueryKey => ['feedPinned', spaceId]
+
+export function usePinned(spaceId: string) {
+  const { feed } = useServices()
+  return useQuery({
+    queryKey: pinnedKey(spaceId),
+    queryFn: () => feed.pinned(spaceId)
   })
 }
 
@@ -181,6 +193,19 @@ function putItem(
       queryClient.setQueryData(key, withItem(data, item, filter, isNew))
     }
   }
+  queryClient.setQueryData<FeedPost[]>(
+    pinnedKey(spaceId),
+    pinned =>
+      pinned &&
+      [
+        ...pinned.filter(post => post.id !== item.id),
+        ...(item.kind === 'post' && item.announcement?.pinnedAt ? [item] : [])
+      ].sort((a, b) =>
+        (b.announcement?.pinnedAt ?? '').localeCompare(
+          a.announcement?.pinnedAt ?? ''
+        )
+      )
+  )
 }
 
 function dropItem(
@@ -191,6 +216,9 @@ function dropItem(
   queryClient.setQueriesData<Pages>(
     { queryKey: feedKey(spaceId) },
     data => data && withoutItem(data, itemId)
+  )
+  queryClient.setQueryData<FeedPost[]>(pinnedKey(spaceId), pinned =>
+    pinned?.filter(post => post.id !== itemId)
   )
 }
 

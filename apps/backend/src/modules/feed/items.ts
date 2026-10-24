@@ -7,6 +7,7 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
   or,
   sql,
   type Column
@@ -106,6 +107,8 @@ export type FeedItem =
       editedAt: Date | null
       poll: Poll | null
       approval: Approval | null
+      announcement: { pinnedAt: Date | null } | null
+      feedback: Feedback | null
     })
 
 interface Poll {
@@ -131,6 +134,17 @@ interface Approval {
     comment: string | null
     decidedAt: Date | null
   }[]
+  closedAt: Date | null
+}
+
+// Everyone sees how many answered and their own answer; only the author sees
+// the answers, which are null for anyone else.
+interface Feedback {
+  count: number
+  mine: string | null
+  answers:
+    | { userId: string; name: string | null; text: string; answeredAt: Date }[]
+    | null
   closedAt: Date | null
 }
 
@@ -183,9 +197,10 @@ export async function listItems(
     q?: string
     since?: Date
     limit: number
+    viewer: string | null
   }
 ): Promise<{ items: FeedItem[]; next: string | null }> {
-  const { category, before, q, since, limit } = options
+  const { category, before, q, since, limit, viewer } = options
   const after = (time: Column, id: Column) =>
     before &&
     sql`(${time}, ${id}) < (${before.time.toISOString()}::timestamptz, ${before.id}::uuid)`
@@ -257,7 +272,7 @@ export async function listItems(
     .orderBy(desc(sql`time`), desc(sql`id`))
     .limit(limit + 1)
   const shown = page.slice(0, limit)
-  const items = await loadItems(db, spaceId, shown)
+  const items = await loadItems(db, spaceId, shown, viewer)
   const last = shown.at(-1)
   return {
     items: shown.flatMap(row => items.get(row.id) ?? []),
@@ -271,19 +286,42 @@ export async function listItems(
 export async function findItem(
   db: Db | Tx,
   spaceId: string,
-  itemId: string
+  itemId: string,
+  viewer: string | null
 ): Promise<FeedItem | undefined> {
-  const items = await loadItems(db, spaceId, [
-    { kind: 'card', id: itemId },
-    { kind: 'post', id: itemId }
-  ])
+  const items = await loadItems(
+    db,
+    spaceId,
+    [
+      { kind: 'card', id: itemId },
+      { kind: 'post', id: itemId }
+    ],
+    viewer
+  )
   return items.get(itemId)
 }
 
+export async function pinnedItems(
+  db: Db,
+  spaceId: string,
+  viewer: string | null
+): Promise<FeedItem[]> {
+  const pinned = await db
+    .select({ id: feedPosts.id })
+    .from(feedPosts)
+    .where(and(eq(feedPosts.spaceId, spaceId), isNotNull(feedPosts.pinnedAt)))
+    .orderBy(desc(feedPosts.pinnedAt), desc(feedPosts.id))
+  const rows = pinned.map(({ id }) => ({ kind: 'post' as const, id }))
+  const items = await loadItems(db, spaceId, rows, viewer)
+  return pinned.flatMap(({ id }) => items.get(id) ?? [])
+}
+
+// The viewer is the person reading: a token reads for its account.
 async function loadItems(
   db: Db | Tx,
   spaceId: string,
-  rows: { kind: 'card' | 'post'; id: string }[]
+  rows: { kind: 'card' | 'post'; id: string }[],
+  viewer: string | null
 ): Promise<Map<string, FeedItem>> {
   const cardIds = rows.filter(r => r.kind === 'card').map(r => r.id)
   const postIds = rows.filter(r => r.kind === 'post').map(r => r.id)
@@ -356,9 +394,13 @@ async function loadItems(
           .where(inArray(feedPollVotes.postId, postIds))
           .orderBy(asc(feedPollVotes.createdAt), asc(feedPollVotes.userId))
   ])
+  const asked = (post: (typeof posts)[number]['post']) =>
+    post.kind === 'feedback' && viewer !== null && post.authorId === viewer
+  const askedIds = new Set(posts.filter(p => asked(p.post)).map(p => p.post.id))
   const userIds = [
     ...cards.map(c => (c.actor?.type === 'user' ? c.actor.id : null)),
-    ...posts.flatMap(p => [p.post.authorId, ...(p.post.approverIds ?? [])])
+    ...posts.flatMap(p => [p.post.authorId, ...(p.post.approverIds ?? [])]),
+    ...votes.filter(v => askedIds.has(v.postId)).map(v => v.userId)
   ].filter(id => id !== null)
   const names = await memberNames(db, spaceId, userIds)
   const named = (actor: Actor | null): NamedActor | null => {
@@ -449,6 +491,23 @@ async function loadItems(
       closedAt: post.pollClosedAt
     }
   }
+  const feedbackOf = (post: Post): Feedback | null => {
+    if (post.kind !== 'feedback') return null
+    const answers = votesOf.get(post.id) ?? []
+    return {
+      count: answers.length,
+      mine: answers.find(a => a.userId === viewer)?.comment ?? null,
+      answers: asked(post)
+        ? answers.map(a => ({
+            userId: a.userId,
+            name: names.get(a.userId) ?? null,
+            text: a.comment ?? '',
+            answeredAt: a.createdAt
+          }))
+        : null,
+      closedAt: post.pollClosedAt
+    }
+  }
   for (const { post, tokenName } of posts) {
     items.set(post.id, {
       id: post.id,
@@ -470,6 +529,9 @@ async function loadItems(
       editedAt: post.editedAt,
       poll: pollOf(post),
       approval: approvalOf(post),
+      announcement:
+        post.kind === 'announcement' ? { pinnedAt: post.pinnedAt } : null,
+      feedback: feedbackOf(post),
       reactions: reactionsOf(post.id)
     })
   }

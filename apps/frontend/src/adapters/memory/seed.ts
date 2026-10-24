@@ -335,7 +335,9 @@ function roadmapFeed(): FeedItem[] {
           body: `Update ${String(i)}: the release notes are ready for review.`,
           editedAt: null,
           poll: null,
-          approval: null
+          approval: null,
+          announcement: null,
+          feedback: null
         }
     }
   })
@@ -610,6 +612,8 @@ export function showcaseFeed(now: number): FeedItem[] {
       poll: null,
       approval: null,
       reactions: [],
+      announcement: null,
+      feedback: null,
       time: '',
       updatedAt: ''
     },
@@ -627,6 +631,8 @@ export function showcaseFeed(now: number): FeedItem[] {
         { key: '🎉', userIds: ['uuid-dave'] },
         { key: '👀', userIds: ['uuid-alice'] }
       ],
+      announcement: null,
+      feedback: null,
       time: '',
       updatedAt: ''
     },
@@ -640,6 +646,8 @@ export function showcaseFeed(now: number): FeedItem[] {
       poll: null,
       approval: null,
       reactions: [],
+      announcement: null,
+      feedback: null,
       time: '',
       updatedAt: ''
     },
@@ -661,6 +669,8 @@ export function showcaseFeed(now: number): FeedItem[] {
       },
       approval: null,
       reactions: [],
+      announcement: null,
+      feedback: null,
       time: '',
       updatedAt: ''
     },
@@ -681,6 +691,8 @@ export function showcaseFeed(now: number): FeedItem[] {
       },
       approval: null,
       reactions: [],
+      announcement: null,
+      feedback: null,
       time: '',
       updatedAt: ''
     },
@@ -713,6 +725,71 @@ export function showcaseFeed(now: number): FeedItem[] {
         closedAt: null
       },
       reactions: [],
+      announcement: null,
+      feedback: null,
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-announcement',
+      kind: 'post',
+      category: 'messages',
+      author: person('carol'),
+      body: 'The office is closed on Friday 31 October. Enjoy the long weekend!',
+      editedAt: null,
+      poll: null,
+      approval: null,
+      announcement: { pinnedAt: iso(now - 30 * MINUTE) },
+      feedback: null,
+      reactions: [{ key: '🎉', userIds: ['uuid-bob', 'uuid-dave'] }],
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-feedback',
+      kind: 'post',
+      category: 'messages',
+      author: person('bob'),
+      body: 'What should we change in the sprint review?',
+      editedAt: null,
+      poll: null,
+      approval: null,
+      announcement: null,
+      feedback: { count: 2, mine: null, answers: null, closedAt: null },
+      reactions: [],
+      time: '',
+      updatedAt: ''
+    },
+    {
+      id: 'post-feedback-mine',
+      kind: 'post',
+      category: 'messages',
+      author: person('alice'),
+      body: 'How did the new onboarding feel?',
+      editedAt: null,
+      poll: null,
+      approval: null,
+      announcement: null,
+      feedback: {
+        count: 2,
+        mine: null,
+        answers: [
+          {
+            userId: 'uuid-bob',
+            name: 'Bob Durand',
+            text: 'Smooth, but the second step asks for too much at once.',
+            answeredAt: iso(now - 20 * MINUTE)
+          },
+          {
+            userId: 'uuid-dave',
+            name: 'Dave Moreau',
+            text: 'Loved the checklist.',
+            answeredAt: iso(now - 8 * MINUTE)
+          }
+        ],
+        closedAt: null
+      },
+      reactions: [],
       time: '',
       updatedAt: ''
     }
@@ -723,10 +800,13 @@ export function showcaseFeed(now: number): FeedItem[] {
     posts[0],
     ...items.slice(6, 18),
     posts[1],
+    posts[6],
     ...items.slice(18),
     posts[3],
     posts[4],
     posts[5],
+    posts[7],
+    posts[8],
     posts[2]
   ].filter((item): item is FeedItem => item !== undefined)
   return all.map((item, i) => {

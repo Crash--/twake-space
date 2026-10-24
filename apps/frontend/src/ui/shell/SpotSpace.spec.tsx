@@ -108,7 +108,9 @@ describe('SpotSpace', () => {
       body: 'The plan is ready',
       editedAt: null,
       poll: null,
-      approval: null
+      approval: null,
+      announcement: null,
+      feedback: null
     }
     const card: FeedItem = {
       id: 'card-1',

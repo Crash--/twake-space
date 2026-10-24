@@ -25,7 +25,9 @@ const post: FeedItem = {
   body: 'Hello',
   editedAt: null,
   poll: null,
-  approval: null
+  approval: null,
+  announcement: null,
+  feedback: null
 }
 
 function requested(): Request {
@@ -78,6 +80,19 @@ describe('httpFeed', () => {
     fetchMock.mockResolvedValue(Response.json(post, { status: 201 }))
 
     await expect(feed.post('a1', 'Hello', [])).resolves.toEqual(post)
+  })
+
+  it('reads the pinned announcements', async () => {
+    fetchMock.mockResolvedValue(Response.json({ items: [post] }))
+    await expect(feed.pinned('a1')).resolves.toEqual([post])
+    expect(requested().url).toBe('https://api.test/spaces/a1/feed/pinned')
+  })
+
+  it('answers an unpinned announcement with the item', async () => {
+    fetchMock.mockResolvedValue(Response.json(post))
+    await expect(feed.pin('a1', 'p1', false)).resolves.toEqual(post)
+    expect(requested().method).toBe('DELETE')
+    expect(requested().url).toBe('https://api.test/spaces/a1/feed/posts/p1/pin')
   })
 
   it("reads a link's preview", async () => {
@@ -156,6 +171,12 @@ describe('httpFeed', () => {
       method: 'DELETE',
       path: 'spaces/a1/feed/posts/p1/vote',
       body: null
+    },
+    {
+      write: () => feed.answer('a1', 'p1', 'Great'),
+      method: 'PUT',
+      path: 'spaces/a1/feed/posts/p1/answer',
+      body: { text: 'Great' }
     },
     {
       write: () => feed.closePoll('a1', 'p1'),

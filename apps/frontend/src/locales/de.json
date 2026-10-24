@@ -411,6 +411,32 @@
       "close": "Anfrage schließen",
       "decideFailed": "Ihre Entscheidung konnte nicht gespeichert werden."
     },
+    "announcement": {
+      "menu": "Ankündigung",
+      "title": "Neue Ankündigung",
+      "text": "Ankündigung",
+      "hint": "Bleibt oben im Feed angeheftet, bis Sie sie lösen.",
+      "publish": "Ankündigen",
+      "label": "Ankündigung",
+      "pinnedLabel": "Angeheftet",
+      "pinned": "Angeheftete Ankündigungen",
+      "open": "Ankündigung anzeigen: %{text}",
+      "pin": "Oben anheften",
+      "unpin": "Lösen"
+    },
+    "feedback": {
+      "menu": "Feedback",
+      "title": "Um Feedback bitten",
+      "text": "Frage",
+      "hint": "Mitglieder antworten in eigenen Worten. Nur Sie lesen die Antworten.",
+      "publish": "Fragen",
+      "answer": "Ihre Antwort",
+      "none": "Noch keine Antworten.",
+      "count": "%{smart_count} Antwort |||| %{smart_count} Antworten",
+      "closed": "Geschlossen",
+      "close": "Anfrage schließen",
+      "answerFailed": "Ihre Antwort konnte nicht gesendet werden."
+    },
     "mention": "Mitglied erwähnen",
     "members": {
       "title": "Mitglieder des Bereichs",

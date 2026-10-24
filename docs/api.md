@@ -304,17 +304,19 @@ For the user's assistant (Twake Harness), through an API token of a technical ac
 
 ## Feed
 
-A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post, react, vote on polls and yes/no questions, and decide on the approval requests asked of them. A poll, a yes/no question or an approval request is a post whose body is the question.
+A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post, react, vote on polls and yes/no questions, decide on the approval requests asked of them and answer feedback requests. A poll, a yes/no question, an approval or a feedback request is a post whose body is the question. An announcement is a post pinned at the top of the feed until its author unpins it.
 
-`GET /spaces/:spaceId/feed` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes but the vote and decision ones holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
+`GET /spaces/:spaceId/feed`, `GET /spaces/:spaceId/feed/pinned` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes but the vote, decision and answer ones holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
 
 A feed item:
 
 - `id`, `kind` (`card` or `post`), `category` (`messages`, `files`, `activities` or `events`; a post is a message), `time`, `updatedAt`, and `reactions`, a list of `{key, userIds}` in the order they were first added.
 - A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`), `state` (an object the app sends, such as a calendar event's time) and `files` (`{created, updated, deleted, samples}` for a Drive folder digest, or `null`). `time` is the object's first event, so the card keeps its place, except for a folder digest, whose `time` is its latest window; everything else comes from its latest event.
-- A post adds `author`, `body` (plain text), `editedAt` (`null` until edited), `poll` and `approval` (each `null` unless the post is one).
+- A post adds `author`, `body` (plain text), `editedAt` (`null` until edited), `poll`, `approval`, `announcement` and `feedback` (each `null` unless the post is one).
 - A poll is `{kind, options, closedAt}`. `kind` is `choice`, or `yes_no` for a yes/no question, whose options are labelled `yes` and `no` for the reader's language. `options` lists `{label, userIds}` in the order they were given, `userIds` being the members who chose it in the order they voted, and `closedAt` is `null` while it is open.
 - An approval request is `{state, approvers, closedAt}`. `approvers` lists `{id, name, decision, comment, decidedAt}` in the order the author picked them, `decision` being `approved`, `rejected`, or `null` until they decide. `state` is `rejected` once one approver rejects, `approved` once they all approve, `pending` otherwise. An approver who left the space without deciding (`name` is `null`) no longer counts.
+- An announcement is `{pinnedAt}`, `null` once unpinned.
+- A feedback request is `{count, mine, answers, closedAt}`. `count` is how many members answered, `mine` the caller's own answer or `null`. `answers` lists `{userId, name, text, answeredAt}`, oldest first, for the author only: it is `null` for anyone else, the author's own tokens included.
 - An actor or author is `{type: "user", id, name}`, `{type: "token", id, name}`, or `{type: "deleted_user"}`. For a user, `id` is `null` when the app named them by email only and no member has it, and `name` is the member's display name or username, or `null` when they are not a member of the space.
 
 ```json
@@ -350,6 +352,10 @@ A feed item:
 
 Answers one item.
 
+### GET /spaces/:spaceId/feed/pinned
+
+Answers `{"items": [...]}`, the pinned announcements, latest pinned first. They also stay in the feed at their `time`.
+
 ### GET /spaces/:spaceId/feed/read
 
 Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has seen in the feed, or `null` before their first visit.
@@ -373,7 +379,7 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 
 ### POST /spaces/:spaceId/feed/posts
 
-- Body: `{"body": "...", "mentions": ["<user uuid>"]}`. `body` is 1 to 4000 characters once trimmed. `mentions` is optional, up to 50 member ids. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed. A yes/no question adds `"poll": {"kind": "yes_no"}`, with no options. An approval request adds `"approval": {"approvers": ["<user uuid>"]}`: 1 to 20 different members of the space other than the author, otherwise `400 {"error":"invalid_approvers"}`. A post is one of these at most.
+- Body: `{"body": "...", "mentions": ["<user uuid>"]}`. `body` is 1 to 4000 characters once trimmed. `mentions` is optional, up to 50 member ids. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed. A yes/no question adds `"poll": {"kind": "yes_no"}`, with no options. An approval request adds `"approval": {"approvers": ["<user uuid>"]}`: 1 to 20 different members of the space other than the author, otherwise `400 {"error":"invalid_approvers"}`. An announcement adds `"announcement": true` and is pinned. A feedback request adds `"feedback": true`; its answers go to a person, so a token cannot ask for one: `403 {"error":"cannot_ask_feedback"}`. A post is one of these at most.
 - Each approver gets an `approval_request` notification, and the request is published on `activity` ([Events](events.md#approval-requests)). An organization token speaks for no person, so its request answers `403 {"error":"cannot_request_approval"}`.
 - Each mentioned member of the space other than the author gets a `card_mention` notification, and the mention is published on `activity` ([Events](events.md#mentions-in-posts)). An id that is no member of the space is left out.
 - Editors and admins only, otherwise `403 {"error":"cannot_post"}`. An account token posts with its account's role, an organization token with its own.
@@ -382,7 +388,7 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 
 ### PATCH /spaces/:spaceId/feed/posts/:itemId
 
-- Body: `{"body": "...", "mentions": [...]}`, as for a new post without the poll or the approval. Answers the post. A poll keeps its options and votes. An approval request cannot be edited, the approvers decide on its text: `409 {"error":"cannot_edit_approval"}`.
+- Body: `{"body": "...", "mentions": [...]}`, as for a new post without the poll or the approval. Answers the post. A poll keeps its options and votes. An approval request cannot be edited, the approvers decide on its text: `409 {"error":"cannot_edit_approval"}`. Neither can a feedback request, the members answer its question: `409 {"error":"cannot_edit_feedback"}`.
 - Only the members the post did not mention before are notified and published.
 - Its author only, otherwise `403 {"error":"not_author"}`. A token's post belongs to that token, and to the person of its account, from a session, even once the token is revoked.
 
@@ -402,7 +408,7 @@ Takes the caller's vote back. Answers `204`, `404 {"error":"not_found"}` on a po
 
 ### POST /spaces/:spaceId/feed/posts/:itemId/close
 
-- Closes the poll or the approval request: its votes or decisions stay, and it takes no more. Closing it again keeps the first `closedAt`.
+- Closes the poll, the approval or the feedback request: its votes, decisions or answers stay, and it takes no more. Closing it again keeps the first `closedAt`.
 - Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. `404 {"error":"not_found"}` when the author's post is neither.
 - Answers the post.
 
@@ -411,6 +417,18 @@ Takes the caller's vote back. Answers `204`, `404 {"error":"not_found"}` on a po
 - Body: `{"decision": "approved", "comment": "..."}`. `decision` is `approved` or `rejected`. `comment` is optional, up to 1000 characters once trimmed, and an empty one counts as none.
 - One of the request's approvers, from a session only, otherwise `403 {"error":"not_approver"}`. An approver decides once: `409 {"error":"already_decided"}` after that. Answers `204`.
 - `404 {"error":"not_found"}` on a post that is no approval request, `409 {"error":"poll_closed"}` once it is closed.
+
+### PUT /spaces/:spaceId/feed/posts/:itemId/answer
+
+- Body: `{"text": "..."}`, 1 to 2000 characters once trimmed.
+- Any member but the author, viewers included, from a session only. Answering again replaces the answer. Answers `204`, or `403 {"error":"cannot_answer_own"}` for the author.
+- `404 {"error":"not_found"}` on a post that is no feedback request, `409 {"error":"poll_closed"}` once it is closed.
+
+### PUT /spaces/:spaceId/feed/posts/:itemId/pin
+
+- Pins the announcement back at the top of the feed; a pinned one keeps its place. `DELETE` unpins it.
+- Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. `404 {"error":"not_found"}` when the author's post is no announcement.
+- Answers the post.
 
 ### PUT /spaces/:spaceId/feed/items/:itemId/reactions/:key
 
@@ -460,7 +478,7 @@ The events carry no state; they tell the client what to reload.
   - the removed members, when members are removed;
   - every member and the organization's owners and admins, when the space is archived, moved to the Bin or restored;
   - the former members, when the space is deleted, and the organization's owners and admins too when it is deleted from the Bin.
-- `feed` with data `{"spaceId":"<uuid>","itemId":"<uuid>","change":"added"}`, sent to every member when a feed item is `added`, `changed` (a later event, an edit, a reaction, a vote, a closed poll) or `removed`. The client reads an added or changed item with `GET /spaces/:spaceId/feed/items/:itemId`.
+- `feed` with data `{"spaceId":"<uuid>","itemId":"<uuid>","change":"added"}`, sent to every member when a feed item is `added`, `changed` (a later event, an edit, a reaction, a vote, an answer, a closed poll, a pin) or `removed`. The client reads an added or changed item with `GET /spaces/:spaceId/feed/items/:itemId`.
 
 ```
 event: spaces

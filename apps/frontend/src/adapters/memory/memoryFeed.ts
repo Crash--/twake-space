@@ -17,8 +17,8 @@ const refuse = (status: number, code: string) =>
 const newestFirst = (a: FeedItem, b: FeedItem) => b.time.localeCompare(a.time)
 
 // Writes behave like the backend's: viewers cannot post, only the author edits
-// or deletes a post or closes its poll, a closed poll takes no vote, and an
-// approver decides once. Nothing arrives live.
+// or deletes a post, closes its poll or pins it, a closed poll takes no vote,
+// and an approver decides once. Nothing arrives live.
 export function memoryFeed(
   seed: Record<string, FeedItem[]>,
   {
@@ -116,6 +116,19 @@ export function memoryFeed(
         ? Promise.resolve(structuredClone(item))
         : refuse(404, 'not_found')
     },
+    pinned: spaceId =>
+      Promise.resolve(
+        structuredClone(
+          itemsOf(spaceId)
+            .filter(item => item.kind === 'post')
+            .filter(post => post.announcement?.pinnedAt)
+            .sort((a, b) =>
+              (b.announcement?.pinnedAt ?? '').localeCompare(
+                a.announcement?.pinnedAt ?? ''
+              )
+            )
+        )
+      ),
     post: (spaceId, body, _mentions, ask) => {
       if (roles[spaceId] === 'viewer') return refuse(403, 'cannot_post')
       const time = new Date().toISOString()
@@ -162,6 +175,11 @@ export function memoryFeed(
                 })),
                 closedAt: null
               }
+            : null,
+        announcement: ask && 'announcement' in ask ? { pinnedAt: time } : null,
+        feedback:
+          ask && 'feedback' in ask
+            ? { count: 0, mine: null, answers: [], closedAt: null }
             : null
       }
       itemsOf(spaceId).push(post)
@@ -192,10 +210,36 @@ export function memoryFeed(
     },
     closePoll: async (spaceId, postId) => {
       const post = await myPost(spaceId, postId)
-      const closing = post.poll ?? post.approval
+      const closing = post.poll ?? post.approval ?? post.feedback
       if (!closing) return refuse(404, 'not_found')
       closing.closedAt ??= new Date().toISOString()
       return structuredClone(post)
+    },
+    pin: async (spaceId, postId, pinned) => {
+      const post = await myPost(spaceId, postId)
+      if (!post.announcement) return refuse(404, 'not_found')
+      post.announcement.pinnedAt = pinned
+        ? (post.announcement.pinnedAt ?? new Date().toISOString())
+        : null
+      return structuredClone(post)
+    },
+    answer: (spaceId, postId, text) => {
+      const post = find(spaceId, postId)
+      const feedback = post?.kind === 'post' ? post.feedback : null
+      if (!feedback) return refuse(404, 'not_found')
+      if (feedback.closedAt) return refuse(409, 'poll_closed')
+      if (!feedback.mine) feedback.count += 1
+      feedback.mine = text.trim()
+      feedback.answers = feedback.answers && [
+        ...feedback.answers.filter(a => a.userId !== me.id),
+        {
+          userId: me.id,
+          name: me.name,
+          text: feedback.mine,
+          answeredAt: new Date().toISOString()
+        }
+      ]
+      return Promise.resolve()
     },
     decide: (spaceId, postId, decision, comment) => {
       const post = find(spaceId, postId)

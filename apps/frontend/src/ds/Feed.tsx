@@ -5,6 +5,7 @@ import {
   CrossCircle,
   Down,
   Icon,
+  Pin,
   Send,
   type IconProps
 } from '@linagora/twake-icons'
@@ -13,6 +14,7 @@ import {
   Badge,
   Box,
   Button,
+  ButtonBase,
   Checkbox,
   IconButton,
   InputBase,
@@ -45,6 +47,7 @@ import {
 import {
   AddCircleIcon,
   AddReactionIcon,
+  CampaignIcon,
   ChevronDownIcon,
   EmojiIcon,
   MoreVertIcon,
@@ -72,6 +75,7 @@ const RevealContext = createContext<(row: HTMLElement) => void>(() => undefined)
 // still while rows come in above or below.
 export function FeedLayout({
   toolbar,
+  pinned,
   children,
   composer,
   placeKey,
@@ -80,6 +84,8 @@ export function FeedLayout({
   onNearTop
 }: {
   toolbar: ReactNode
+  /** Held over the list, out of its scroll. */
+  pinned?: ReactNode
   children: ReactNode
   composer: ReactNode
   placeKey: string | null
@@ -197,6 +203,7 @@ export function FeedLayout({
         minHeight: 0
       }}
     >
+      {pinned}
       <Box
         sx={{
           position: 'relative',
@@ -1646,22 +1653,7 @@ export function FeedApproval({
               >
                 {approver.status}
               </Typography>
-              {approver.comment && (
-                <Typography
-                  variant="body2"
-                  sx={{
-                    mt: 0.5,
-                    pl: 1,
-                    borderLeft: 2,
-                    borderColor: 'border.main',
-                    color: 'text.secondary',
-                    overflowWrap: 'anywhere',
-                    whiteSpace: 'pre-wrap'
-                  }}
-                >
-                  {approver.comment}
-                </Typography>
-              )}
+              {approver.comment && <Quote>{approver.comment}</Quote>}
             </Box>
           </Box>
         ))}
@@ -1720,6 +1712,320 @@ export function FeedApproval({
           </Button>
         )}
       </Box>
+    </Box>
+  )
+}
+
+function Quote({ children }: { children: string }): ReactElement {
+  return (
+    <Typography
+      variant="body2"
+      sx={{
+        mt: 0.5,
+        pl: 1,
+        borderLeft: 2,
+        borderColor: 'border.main',
+        color: 'text.secondary',
+        overflowWrap: 'anywhere',
+        whiteSpace: 'pre-wrap'
+      }}
+    >
+      {children}
+    </Typography>
+  )
+}
+
+/**
+ * A feedback request: the author reads the answers, a member writes theirs
+ * and can change it while the request is open.
+ */
+export function FeedFeedback({
+  question,
+  answers,
+  emptyLabel,
+  mine,
+  answer,
+  summary,
+  close
+}: {
+  question: string
+  /** For the author only. */
+  answers:
+    { id: string; name: string; avatar: string | null; text: string }[] | null
+  emptyLabel: string
+  mine: { label: string; text: string } | null
+  /** For a member while the request is open. */
+  answer: {
+    label: string
+    sendLabel: string
+    editLabel: string
+    maxLength: number
+    disabled: boolean
+    onAnswer: (text: string) => void
+  } | null
+  summary: string
+  close: { label: string; onClick: () => void } | null
+}): ReactElement {
+  const [text, setText] = useState('')
+  const [editing, setEditing] = useState(false)
+  const writing = answer !== null && (mine === null || editing)
+  return (
+    <Box
+      role="group"
+      aria-label={question}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+        width: 400,
+        maxWidth: '100%',
+        py: 0.5
+      }}
+    >
+      <FeedTitle large>{question}</FeedTitle>
+      {answers &&
+        (answers.length === 0 ? (
+          <Typography variant="body2" color="textSecondary">
+            {emptyLabel}
+          </Typography>
+        ) : (
+          <Box
+            component="ul"
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1.5,
+              m: 0,
+              p: 0,
+              listStyle: 'none'
+            }}
+          >
+            {answers.map(item => (
+              <Box
+                component="li"
+                key={item.id}
+                sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}
+              >
+                <NameAvatar name={item.name} size="m" src={item.avatar} />
+                <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {item.name}
+                  </Typography>
+                  <Quote>{item.text}</Quote>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        ))}
+      {mine && !writing && (
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="caption"
+              color="textSecondary"
+              sx={{ flex: '1 1 auto', letterSpacing: 0.4 }}
+            >
+              {mine.label}
+            </Typography>
+            {answer && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => {
+                  setText(mine.text)
+                  setEditing(true)
+                }}
+              >
+                {answer.editLabel}
+              </Button>
+            )}
+          </Box>
+          <Quote>{mine.text}</Quote>
+        </Box>
+      )}
+      {writing && (
+        <Box
+          component="form"
+          sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+          onSubmit={event => {
+            event.preventDefault()
+            if (!text.trim()) return
+            answer.onAnswer(text.trim())
+            setEditing(false)
+          }}
+        >
+          <TextField
+            size="small"
+            fullWidth
+            multiline
+            minRows={2}
+            maxRows={6}
+            label={answer.label}
+            value={text}
+            slotProps={{ htmlInput: { maxLength: answer.maxLength } }}
+            onChange={event => {
+              setText(event.target.value)
+            }}
+          />
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={answer.disabled || !text.trim()}
+              startIcon={<Icon icon={Send} size={16} />}
+              sx={{ borderRadius: '50px' }}
+            >
+              {answer.sendLabel}
+            </Button>
+          </Box>
+        </Box>
+      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography
+          variant="caption"
+          color="textSecondary"
+          sx={{ flex: '1 1 auto', fontWeight: 500, letterSpacing: 0.4 }}
+        >
+          {summary}
+        </Typography>
+        {close && (
+          <Button size="small" color="inherit" onClick={close.onClick}>
+            {close.label}
+          </Button>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
+/** An announcement's text, set apart in the bubble. */
+export function FeedAnnouncement({
+  label,
+  children
+}: {
+  label: string
+  children: ReactNode
+}): ReactElement {
+  return (
+    <Box
+      sx={theme => ({
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0.5,
+        my: 0.5,
+        px: 1.5,
+        py: 1,
+        borderRadius: '12px',
+        borderLeft: 3,
+        borderColor: 'primary.main',
+        bgcolor: theme.alpha(theme.vars.palette.primary.main, 0.08)
+      })}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          color: 'primary.main'
+        }}
+      >
+        <Icon icon={CampaignIcon} size={18} />
+        <Typography
+          variant="caption"
+          sx={{ fontWeight: 600, letterSpacing: 0.4 }}
+        >
+          {label}
+        </Typography>
+      </Box>
+      {children}
+    </Box>
+  )
+}
+
+/** The pinned announcements over the feed, each opening its place in it. */
+export function FeedPinned({
+  label,
+  items
+}: {
+  label: string
+  items: {
+    id: string
+    author: string
+    text: string
+    openLabel: string
+    onOpen: () => void
+    unpin: { label: string; onClick: () => void } | null
+  }[]
+}): ReactElement | null {
+  if (items.length === 0) return null
+  return (
+    <Box
+      component="section"
+      aria-label={label}
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0,
+        gap: 0.5,
+        maxHeight: 136,
+        overflowY: 'auto',
+        maxWidth: BUBBLE_WIDTH + 44,
+        pt: 1
+      }}
+    >
+      {items.map(item => (
+        <Box
+          key={item.id}
+          sx={theme => ({
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            minHeight: 40,
+            pl: 1.5,
+            pr: 0.5,
+            borderRadius: '12px',
+            borderLeft: 3,
+            borderColor: 'primary.main',
+            bgcolor: theme.alpha(theme.vars.palette.primary.main, 0.08)
+          })}
+        >
+          <Box sx={{ display: 'flex', color: 'primary.main' }}>
+            <Icon icon={Pin} size={16} />
+          </Box>
+          <ButtonBase
+            aria-label={item.openLabel}
+            onClick={item.onOpen}
+            sx={{
+              flex: '1 1 auto',
+              minWidth: 0,
+              alignSelf: 'stretch',
+              justifyContent: 'flex-start',
+              px: 0.5,
+              borderRadius: 1,
+              textAlign: 'start'
+            }}
+          >
+            <Typography variant="body2" noWrap>
+              <Box component="span" sx={{ fontWeight: 600 }}>
+                {item.author}
+              </Box>{' '}
+              {item.text}
+            </Typography>
+          </ButtonBase>
+          {item.unpin && (
+            <Tooltip title={item.unpin.label}>
+              <IconButton
+                size="small"
+                aria-label={item.unpin.label}
+                onClick={item.unpin.onClick}
+                sx={{ color: 'text.secondary' }}
+              >
+                <Icon icon={Cross} size={16} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      ))}
     </Box>
   )
 }

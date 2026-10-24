@@ -67,7 +67,9 @@ const message = (minute: number): FeedItem => ({
   body: `Message ${String(minute)}`,
   editedAt: null,
   poll: null,
-  approval: null
+  approval: null,
+  announcement: null,
+  feedback: null
 })
 
 const file: FeedItem = {
@@ -268,6 +270,37 @@ describe('memoryFeed', () => {
     await expect(
       feedFor('viewer').post('roadmap', 'Hi', [])
     ).rejects.toMatchObject({ status: 403, code: 'cannot_post' })
+  })
+
+  it('pins an announcement until its author unpins it', async () => {
+    const feed = feedFor('admin')
+    const post = await feed.post('roadmap', 'Closed Friday', [], {
+      announcement: true
+    })
+    expect((await feed.pinned('roadmap')).map(item => item.id)).toEqual([
+      post.id
+    ])
+
+    await feed.pin('roadmap', post.id, false)
+    expect(await feed.pinned('roadmap')).toEqual([])
+  })
+
+  it('counts each member’s feedback once, and keeps their last answer', async () => {
+    const feed = feedFor('admin')
+    const post = await feed.post('roadmap', 'How was it?', [], {
+      feedback: true
+    })
+
+    await feed.answer('roadmap', post.id, 'Good')
+    await feed.answer('roadmap', post.id, 'Great')
+
+    expect(await feed.item('roadmap', post.id)).toMatchObject({
+      feedback: {
+        count: 1,
+        mine: 'Great',
+        answers: [{ userId: 'u-bob', text: 'Great' }]
+      }
+    })
   })
 })
 

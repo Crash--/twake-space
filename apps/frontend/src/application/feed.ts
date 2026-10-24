@@ -65,12 +65,35 @@ export interface FileCounts {
 export interface FeedPost extends ItemBase {
   kind: 'post'
   author: Actor
-  /** On a poll, a yes/no question or an approval request, its question. */
+  /** On a poll, a yes/no question, an approval or a feedback request, its
+   * question. */
   body: string
   editedAt: string | null
   poll: Poll | null
   approval: Approval | null
+  /** Pinned at the top of the feed until its author unpins it. */
+  announcement: { pinnedAt: string | null } | null
+  feedback: Feedback | null
 }
+
+/** Everyone sees the count and their own answer; only the author, the answers. */
+export interface Feedback {
+  count: number
+  mine: string | null
+  /** Oldest first; null for anyone but the author. */
+  answers: FeedbackAnswer[] | null
+  closedAt: string | null
+}
+
+export interface FeedbackAnswer {
+  userId: string
+  /** Null once they left the space. */
+  name: string | null
+  text: string
+  answeredAt: string
+}
+
+export const FEEDBACK_ANSWER = { max: 2000 }
 
 /** One choice per member. A yes/no question's labels are `yes` and `no`. */
 export interface Poll {
@@ -105,6 +128,8 @@ export type PostAsk =
   | { poll: { options: string[] } }
   | { poll: { kind: 'yes_no' } }
   | { approval: { approvers: string[] } }
+  | { announcement: true }
+  | { feedback: true }
 
 export interface PollOption {
   label: string
@@ -141,6 +166,8 @@ export interface FeedService {
     }
   ) => Promise<FeedPage>
   item: (spaceId: string, itemId: string) => Promise<FeedItem>
+  /** The pinned announcements, latest pinned first; they stay in `list` too. */
+  pinned: (spaceId: string) => Promise<FeedPost[]>
   /** The time of the newest item the user has seen, null before a first visit. */
   readAt: (spaceId: string) => Promise<string | null>
   /** Keeps the later of the stored time and this one. */
@@ -170,8 +197,12 @@ export interface FeedService {
    * closed poll refuses it with `poll_closed`. */
   vote: (spaceId: string, postId: string, option: number) => Promise<void>
   unvote: (spaceId: string, postId: string) => Promise<void>
-  /** Its author only, for a poll or an approval request. */
+  /** Its author only, for a poll, an approval or a feedback request. */
   closePoll: (spaceId: string, postId: string) => Promise<FeedItem>
+  /** Its author only, for an announcement. */
+  pin: (spaceId: string, postId: string, pinned: boolean) => Promise<FeedItem>
+  /** Replaces the user's answer; `poll_closed` once the request is closed. */
+  answer: (spaceId: string, postId: string, text: string) => Promise<void>
   /**
    * Once per approver: `already_decided` after that, `not_approver` for
    * anyone else, `poll_closed` once the request is closed.

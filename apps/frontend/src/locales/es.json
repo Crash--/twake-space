@@ -411,6 +411,32 @@
       "close": "Cerrar la solicitud",
       "decideFailed": "No se pudo guardar tu decisión."
     },
+    "announcement": {
+      "menu": "Anuncio",
+      "title": "Nuevo anuncio",
+      "text": "Anuncio",
+      "hint": "Queda fijado arriba del feed hasta que lo desfijes.",
+      "publish": "Anunciar",
+      "label": "Anuncio",
+      "pinnedLabel": "Fijado",
+      "pinned": "Anuncios fijados",
+      "open": "Ver el anuncio: %{text}",
+      "pin": "Fijar arriba",
+      "unpin": "Desfijar"
+    },
+    "feedback": {
+      "menu": "Opiniones",
+      "title": "Pedir opiniones",
+      "text": "Pregunta",
+      "hint": "Los miembros responden con sus palabras. Solo tú lees las respuestas.",
+      "publish": "Preguntar",
+      "answer": "Tu respuesta",
+      "none": "Aún no hay respuestas.",
+      "count": "%{smart_count} respuesta |||| %{smart_count} respuestas",
+      "closed": "Cerrada",
+      "close": "Cerrar la solicitud",
+      "answerFailed": "No se pudo enviar tu respuesta."
+    },
     "mention": "Mencionar a un miembro",
     "members": {
       "title": "Miembros del espacio",

@@ -2,8 +2,10 @@ import {
   Calendar,
   CheckCircle,
   CheckList,
+  Comment,
   Icon,
   Copy,
+  Pin,
   Mail,
   Pen,
   PersonAdd,
@@ -18,7 +20,7 @@ import {
 import { Alert, Button, IconButton, Menu } from '@linagora/twake-mui'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fragment, useEffect, useRef, useState, type ReactElement } from 'react'
-import { Link as RouterLink, useLocation } from 'react-router'
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router'
 
 import {
   cardAction,
@@ -33,6 +35,8 @@ import {
   type Actor,
   type Approval,
   type Decision,
+  FEEDBACK_ANSWER,
+  type Feedback,
   type FeedCard,
   type FeedFilter,
   type FeedItem,
@@ -57,11 +61,13 @@ import {
   FeedBody,
   FeedMention,
   FeedCentered,
+  FeedAnnouncement,
   FeedApproval,
   FeedComposer,
   FeedComposerMenu,
   FeedDetail,
   FeedEditForm,
+  FeedFeedback,
   FeedFilterMenu,
   FeedFile,
   FeedFooter,
@@ -70,6 +76,7 @@ import {
   FeedLinkPreview,
   FeedMoreButton,
   FeedNewMark,
+  FeedPinned,
   FeedPoll,
   FeedRow,
   FeedTitle,
@@ -83,6 +90,7 @@ import {
 } from '@/ds/Feed'
 import {
   CalendarIcon,
+  CampaignIcon,
   FolderIcon,
   OpenInNewIcon,
   PollIcon,
@@ -100,11 +108,13 @@ import {
   FEED_NEWS,
   useFeed,
   useFeedCache,
-  useFeedReadAt
+  useFeedReadAt,
+  usePinned
 } from '@/ui/space/feedQueries'
 import { ApprovalDialog } from '@/ui/space/ApprovalDialog'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
 import { PollDialog } from '@/ui/space/PollDialog'
+import { TextPostDialog } from '@/ui/space/TextPostDialog'
 
 const FILTERS: FeedFilter[] = ['all', ...FEED_CATEGORIES]
 
@@ -284,6 +294,7 @@ export function FeedPanel({ space }: { space: Space }): ReactElement {
             )}
           </FeedToolbar>
         }
+        pinned={<Pinned space={space} myId={myId} />}
         composer={space.role !== 'viewer' && <Composer space={space} />}
         placeKey={ready ? filter : null}
         latestLabel={t('feed.latest')}
@@ -351,6 +362,62 @@ export function FeedPanel({ space }: { space: Space }): ReactElement {
       </FeedLayout>
     </FeedWithSide>
   )
+}
+
+// Opening one takes the feed to it, as a search result does.
+function Pinned({
+  space,
+  myId
+}: {
+  space: Space
+  myId: string | null
+}): ReactElement | null {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const pinned = usePinned(space.id)
+  const unpin = usePin(space.id)
+  const name = useActorNamer()
+  return (
+    <>
+      <FeedPinned
+        label={t('feed.announcement.pinned')}
+        items={(pinned.data ?? []).map(post => ({
+          id: post.id,
+          author: name(post.author) ?? t('feed.someone'),
+          text: post.body,
+          openLabel: t('feed.announcement.open', { text: post.body }),
+          onOpen: () => {
+            void navigate(location.pathname, {
+              state: { feedItem: post.id }
+            })
+          },
+          unpin:
+            post.author.type === 'user' && post.author.id === myId
+              ? {
+                  label: t('feed.announcement.unpin'),
+                  onClick: () => {
+                    unpin.mutate({ postId: post.id, pinned: false })
+                  }
+                }
+              : null
+        }))}
+      />
+      {unpin.isError && (
+        <Alert severity="error">{t('feed.changeFailed')}</Alert>
+      )}
+    </>
+  )
+}
+
+function usePin(spaceId: string) {
+  const { feed } = useServices()
+  const { replace } = useFeedCache(spaceId)
+  return useMutation({
+    mutationFn: ({ postId, pinned }: { postId: string; pinned: boolean }) =>
+      feed.pin(spaceId, postId, pinned),
+    onSuccess: replace
+  })
 }
 
 function FilterMenu({
@@ -460,16 +527,26 @@ function Composer({ space }: { space: Space }): ReactElement {
           onPublished={published}
         />
       )}
+      {(asking === 'announcement' || asking === 'feedback') && (
+        <TextPostDialog
+          spaceId={space.id}
+          kind={asking}
+          onClose={stopAsking}
+          onPublished={published}
+        />
+      )}
     </>
   )
 }
 
-type Ask = Poll['kind'] | 'approval'
+type Ask = Poll['kind'] | 'approval' | 'announcement' | 'feedback'
 
 const ASKS: { kind: Ask; label: TranslationKey; icon: IconProps['icon'] }[] = [
   { kind: 'choice', label: 'feed.poll.menu', icon: PollIcon },
   { kind: 'yes_no', label: 'feed.yesNo.menu', icon: ThumbsUpDownIcon },
-  { kind: 'approval', label: 'feed.approval.menu', icon: CheckCircle }
+  { kind: 'approval', label: 'feed.approval.menu', icon: CheckCircle },
+  { kind: 'announcement', label: 'feed.announcement.menu', icon: CampaignIcon },
+  { kind: 'feedback', label: 'feed.feedback.menu', icon: Comment }
 ]
 
 function Setup({
@@ -524,18 +601,24 @@ function Setup({
   )
 }
 
-export function useActorName(actor: Actor | null): string | null {
+function useActorNamer(): (actor: Actor | null) => string | null {
   const { t } = useI18n()
-  switch (actor?.type) {
-    case undefined:
-      return null
-    case 'token':
-      return actor.name
-    case 'deleted_user':
-      return t('feed.deletedUser')
-    case 'user':
-      return actor.name ?? t('feed.someone')
+  return actor => {
+    switch (actor?.type) {
+      case undefined:
+        return null
+      case 'token':
+        return actor.name
+      case 'deleted_user':
+        return t('feed.deletedUser')
+      case 'user':
+        return actor.name ?? t('feed.someone')
+    }
   }
+}
+
+export function useActorName(actor: Actor | null): string | null {
+  return useActorNamer()(actor)
 }
 
 // Only a person still in the space has a known instance.
@@ -613,6 +696,26 @@ function Post({
     mutationFn: () => feed.closePoll(space.id, post.id),
     onSuccess: replace
   })
+  const pin = usePin(space.id)
+  const closing =
+    mine && !close.isPending
+      ? () => {
+          close.mutate()
+        }
+      : null
+  const text = (
+    <>
+      <FeedBody>
+        {splitMentions(
+          post.body,
+          space.members.map(member => member.displayName ?? member.username)
+        ).map((part, index) =>
+          index % 2 === 1 ? <FeedMention key={index}>{part}</FeedMention> : part
+        )}
+      </FeedBody>
+      <PostLink body={post.body} />
+    </>
+  )
 
   return (
     <FeedRow
@@ -633,11 +736,24 @@ function Post({
           mine && (
             <ItemMenu
               onEdit={
-                post.approval
+                post.approval || post.feedback
                   ? null
                   : () => {
                       setDraft(post.body)
                     }
+              }
+              onPin={
+                post.announcement
+                  ? {
+                      pinned: post.announcement.pinnedAt !== null,
+                      onClick: () => {
+                        pin.mutate({
+                          postId: post.id,
+                          pinned: post.announcement?.pinnedAt === null
+                        })
+                      }
+                    }
+                  : null
               }
               onDelete={() => {
                 remove.mutate()
@@ -653,13 +769,7 @@ function Post({
             poll={post.poll}
             spaceId={space.id}
             myId={myId}
-            onClose={
-              mine && !post.poll.closedAt && !close.isPending
-                ? () => {
-                    close.mutate()
-                  }
-                : null
-            }
+            onClose={post.poll.closedAt ? null : closing}
           />
         ) : post.approval ? (
           <ApprovalDecisions
@@ -667,32 +777,28 @@ function Post({
             approval={post.approval}
             space={space}
             myId={myId}
-            onClose={
-              mine && !post.approval.closedAt && !close.isPending
-                ? () => {
-                    close.mutate()
-                  }
-                : null
-            }
+            onClose={post.approval.closedAt ? null : closing}
           />
+        ) : post.feedback ? (
+          <FeedbackAnswers
+            post={post}
+            feedback={post.feedback}
+            space={space}
+            mine={mine}
+            onClose={post.feedback.closedAt ? null : closing}
+          />
+        ) : post.announcement ? (
+          <FeedAnnouncement
+            label={
+              post.announcement.pinnedAt
+                ? `${t('feed.announcement.label')} · ${t('feed.announcement.pinnedLabel')}`
+                : t('feed.announcement.label')
+            }
+          >
+            {text}
+          </FeedAnnouncement>
         ) : (
-          <>
-            <FeedBody>
-              {splitMentions(
-                post.body,
-                space.members.map(
-                  member => member.displayName ?? member.username
-                )
-              ).map((part, index) =>
-                index % 2 === 1 ? (
-                  <FeedMention key={index}>{part}</FeedMention>
-                ) : (
-                  part
-                )
-              )}
-            </FeedBody>
-            <PostLink body={post.body} />
-          </>
+          text
         )
       ) : (
         <FeedEditForm
@@ -719,7 +825,7 @@ function Post({
           }
         />
       )}
-      {(edit.isError || remove.isError || close.isError) && (
+      {(edit.isError || remove.isError || close.isError || pin.isError) && (
         <Alert severity="error">{t('feed.changeFailed')}</Alert>
       )}
       <FeedFooter time={time(post.time)}>
@@ -906,11 +1012,89 @@ function ApprovalDecisions({
   )
 }
 
+function FeedbackAnswers({
+  post,
+  feedback,
+  space,
+  mine,
+  onClose
+}: {
+  post: FeedPost
+  feedback: Feedback
+  space: Space
+  mine: boolean
+  onClose: (() => void) | null
+}): ReactElement {
+  const { t } = useI18n()
+  const { feed } = useServices()
+  const { replace } = useFeedCache(space.id)
+  const answer = useMutation({
+    mutationFn: (text: string) => feed.answer(space.id, post.id, text),
+    // Saved: a failed reread is no failed answer, the live change follows.
+    onSuccess: () =>
+      feed
+        .item(space.id, post.id)
+        .then(replace)
+        .catch(() => undefined)
+  })
+  const summary = t('feed.feedback.count', { smart_count: feedback.count })
+  return (
+    <>
+      <FeedFeedback
+        question={post.body}
+        answers={
+          feedback.answers?.map(item => {
+            const member = space.members.find(m => m.id === item.userId)
+            return {
+              id: item.userId,
+              name: item.name ?? t('feed.someone'),
+              avatar: member ? avatarUrl(member.workplaceFqdn) : null,
+              text: item.text
+            }
+          }) ?? null
+        }
+        emptyLabel={t('feed.feedback.none')}
+        mine={
+          feedback.mine === null
+            ? null
+            : { label: t('feed.feedback.answer'), text: feedback.mine }
+        }
+        answer={
+          mine || feedback.closedAt !== null
+            ? null
+            : {
+                label: t('feed.feedback.answer'),
+                sendLabel: t('feed.send'),
+                editLabel: t('feed.edit'),
+                maxLength: FEEDBACK_ANSWER.max,
+                disabled: answer.isPending,
+                onAnswer: text => {
+                  answer.mutate(text)
+                }
+              }
+        }
+        summary={
+          feedback.closedAt
+            ? `${summary} · ${t('feed.feedback.closed')}`
+            : summary
+        }
+        close={onClose && { label: t('feed.feedback.close'), onClick: onClose }}
+      />
+      {answer.isError && (
+        <Alert severity="error">{t('feed.feedback.answerFailed')}</Alert>
+      )}
+    </>
+  )
+}
+
 function ItemMenu({
   onEdit,
+  onPin = null,
   onDelete
 }: {
   onEdit: (() => void) | null
+  /** On an announcement, unpins it or pins it again. */
+  onPin?: { pinned: boolean; onClick: () => void } | null
   onDelete: () => void
 }): ReactElement {
   const { t } = useI18n()
@@ -931,6 +1115,19 @@ function ItemMenu({
             }}
           >
             {t('feed.edit')}
+          </MenuEntry>
+        )}
+        {onPin && (
+          <MenuEntry
+            icon={<Icon icon={Pin} />}
+            onClick={() => {
+              close()
+              onPin.onClick()
+            }}
+          >
+            {t(
+              onPin.pinned ? 'feed.announcement.unpin' : 'feed.announcement.pin'
+            )}
           </MenuEntry>
         )}
         <MenuEntry

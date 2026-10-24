@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
@@ -15,6 +15,7 @@ import {
   findItem,
   listItems,
   orderOf,
+  pinnedItems,
   type Cursor,
   type FeedItem
 } from './items.ts'
@@ -32,6 +33,8 @@ import {
 } from './schema.ts'
 
 type PostKind = (typeof feedPostKind.enumValues)[number]
+
+const CLOSING: PostKind[] = ['poll', 'yes_no', 'approval', 'feedback']
 
 const feedQuery = z
   .object({
@@ -101,10 +104,16 @@ const newPostBody = postBody
           .max(20)
           .refine(ids => new Set(ids).size === ids.length)
       })
-      .optional()
+      .optional(),
+    announcement: z.literal(true).optional(),
+    feedback: z.literal(true).optional()
   })
-  .refine(({ poll, approval }) => !poll || !approval)
+  .refine(
+    ({ poll, approval, announcement, feedback }) =>
+      [poll, approval, announcement, feedback].filter(Boolean).length <= 1
+  )
 const voteBody = z.object({ option: z.int().min(0) })
+const answerBody = z.object({ text: z.string().trim().min(1).max(2000) })
 const decisionBody = z.object({
   decision: z.enum(DECISIONS),
   comment: z.string().trim().max(1000).optional()
@@ -135,6 +144,12 @@ function mentioner(caller: Caller, mentions: string[]): string | null {
   return caller.userId
 }
 
+// A token reads for its account, but the feedback answers go to the person.
+const readBy = (caller: Caller) => (item: FeedItem) =>
+  caller.kind === 'token' && item.kind === 'post' && item.feedback
+    ? serialize({ ...item, feedback: { ...item.feedback, answers: null } })
+    : serialize(item)
+
 const serialize = (item: FeedItem) => ({
   ...item,
   time: item.time.toISOString(),
@@ -152,6 +167,18 @@ const serialize = (item: FeedItem) => ({
         decidedAt: approver.decidedAt?.toISOString() ?? null
       })),
       closedAt: item.approval.closedAt?.toISOString() ?? null
+    },
+    announcement: item.announcement && {
+      pinnedAt: item.announcement.pinnedAt?.toISOString() ?? null
+    },
+    feedback: item.feedback && {
+      ...item.feedback,
+      answers:
+        item.feedback.answers?.map(answer => ({
+          ...answer,
+          answeredAt: answer.answeredAt.toISOString()
+        })) ?? null,
+      closedAt: item.feedback.closedAt?.toISOString() ?? null
     }
   })
 })
@@ -228,6 +255,7 @@ export function registerFeedRoutes(
     const [post] = await tx
       .select({
         kind: feedPosts.kind,
+        authorId: feedPosts.authorId,
         options: feedPosts.pollOptions,
         approverIds: feedPosts.approverIds,
         closedAt: feedPosts.pollClosedAt
@@ -286,19 +314,20 @@ export function registerFeedRoutes(
     { preHandler: read },
     async (request, reply) => {
       try {
-        const spaceId = (await reach(request)).space.id
+        const { caller, space } = await reach(request)
         const { category, before, since, q, limit } = parse(
           feedQuery,
           request.query
         )
-        const page = await listItems(db, spaceId, {
+        const page = await listItems(db, space.id, {
           limit,
+          viewer: caller.userId,
           ...(category && { category }),
           ...(before && { before }),
           ...(since && { since }),
           ...(q && { q })
         })
-        return { items: page.items.map(serialize), next: page.next }
+        return { items: page.items.map(readBy(caller)), next: page.next }
       } catch (error) {
         return refused(error, reply)
       }
@@ -310,10 +339,29 @@ export function registerFeedRoutes(
     { preHandler: read },
     async (request, reply) => {
       try {
-        const spaceId = (await reach(request)).space.id
-        const item = await findItem(db, spaceId, itemOf(request))
+        const { caller, space } = await reach(request)
+        const item = await findItem(
+          db,
+          space.id,
+          itemOf(request),
+          caller.userId
+        )
         if (!item) throw new Refusal(404, 'not_found')
-        return serialize(item)
+        return readBy(caller)(item)
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  app.get(
+    '/spaces/:spaceId/feed/pinned',
+    { preHandler: read },
+    async (request, reply) => {
+      try {
+        const { caller, space } = await reach(request)
+        const items = await pinnedItems(db, space.id, caller.userId)
+        return { items: items.map(readBy(caller)) }
       } catch (error) {
         return refused(error, reply)
       }
@@ -420,22 +468,29 @@ export function registerFeedRoutes(
         const { caller, space } = await reach(request)
         const spaceId = space.id
         if (space.role === 'viewer') throw new Refusal(403, 'cannot_post')
-        const { body, poll, approval, mentions } = parse(
-          newPostBody,
-          request.body
-        )
+        const { body, poll, approval, announcement, feedback, mentions } =
+          parse(newPostBody, request.body)
         const speaker = mentioner(caller, mentions)
         // The approvers hear from a person, as a mention does.
         if (approval && !speaker) {
           throw new Refusal(403, 'cannot_request_approval')
         }
+        // The answers go to the person who asked, not to a token.
+        if (feedback && caller.kind !== 'session') {
+          throw new Refusal(403, 'cannot_ask_feedback')
+        }
         const kind: PostKind = approval
           ? 'approval'
-          : poll?.kind === 'yes_no'
-            ? 'yes_no'
-            : poll
-              ? 'poll'
-              : 'text'
+          : announcement
+            ? 'announcement'
+            : feedback
+              ? 'feedback'
+              : poll?.kind === 'yes_no'
+                ? 'yes_no'
+                : poll
+                  ? 'poll'
+                  : 'text'
+        const time = new Date()
         const item = await db.transaction(async tx => {
           if (approval && speaker) {
             await checkApprovers(tx, spaceId, speaker, approval.approvers)
@@ -449,9 +504,10 @@ export function registerFeedRoutes(
                 : { authorId: caller.userId }),
               kind,
               body,
-              time: new Date(),
+              time,
               pollOptions: poll?.kind === 'choice' ? poll.options : null,
-              approverIds: approval?.approvers ?? null
+              approverIds: approval?.approvers ?? null,
+              pinnedAt: announcement ? time : null
             })
             .returning({ id: feedPosts.id })
           if (!post) throw new Error('the post insert returned no row')
@@ -466,7 +522,7 @@ export function registerFeedRoutes(
             if (approval) await askApprovers(tx, sent, approval.approvers)
           }
           await tellFeed(tx, spaceId, post.id, 'added')
-          return findItem(tx, spaceId, post.id)
+          return findItem(tx, spaceId, post.id, caller.userId)
         })
         if (!item) throw new Error('the new post is not found')
         return await reply.code(201).send(serialize(item))
@@ -486,9 +542,12 @@ export function registerFeedRoutes(
             tx,
             request
           )
-          // The decisions answer the text the approvers read.
+          // Decisions and answers reply to the text people read.
           if (kind === 'approval') {
             throw new Refusal(409, 'cannot_edit_approval')
+          }
+          if (kind === 'feedback') {
+            throw new Refusal(409, 'cannot_edit_feedback')
           }
           const { body, mentions } = parse(postBody, request.body)
           const speaker = mentioner(caller, mentions)
@@ -504,7 +563,7 @@ export function registerFeedRoutes(
             )
           }
           await tellFeed(tx, spaceId, postId, 'changed')
-          return findItem(tx, spaceId, postId)
+          return findItem(tx, spaceId, postId, caller.userId)
         })
         if (!item) throw new Error('the edited post is not found')
         return serialize(item)
@@ -600,25 +659,96 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
-          const { spaceId, postId } = await authoredPost(tx, request)
+          const { spaceId, postId, caller } = await authoredPost(tx, request)
           const [closed] = await tx
             .update(feedPosts)
             .set({ pollClosedAt: new Date() })
             .where(
               and(
                 eq(feedPosts.id, postId),
-                ne(feedPosts.kind, 'text'),
+                inArray(feedPosts.kind, CLOSING),
                 isNull(feedPosts.pollClosedAt)
               )
             )
             .returning({ id: feedPosts.id })
           if (closed) await tellFeed(tx, spaceId, postId, 'changed')
-          return findItem(tx, spaceId, postId)
+          return findItem(tx, spaceId, postId, caller.userId)
         })
-        if (item?.kind !== 'post' || (!item.poll && !item.approval)) {
+        if (
+          item?.kind !== 'post' ||
+          (!item.poll && !item.approval && !item.feedback)
+        ) {
           throw new Refusal(404, 'not_found')
         }
         return serialize(item)
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  )
+
+  // Pinning again keeps the announcement where it was.
+  const pin =
+    (pinned: boolean) =>
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const item = await db.transaction(async tx => {
+          const { spaceId, postId, caller, kind } = await authoredPost(
+            tx,
+            request
+          )
+          if (kind !== 'announcement') throw new Refusal(404, 'not_found')
+          const [moved] = await tx
+            .update(feedPosts)
+            .set({ pinnedAt: pinned ? new Date() : null })
+            .where(
+              and(
+                eq(feedPosts.id, postId),
+                pinned
+                  ? isNull(feedPosts.pinnedAt)
+                  : isNotNull(feedPosts.pinnedAt)
+              )
+            )
+            .returning({ id: feedPosts.id })
+          if (moved) await tellFeed(tx, spaceId, postId, 'changed')
+          return findItem(tx, spaceId, postId, caller.userId)
+        })
+        if (!item) throw new Error('the pinned post is not found')
+        return serialize(item)
+      } catch (error) {
+        return refused(error, reply)
+      }
+    }
+  const pinUrl = '/spaces/:spaceId/feed/posts/:itemId/pin'
+  app.put(pinUrl, { preHandler: write }, pin(true))
+  app.delete(pinUrl, { preHandler: write }, pin(false))
+
+  // Answering again replaces the answer.
+  app.put(
+    '/spaces/:spaceId/feed/posts/:itemId/answer',
+    { preHandler },
+    async (request, reply) => {
+      try {
+        const { spaceId, userId } = await memberOf(request)
+        const postId = itemOf(request)
+        const { text } = parse(answerBody, request.body)
+        await db.transaction(async tx => {
+          const post = await openPoll(tx, spaceId, postId, ['feedback'])
+          if (post.authorId === userId) {
+            throw new Refusal(403, 'cannot_answer_own')
+          }
+          const [answered] = await tx
+            .insert(feedPollVotes)
+            .values({ postId, userId, option: 0, comment: text })
+            .onConflictDoUpdate({
+              target: [feedPollVotes.postId, feedPollVotes.userId],
+              set: { comment: text, createdAt: new Date() },
+              setWhere: ne(feedPollVotes.comment, text)
+            })
+            .returning({ postId: feedPollVotes.postId })
+          if (answered) await tellFeed(tx, spaceId, postId, 'changed')
+        })
+        return await reply.code(204).send()
       } catch (error) {
         return refused(error, reply)
       }

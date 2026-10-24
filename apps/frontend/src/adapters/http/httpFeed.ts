@@ -3,6 +3,7 @@ import { HTTPError, type KyInstance } from 'ky'
 import type {
   FeedItem,
   FeedPage,
+  FeedPost,
   FeedService,
   LinkPreview,
   SpaceNews
@@ -29,6 +30,9 @@ export function httpFeed(api: KyInstance): FeedService {
         .json<FeedPage>(),
     item: (spaceId, itemId) =>
       api.get(feed(spaceId, 'items', itemId)).json<FeedItem>(),
+    pinned: async spaceId =>
+      (await api.get(feed(spaceId, 'pinned')).json<{ items: FeedPost[] }>())
+        .items,
     readAt: async spaceId =>
       (await api.get(feed(spaceId, 'read')).json<{ readAt: string | null }>())
         .readAt,
@@ -59,6 +63,14 @@ export function httpFeed(api: KyInstance): FeedService {
         api.put(feed(spaceId, 'posts', postId, 'decision'), {
           json: { decision, comment }
         })
+      ),
+    pin: (spaceId, postId, pinned) => {
+      const url = feed(spaceId, 'posts', postId, 'pin')
+      return (pinned ? api.put(url) : api.delete(url)).json<FeedItem>()
+    },
+    answer: (spaceId, postId, text) =>
+      send(
+        api.put(feed(spaceId, 'posts', postId, 'answer'), { json: { text } })
       ),
     react: (spaceId, itemId, key) =>
       send(api.put(feed(spaceId, 'items', itemId, 'reactions', key))),

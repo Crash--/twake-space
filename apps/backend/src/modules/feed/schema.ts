@@ -94,7 +94,9 @@ export const feedPostKind = pgEnum('feed_post_kind', [
   'text',
   'poll',
   'yes_no',
-  'approval'
+  'approval',
+  'announcement',
+  'feedback'
 ])
 
 export const feedPosts = pgTable(
@@ -107,17 +109,20 @@ export const feedPosts = pgTable(
     // Set for a post an API token wrote: the token signs it, not its account.
     authorTokenId: uuid('author_token_id').references(() => apiTokens.id),
     kind: feedPostKind().notNull().default('text'),
-    // On a poll, a yes/no question or an approval request, its question.
+    // On a poll, a yes/no question, an approval or a feedback request, its
+    // question.
     body: text().notNull(),
     // Written from a JS Date, at the milliseconds the feed cursor carries.
     time: timestamptz('time').notNull(),
     editedAt: timestamptz('edited_at'),
     // Set on a poll only: a yes/no question's two answers are fixed, not stored.
     pollOptions: text('poll_options').array(),
-    // Closes a poll, a yes/no question or an approval request.
+    // Closes a poll, a yes/no question, an approval or a feedback request.
     pollClosedAt: timestamptz('poll_closed_at'),
     // Set on an approval request only.
-    approverIds: uuid('approver_ids').array()
+    approverIds: uuid('approver_ids').array(),
+    // Holds an announcement at the top of the feed.
+    pinnedAt: timestamptz('pinned_at')
   },
   table => [
     index().on(table.spaceId, table.time, table.id),
@@ -138,9 +143,10 @@ export const feedPollVotes = pgTable(
       .references(() => feedPosts.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
     // The index of the option in the post's poll options; on a yes/no
-    // question 0 is yes, on an approval request 0 approves and 1 rejects.
+    // question 0 is yes, on an approval request 0 approves and 1 rejects, on
+    // a feedback request it is 0.
     option: integer().notNull(),
-    // An approver's, with their decision.
+    // An approver's, with their decision, or a member's feedback answer.
     comment: text(),
     createdAt: timestamptz('created_at').notNull().defaultNow()
   },

@@ -272,6 +272,8 @@ describe('GET /spaces/:spaceId/feed', () => {
           editedAt: null,
           poll: null,
           approval: null,
+          announcement: null,
+          feedback: null,
           reactions: []
         },
         {
@@ -1705,6 +1707,218 @@ describe('approvals', () => {
 
     expect(await testDb.db.select().from(notifications)).toEqual([])
     expect(await testDb.db.select().from(outgoingActivity)).toEqual([])
+  })
+})
+
+describe('announcements', () => {
+  const announce = (send: ReturnType<typeof setUp>, body: string) =>
+    send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body,
+      announcement: true
+    })
+  const pinned = async (send: ReturnType<typeof setUp>) =>
+    (await send('GET', `/spaces/${DESIGN}/feed/pinned`, 'bob'))
+      .json<{ items: Item[] }>()
+      .items.map(item => item.id)
+
+  it('pins an announcement at the top, latest first, and in the feed', async () => {
+    const send = setUp()
+    await aPost('Hello', '2026-10-05T10:00:00Z')
+
+    const first = await announce(send, 'Offsite on Friday')
+    await testDb.db
+      .update(feedPosts)
+      .set({ pinnedAt: new Date('2026-10-01T00:00:00Z') })
+      .where(eq(feedPosts.id, first.json<Item>().id))
+    const second = (await announce(send, 'New office')).json<Item>().id
+
+    expect(first.statusCode).toBe(201)
+    expect(first.json()).toMatchObject({
+      announcement: { pinnedAt: expect.any(String) as string },
+      poll: null
+    })
+    expect(await pinned(send)).toEqual([second, first.json<Item>().id])
+    const page = await send('GET', `/spaces/${DESIGN}/feed`)
+    expect(page.json<Page>().items).toHaveLength(3)
+    expect(live).toHaveBeenCalled()
+  })
+
+  it('stays pinned until its author unpins it, and pins again', async () => {
+    const send = setUp()
+    const id = (await announce(send, 'Offsite')).json<Item>().id
+    const url = `/spaces/${DESIGN}/feed/posts/${id}/pin`
+
+    const byOther = await send('DELETE', url, 'carol')
+    const unpinned = await send('DELETE', url)
+    const left = await pinned(send)
+    const again = await send('PUT', url)
+
+    expect(byOther.statusCode).toBe(403)
+    expect(unpinned.statusCode).toBe(200)
+    expect(unpinned.json()).toMatchObject({ announcement: { pinnedAt: null } })
+    expect(left).toEqual([])
+    expect(again.statusCode).toBe(200)
+    expect(await pinned(send)).toEqual([id])
+  })
+
+  it('cannot pin a post that is not an announcement', async () => {
+    const send = setUp()
+    const id = await aPost('Hello', '2026-10-05T10:00:00Z')
+
+    const response = await send('PUT', `/spaces/${DESIGN}/feed/posts/${id}/pin`)
+
+    expect(response.statusCode).toBe(404)
+  })
+
+  it('is refused to a viewer, and with a poll', async () => {
+    const send = setUp()
+
+    const byViewer = await send('POST', `/spaces/${DESIGN}/feed/posts`, 'bob', {
+      body: 'Hi',
+      announcement: true
+    })
+    const withPoll = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      {
+        body: 'Hi',
+        announcement: true,
+        poll: { kind: 'yes_no' }
+      }
+    )
+
+    expect(byViewer.statusCode).toBe(403)
+    expect(withPoll.statusCode).toBe(400)
+  })
+})
+
+describe('feedback requests', () => {
+  interface Feedback {
+    count: number
+    mine: string | null
+    answers: { userId: string; name: string | null; text: string }[] | null
+    closedAt: string | null
+  }
+  const ask = (send: ReturnType<typeof setUp>) =>
+    send('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'How was the offsite?',
+      feedback: true
+    })
+  const answer = (
+    send: ReturnType<typeof setUp>,
+    id: string,
+    token: string,
+    text: string
+  ) => send('PUT', `/spaces/${DESIGN}/feed/posts/${id}/answer`, token, { text })
+  const feedbackOf = async (
+    send: ReturnType<typeof setUp>,
+    id: string,
+    token: string
+  ) =>
+    (await send('GET', `/spaces/${DESIGN}/feed/items/${id}`, token)).json<{
+      feedback: Feedback
+    }>().feedback
+
+  it('shows the answers to its author, the count and their own to others', async () => {
+    const send = setUp()
+    const created = await ask(send)
+    const id = created.json<Item>().id
+
+    expect((await answer(send, id, 'bob', 'Great')).statusCode).toBe(204)
+    await answer(send, id, 'carol', 'Too long')
+    await answer(send, id, 'bob', 'Great, thanks')
+
+    expect(created.json()).toMatchObject({
+      feedback: { count: 0, mine: null, answers: [], closedAt: null }
+    })
+    expect(await feedbackOf(send, id, 'alice')).toMatchObject({
+      count: 2,
+      mine: null,
+      answers: [
+        { userId: CAROL, name: 'carol', text: 'Too long' },
+        { userId: BOB, name: 'bob', text: 'Great, thanks' }
+      ]
+    })
+    expect(await feedbackOf(send, id, 'carol')).toEqual({
+      count: 2,
+      mine: 'Too long',
+      answers: null,
+      closedAt: null
+    })
+    const page = await send('GET', `/spaces/${DESIGN}/feed`, 'bob')
+    expect(page.json()).toMatchObject({
+      items: [{ feedback: { count: 2, mine: 'Great, thanks', answers: null } }]
+    })
+  })
+
+  it('takes no answer once closed, nor an empty one', async () => {
+    const send = setUp()
+    const id = (await ask(send)).json<Item>().id
+
+    const empty = await answer(send, id, 'bob', '  ')
+    const closed = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts/${id}/close`
+    )
+    const late = await answer(send, id, 'bob', 'Late')
+
+    expect(empty.statusCode).toBe(400)
+    expect(closed.json()).toMatchObject({
+      feedback: { closedAt: expect.any(String) as string }
+    })
+    expect(late.statusCode).toBe(409)
+  })
+
+  it('takes no answer on a post that is not a feedback request', async () => {
+    const send = setUp()
+    const id = await aPost('Hello', '2026-10-05T10:00:00Z')
+
+    expect((await answer(send, id, 'bob', 'Hi')).statusCode).toBe(404)
+  })
+
+  it('cannot be asked by a token', async () => {
+    await aToken()
+    const send = setUp(aTokenCaller({ userId: ALICE, scopes: ['feed:write'] }))
+
+    const response = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'tws_bot',
+      { body: 'How was it?', feedback: true }
+    )
+
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toEqual({ error: 'cannot_ask_feedback' })
+  })
+
+  it("keeps the answers from its author's tokens", async () => {
+    const send = setUp()
+    const id = (await ask(send)).json<Item>().id
+    await answer(send, id, 'bob', 'Great')
+    await aToken()
+    const bot = setUp(aTokenCaller({ userId: ALICE, scopes: ['feed:read'] }))
+
+    expect(await feedbackOf(bot, id, 'tws_bot')).toMatchObject({
+      count: 1,
+      answers: null
+    })
+  })
+
+  it('takes no answer from its author, and no edit', async () => {
+    const send = setUp()
+    const id = (await ask(send)).json<Item>().id
+
+    const own = await answer(send, id, 'alice', 'Fine')
+    const edited = await send(
+      'PATCH',
+      `/spaces/${DESIGN}/feed/posts/${id}`,
+      'alice',
+      { body: 'How was the trip?', mentions: [] }
+    )
+
+    expect(own.json()).toEqual({ error: 'cannot_answer_own' })
+    expect(edited.json()).toEqual({ error: 'cannot_edit_feedback' })
   })
 })
 

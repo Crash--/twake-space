@@ -154,7 +154,9 @@ describe('itemPlace', () => {
     body: 'Hello',
     editedAt: null,
     poll: null,
-    approval: null
+    approval: null,
+    announcement: null,
+    feedback: null
   }
 
   it("opens a card in its container's tab", () => {

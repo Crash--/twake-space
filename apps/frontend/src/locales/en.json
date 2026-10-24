@@ -411,6 +411,32 @@
       "close": "Close the request",
       "decideFailed": "Could not save your decision."
     },
+    "announcement": {
+      "menu": "Announcement",
+      "title": "New announcement",
+      "text": "Announcement",
+      "hint": "Pinned at the top of the feed until you unpin it.",
+      "publish": "Announce",
+      "label": "Announcement",
+      "pinnedLabel": "Pinned",
+      "pinned": "Pinned announcements",
+      "open": "Show the announcement: %{text}",
+      "pin": "Pin to the top",
+      "unpin": "Unpin"
+    },
+    "feedback": {
+      "menu": "Feedback",
+      "title": "Ask for feedback",
+      "text": "Question",
+      "hint": "Members answer in their own words. Only you read the answers.",
+      "publish": "Ask",
+      "answer": "Your answer",
+      "none": "No answers yet.",
+      "count": "%{smart_count} answer |||| %{smart_count} answers",
+      "closed": "Closed",
+      "close": "Close the request",
+      "answerFailed": "Could not send your answer."
+    },
     "mention": "Mention a member",
     "members": {
       "title": "Space members",
