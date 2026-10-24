@@ -6,7 +6,7 @@ import {
   type Scope,
   type TokenCaller
 } from '../tokens/authenticator.ts'
-import type { Authenticate } from './authenticator.ts'
+import { GateFullError, type Authenticate } from './authenticator.ts'
 import { DEFAULT_LIMIT, fixedWindows, type Limiter } from './limits.ts'
 import type { Identity, IdentityProvider } from './oidc.ts'
 import type { AuthStore } from './store.ts'
@@ -76,7 +76,10 @@ export function registerAuth(
         ? await deps.authenticateToken(token)
         : await deps.authenticate(token)
     } catch (error) {
-      request.log.error({ err: error }, 'access token check failed')
+      // A full gate means a flood of made-up tokens: not one error report each.
+      if (error instanceof GateFullError) {
+        request.log.warn('too many new tokens waiting for a check')
+      } else request.log.error({ err: error }, 'access token check failed')
       return reply.code(503).send({ error: 'unavailable' })
     }
     if (!identity) return unauthorized(reply, 'invalid_token')

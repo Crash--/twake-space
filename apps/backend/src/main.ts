@@ -120,7 +120,9 @@ const authorize = await setUpAuth(server, {
     clientSecret: config.OIDC_CLIENT_SECRET,
     audience: config.OIDC_AUDIENCE
   },
-  directory
+  directory,
+  newTokenChecks: config.NEW_TOKEN_CHECKS,
+  newTokensWaiting: config.NEW_TOKENS_WAITING
 })
 registerSpaceRoutes(server, {
   db,

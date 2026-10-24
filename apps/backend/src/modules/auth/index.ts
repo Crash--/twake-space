@@ -14,14 +14,25 @@ export { scheduleRevocationSweep } from './store.ts'
 
 export async function setUpAuth(
   app: HttpServer,
-  deps: { db: Db; oidc: OidcOptions; directory: Directory }
+  deps: {
+    db: Db
+    oidc: OidcOptions
+    directory: Directory
+    newTokenChecks: number
+    newTokensWaiting: number
+  }
 ): Promise<Authorize> {
   const provider = await discoverIdentityProvider(deps.oidc)
   const store = postgresAuthStore(deps.db)
   return registerAuth(app, {
     provider,
     store,
-    authenticate: createAuthenticator({ provider, store }),
+    authenticate: createAuthenticator({
+      provider,
+      store,
+      newTokenChecks: deps.newTokenChecks,
+      newTokensWaiting: deps.newTokensWaiting
+    }),
     authenticateToken: apiTokenAuthenticator(deps.db, deps.directory)
   })
 }

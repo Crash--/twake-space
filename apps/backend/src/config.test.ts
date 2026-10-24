@@ -28,6 +28,22 @@ describe('loadConfig', () => {
     ).toThrow('AMQP_URL')
   })
 
+  it('checks 10 new tokens at once with 100 waiting unless told otherwise', () => {
+    expect(loadConfig(base)).toMatchObject({
+      NEW_TOKEN_CHECKS: 10,
+      NEW_TOKENS_WAITING: 100
+    })
+    expect(
+      loadConfig({ ...base, NEW_TOKEN_CHECKS: '4', NEW_TOKENS_WAITING: '0' })
+    ).toMatchObject({ NEW_TOKEN_CHECKS: 4, NEW_TOKENS_WAITING: 0 })
+    expect(() => loadConfig({ ...base, NEW_TOKEN_CHECKS: '0' })).toThrow(
+      'NEW_TOKEN_CHECKS'
+    )
+    expect(() => loadConfig({ ...base, NEW_TOKENS_WAITING: ' ' })).toThrow(
+      'NEW_TOKENS_WAITING'
+    )
+  })
+
   it('has no homeserver unless one is configured', () => {
     expect(loadConfig(base).homeserver).toBeNull()
   })

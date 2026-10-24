@@ -135,6 +135,7 @@ Optional, with defaults:
 
 - `OIDC_CLIENT_ID`: default `twakespace-backend`.
 - `OIDC_AUDIENCE`: the audience access tokens must carry, default `twakespace`.
+- `NEW_TOKEN_CHECKS`, `NEW_TOKENS_WAITING`: how many access tokens never seen before are checked with the OIDC provider at once, default `10`, and how many more wait their turn, default `100`. Past both, a new token is refused with a 503 until the line clears. Tokens checked before are not held to either.
 - `HTTP_HOST`: default `0.0.0.0`, used by both the API and the metrics server.
 - `HTTP_PORT`: API port, default `8080`.
 - `METRICS_PORT`: metrics port, default `9464`. Keep it off the public network.
