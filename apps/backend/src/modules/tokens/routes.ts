@@ -7,12 +7,8 @@ import type { HttpServer } from '../../infra/http.ts'
 import type { Directory } from '../../infra/ldap-rest.ts'
 import { sha256 } from '../auth/authenticator.ts'
 import type { Authorize, Caller } from '../auth/index.ts'
-import {
-  organizationMembers,
-  spaceMembers,
-  spaceRole,
-  spaces
-} from '../spaces/schema.ts'
+import { liveOrganizationRole } from '../spaces/managers.ts'
+import { spaceMembers, spaceRole, spaces } from '../spaces/schema.ts'
 import { API_TOKEN_PREFIX, type Scope } from './authenticator.ts'
 import { revokeTokens } from './revocation.ts'
 import {
@@ -147,25 +143,17 @@ function manageTechnicalAccount(
 
 const ADMIN_ROLES: readonly string[] = ['owner', 'admin']
 
-// Read from ldap-rest every time: the copy only hears of a demotion or a
-// departure through an event, and a lost one would leave a former admin in
-// charge of the organization's tokens. The answer refreshes the copy.
 async function isOrganizationAdmin(
   db: Db,
   directory: Pick<Directory, 'organizationRole'>,
   organizationId: string,
   userId: string
 ) {
-  const live = await directory.organizationRole(organizationId, userId)
-  if (!live) return false
-  await db
-    .insert(organizationMembers)
-    .values({ organizationId, userId, ...live })
-    .onConflictDoUpdate({
-      target: [organizationMembers.organizationId, organizationMembers.userId],
-      set: live
-    })
-  return ADMIN_ROLES.includes(live.role)
+  const role = await liveOrganizationRole(db, directory, {
+    organizationId,
+    userId
+  })
+  return role !== undefined && ADMIN_ROLES.includes(role)
 }
 
 const organizationManager =

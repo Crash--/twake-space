@@ -86,6 +86,11 @@ beforeEach(async () => {
   })
 })
 
+const organizationRoles = new Map<string, 'owner' | 'admin' | 'member'>()
+beforeEach(() => {
+  organizationRoles.clear()
+})
+
 function setUp(
   tokenCaller: TokenCaller = aTokenCaller(),
   apps: readonly SpaceApp[] = spaceApp.options
@@ -106,7 +111,17 @@ function setUp(
     workplaces: (_, ids) =>
       Promise.resolve(
         new Map(ids.map(id => [id, id === ALICE ? 'alice.twake.app' : null]))
-      )
+      ),
+    organizationDirectory: {
+      organizationRole: (organizationId, userId) => {
+        const role = organizationRoles.get(userId)
+        return Promise.resolve(
+          organizationId === 'org-1' && role
+            ? { email: `${userId}@example.com`, role }
+            : undefined
+        )
+      }
+    }
   })
   return (
     url: string,
@@ -272,12 +287,7 @@ describe('archived spaces and the Bin', () => {
   it('lists the binned spaces the caller manages, even outside them', async () => {
     await moveTo(DESIGN, 'trashed')
     await moveTo(SALES, 'trashed')
-    await testDb.db.insert(organizationMembers).values({
-      organizationId: 'org-1',
-      userId: ALICE,
-      email: 'alice@example.com',
-      role: 'owner'
-    })
+    organizationRoles.set(ALICE, 'owner')
 
     const response = await setUp()('/spaces?state=trashed')
 
@@ -288,6 +298,21 @@ describe('archived spaces and the Bin', () => {
       ]
     })
     expect(ids((await setUp()('/spaces?state=archived')).json())).toEqual([])
+  })
+
+  it('takes the organization role from ldap-rest, not from the copy', async () => {
+    await moveTo(SALES, 'trashed')
+    await testDb.db.insert(organizationMembers).values({
+      organizationId: 'org-1',
+      userId: ALICE,
+      email: 'alice@example.com',
+      role: 'owner'
+    })
+    organizationRoles.set(ALICE, 'member')
+
+    const response = await setUp()('/spaces?state=trashed')
+
+    expect(ids(response.json())).toEqual([])
   })
 
   it('refuses an unknown state', async () => {
@@ -614,7 +639,10 @@ it('asks for a bearer token', async () => {
     db: testDb.db,
     authorize: fakeAuth(app, () => null),
     apps: [],
-    workplaces: () => Promise.resolve(new Map())
+    workplaces: () => Promise.resolve(new Map()),
+    organizationDirectory: {
+      organizationRole: () => Promise.resolve(undefined)
+    }
   })
 
   const response = await app.inject({ method: 'GET', url: '/spaces' })

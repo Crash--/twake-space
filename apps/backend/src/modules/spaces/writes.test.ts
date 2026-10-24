@@ -130,6 +130,12 @@ function ldapRest(refuse?: Error) {
   return { calls, directory }
 }
 
+// What ldap-rest says of each person's organization role.
+const organizationRoles = new Map<string, 'owner' | 'admin' | 'member'>()
+beforeEach(() => {
+  organizationRoles.clear()
+})
+
 function setUp(
   directory: SpaceDirectory,
   tokenCaller: TokenCaller = aTokenCaller()
@@ -150,7 +156,22 @@ function setUp(
             : null,
     token => (token === 'tws_bot' ? tokenCaller : null)
   )
-  registerSpaceWriteRoutes(app, { db: testDb.db, authorize, directory })
+  registerSpaceWriteRoutes(app, {
+    db: testDb.db,
+    authorize,
+    directory,
+    organizationDirectory: {
+      organizationRole: (organizationId, userId) => {
+        const role = organizationRoles.get(userId)
+        const person = people.find(p => p.uuid === userId)
+        return Promise.resolve(
+          organizationId === 'org-1' && role && person
+            ? { email: person.email, role }
+            : undefined
+        )
+      }
+    }
+  })
   return (
     method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
@@ -756,12 +777,7 @@ describe('archives and the bin', () => {
   })
 
   it("lets the organization's admins restore a space they are not in", async () => {
-    await testDb.db.insert(organizationMembers).values({
-      organizationId: 'org-1',
-      userId: CAROL,
-      email: 'carol@example.com',
-      role: 'admin'
-    })
+    organizationRoles.set(CAROL, 'admin')
     await stateOf(DESIGN, 'trashed')
 
     const response = await moveTo(
@@ -772,6 +788,81 @@ describe('archives and the bin', () => {
 
     expect(response.statusCode).toBe(204)
     expect(await readState()).toBe('active')
+  })
+
+  it('takes the organization role from ldap-rest, not from the copy', async () => {
+    // A forged or stale event made Carol an admin in the copy only.
+    await testDb.db.insert(organizationMembers).values({
+      organizationId: 'org-1',
+      userId: CAROL,
+      email: 'carol@example.com',
+      role: 'admin'
+    })
+    organizationRoles.set(CAROL, 'member')
+    await stateOf(DESIGN, 'trashed')
+    const write = setUp(ldapRest().directory)
+
+    const restore = await moveTo(write, 'active', 'carol')
+    const empty = await write('DELETE', '/spaces/bin', undefined, 'carol')
+
+    expect(restore.statusCode).toBe(404)
+    expect(empty.statusCode).toBe(204)
+    expect(await readState()).toBe('trashed')
+    expect(
+      await testDb.db
+        .select({ role: organizationMembers.role })
+        .from(organizationMembers)
+    ).toEqual([{ role: 'member' }])
+  })
+
+  it('demotes an admin ldap-rest no longer knows as one', async () => {
+    await testDb.db.insert(organizationMembers).values({
+      organizationId: 'org-1',
+      userId: CAROL,
+      email: 'carol@example.com',
+      role: 'admin'
+    })
+    await stateOf(DESIGN, 'trashed')
+
+    const restore = await moveTo(setUp(ldapRest().directory), 'active', 'carol')
+
+    expect(restore.statusCode).toBe(404)
+    expect(await readState()).toBe('trashed')
+    expect(
+      await testDb.db
+        .select({ role: organizationMembers.role })
+        .from(organizationMembers)
+    ).toEqual([{ role: 'member' }])
+  })
+
+  it('keeps a later-sent older promotion from undoing the live role', async () => {
+    organizationRoles.set(CAROL, 'member')
+    await stateOf(DESIGN, 'trashed')
+    await moveTo(setUp(ldapRest().directory), 'active', 'carol')
+
+    await testDb.db.transaction(tx =>
+      (spacePlatformRoutes.get('b2b.member.role.changed') ?? fail())(
+        {
+          routingKey: 'b2b.member.role.changed',
+          messageId: 'm1',
+          body: {
+            organizationId: 'org-1',
+            uuid: CAROL,
+            email: 'carol@example.com',
+            role: 'admin',
+            timestamp: new Date(Date.now() - 60_000).toISOString()
+          }
+        },
+        tx,
+        log
+      )
+    )
+
+    expect(
+      await testDb.db
+        .select({ role: organizationMembers.role })
+        .from(organizationMembers)
+    ).toEqual([{ role: 'member' }])
   })
 
   it.each([

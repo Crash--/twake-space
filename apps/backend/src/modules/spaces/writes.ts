@@ -4,7 +4,11 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
-import type { SpaceDirectory, SpaceRole } from '../../infra/ldap-rest.ts'
+import type {
+  Directory,
+  SpaceDirectory,
+  SpaceRole
+} from '../../infra/ldap-rest.ts'
 import type { Authorize, Caller } from '../auth/index.ts'
 import { tell, tellSpaceMembers } from '../live/notify.ts'
 import {
@@ -16,6 +20,7 @@ import {
   upsertGroups,
   upsertMembers
 } from './events.ts'
+import { liveOrganizationRole } from './managers.ts'
 import { managedSpaces, reachableSpaces } from './routes.ts'
 import {
   organizationMembers,
@@ -127,9 +132,14 @@ async function tellMembersAndManagers(tx: Tx, orgId: string, spaceId: string) {
 
 export function registerSpaceWriteRoutes(
   app: HttpServer,
-  deps: { db: Db; authorize: Authorize; directory: SpaceDirectory }
+  deps: {
+    db: Db
+    authorize: Authorize
+    directory: SpaceDirectory
+    organizationDirectory: Pick<Directory, 'organizationRole'>
+  }
 ) {
-  const { db, authorize, directory } = deps
+  const { db, authorize, directory, organizationDirectory } = deps
 
   async function actorOf(caller: Caller) {
     if (caller.userId === null) return undefined
@@ -149,6 +159,7 @@ export function registerSpaceWriteRoutes(
   // nothing of it.
   async function managed(request: FastifyRequest, spaceId: string) {
     const caller = callerOf(request)
+    await liveOrganizationRole(db, organizationDirectory, caller)
     const [space] = await managedSpaces(db, caller, eq(spaces.spaceId, spaceId))
     if (space) return { orgId: caller.organizationId, state: space.state }
     const [reached] = await reachableSpaces(db, caller, spaceId)
@@ -408,6 +419,7 @@ export function registerSpaceWriteRoutes(
     writeSpace,
     refusing(async (request, reply) => {
       const caller = callerOf(request)
+      await liveOrganizationRole(db, organizationDirectory, caller)
       const binned = await managedSpaces(
         db,
         caller,

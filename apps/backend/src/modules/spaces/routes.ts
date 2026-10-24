@@ -3,8 +3,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
+import type { Directory } from '../../infra/ldap-rest.ts'
 import type { Authorize, Caller } from '../auth/index.ts'
 import { homeservers, organizations } from '../organizations/schema.ts'
+import { liveOrganizationRole } from './managers.ts'
 import { APP_KINDS, type SpaceApp } from './resources.ts'
 import {
   organizationMembers,
@@ -153,9 +155,10 @@ export function registerSpaceRoutes(
     authorize: Authorize
     apps: readonly SpaceApp[]
     workplaces: Workplaces
+    organizationDirectory: Pick<Directory, 'organizationRole'>
   }
 ) {
-  const { db, authorize, workplaces } = deps
+  const { db, authorize, workplaces, organizationDirectory } = deps
   const provided = new Set(deps.apps.map(app => APP_KINDS[app]))
 
   async function withManages<T extends { id: string }>(
@@ -191,6 +194,8 @@ export function registerSpaceRoutes(
         return reply.code(400).send({ error: 'invalid_request' })
       }
       const { state } = query.data
+      // The archives and the Bin list spaces the caller need not be in.
+      if (state) await liveOrganizationRole(db, organizationDirectory, caller)
       const reached = state
         ? (await managedSpaces(db, caller, eq(spaces.state, state))).map(
             space => ({

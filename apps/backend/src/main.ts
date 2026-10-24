@@ -126,10 +126,16 @@ registerSpaceRoutes(server, {
   db,
   authorize,
   apps: config.spaceApps,
-  workplaces: cachedWorkplaces(directory)
+  workplaces: cachedWorkplaces(directory),
+  organizationDirectory: directory
 })
 const spaceDirectory = ldapRestSpaces(ldapRest)
-registerSpaceWriteRoutes(server, { db, authorize, directory: spaceDirectory })
+registerSpaceWriteRoutes(server, {
+  db,
+  authorize,
+  directory: spaceDirectory,
+  organizationDirectory: directory
+})
 registerTokenRoutes(server, { db, authorize, directory })
 registerDirectoryRoutes(server, { authorize, directory })
 registerNotificationRoutes(server, {
