@@ -4,14 +4,15 @@ import amqplib from 'amqplib'
 import { pino } from 'pino'
 import { loadConfig } from './config.ts'
 import { postgresDeduplicator } from './events/dedupe.ts'
+import { scheduleActivity } from './events/outbox.ts'
 import { parkIn, scheduleParkedRetries } from './events/parking.ts'
 import { createMessageHandler, type Routes } from './events/router.ts'
 import {
   consumerAlive,
   consumerStats,
   deadLetterQueue,
-  drivePublisher,
-  startConsumers
+  startConsumers,
+  sweepPublisher
 } from './infra/amqp.ts'
 import { createDb, migrateDb } from './infra/db.ts'
 import { createServer } from './infra/http.ts'
@@ -199,12 +200,24 @@ publish = (routingKey, event, messageId) => {
     })
   )
 }
-const drives = drivePublisher(
-  () => amqplib.connect(config.AMQP_URL, { timeout: PUBLISH_TIMEOUT_MS }),
-  config.amqp,
+const connectToPublish = () =>
+  amqplib.connect(config.AMQP_URL, { timeout: PUBLISH_TIMEOUT_MS })
+const drives = sweepPublisher(
+  connectToPublish,
+  config.amqp.driveExchange,
   PUBLISH_TIMEOUT_MS
 )
-const stopDriveCommands = scheduleDriveCommands(db, drives.publish, logger)
+const stopDriveCommands = scheduleDriveCommands(
+  db,
+  command => drives.publish(config.amqp.driveRoutingKey, command),
+  logger
+)
+const activity = sweepPublisher(
+  connectToPublish,
+  config.amqp.activityExchange,
+  PUBLISH_TIMEOUT_MS
+)
+const stopActivity = scheduleActivity(db, activity.publish, logger)
 isAlive = consumerAlive([consumers.space, consumers.activity], consumerStatus)
 const stopParked = scheduleParkedRetries(
   db,
@@ -223,16 +236,19 @@ lifecycle.started(async () => {
   stopSweep()
   const reconciliationStopped = stopReconciliation()
   const driveCommandsStopped = stopDriveCommands()
+  const activityStopped = stopActivity()
   try {
     await Promise.all([
       parkedStopped,
       reconciliationStopped,
-      driveCommandsStopped
+      driveCommandsStopped,
+      activityStopped
     ])
     await Promise.all([
       consumers.space.close(),
       consumers.activity.close(),
-      drives.close()
+      drives.close(),
+      activity.close()
     ])
     await delay(DRAIN_MS)
     await server.close()

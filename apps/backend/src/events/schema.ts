@@ -1,5 +1,13 @@
-import { jsonb, pgTable, primaryKey, text } from 'drizzle-orm/pg-core'
+import {
+  index,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  uuid
+} from 'drizzle-orm/pg-core'
 import { timestamptz } from '../infra/db.ts'
+import type { OutgoingEvent } from './outbox.ts'
 
 export const processedEvents = pgTable(
   'processed_events',
@@ -27,6 +35,18 @@ export const parkedEvents = pgTable(
     parkedAt: timestamptz('parked_at').notNull().defaultNow()
   },
   table => [primaryKey({ columns: [table.source, table.id] })]
+)
+
+// Our own activity events, from the transaction that makes them until the
+// broker confirms them.
+export const outgoingActivity = pgTable(
+  'outgoing_activity',
+  {
+    id: uuid().primaryKey(),
+    event: jsonb().$type<OutgoingEvent>().notNull(),
+    createdAt: timestamptz('created_at').notNull().defaultNow()
+  },
+  table => [index().on(table.createdAt)]
 )
 
 // Kept after the object itself is removed, so a replayed event cannot bring it back.

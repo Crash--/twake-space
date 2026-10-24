@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
 import type { Authorize } from '../auth/index.ts'
+import type { Caller } from '../auth/routes.ts'
 import { notifications } from '../notifications/schema.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
@@ -17,6 +18,7 @@ import {
   type FeedItem
 } from './items.ts'
 import { tellFeed } from './live.ts'
+import { forgetMentions, mentionMembers } from './mentions.ts'
 import {
   activityEvents,
   feedCards,
@@ -63,7 +65,11 @@ const reactionParams = itemParams.extend({
   })
 })
 
-const postBody = z.object({ body: z.string().trim().min(1).max(4000) })
+const postBody = z.object({
+  body: z.string().trim().min(1).max(4000),
+  // Member ids: anyone else is left out.
+  mentions: z.array(z.uuid()).max(50).default([])
+})
 const newPostBody = postBody.extend({
   poll: z
     .object({
@@ -94,6 +100,15 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
   if (!result.success) throw new Refusal(400, 'invalid_request')
   return result.data
+}
+
+// A mention comes from the caller's person, a token's account included: an
+// organization token has none, so it cannot mention.
+function mentioner(caller: Caller, mentions: string[]): string | null {
+  if (!caller.userId && mentions.length > 0) {
+    throw new Refusal(403, 'cannot_mention')
+  }
+  return caller.userId
 }
 
 const serialize = (item: FeedItem) => ({
@@ -167,7 +182,7 @@ export function registerFeedRoutes(
         : post.authorId === caller.userId ||
           post.tokenAccountId === caller.userId
     if (!authored) throw new Refusal(403, 'not_author')
-    return { spaceId, postId }
+    return { spaceId, postId, caller }
   }
 
   // Shared: a vote waits for the poll's closing, and the closing for the vote.
@@ -341,7 +356,8 @@ export function registerFeedRoutes(
         const { caller, space } = await reach(request)
         const spaceId = space.id
         if (space.role === 'viewer') throw new Refusal(403, 'cannot_post')
-        const { body, poll } = parse(newPostBody, request.body)
+        const { body, poll, mentions } = parse(newPostBody, request.body)
+        const speaker = mentioner(caller, mentions)
         const item = await db.transaction(async tx => {
           const [post] = await tx
             .insert(feedPosts)
@@ -356,6 +372,13 @@ export function registerFeedRoutes(
             })
             .returning({ id: feedPosts.id })
           if (!post) throw new Error('the post insert returned no row')
+          if (speaker) {
+            await mentionMembers(
+              tx,
+              { id: post.id, spaceId, authorId: speaker, body },
+              mentions
+            )
+          }
           await tellFeed(tx, spaceId, post.id, 'added')
           return findItem(tx, spaceId, post.id)
         })
@@ -373,12 +396,20 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
-          const { spaceId, postId } = await authoredPost(tx, request)
-          const { body } = parse(postBody, request.body)
+          const { spaceId, postId, caller } = await authoredPost(tx, request)
+          const { body, mentions } = parse(postBody, request.body)
+          const speaker = mentioner(caller, mentions)
           await tx
             .update(feedPosts)
             .set({ body, editedAt: new Date() })
             .where(eq(feedPosts.id, postId))
+          if (speaker) {
+            await mentionMembers(
+              tx,
+              { id: postId, spaceId, authorId: speaker, body },
+              mentions
+            )
+          }
           await tellFeed(tx, spaceId, postId, 'changed')
           return findItem(tx, spaceId, postId)
         })
@@ -401,6 +432,7 @@ export function registerFeedRoutes(
           await tx
             .delete(feedItemReactions)
             .where(eq(feedItemReactions.itemId, postId))
+          await forgetMentions(tx, spaceId, postId)
           await tellFeed(tx, spaceId, postId, 'removed')
         })
         return await reply.code(204).send()

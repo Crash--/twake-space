@@ -251,8 +251,11 @@ async function connect(
   return client
 }
 
-export interface DrivePublisher {
-  publish: (command: Record<string, unknown>) => Promise<void>
+export interface SweepPublisher {
+  publish: (
+    routingKey: string,
+    message: Record<string, unknown>
+  ) => Promise<void>
   close: () => Promise<void>
 }
 
@@ -260,12 +263,11 @@ export interface DrivePublisher {
 // at once instead of queueing publishes for when the broker returns. Its own
 // connection, as a refused publish closes the channel and must not stop a
 // consumer.
-export function drivePublisher(
+export function sweepPublisher(
   connect: () => Promise<amqplib.ChannelModel>,
-  topology: Pick<AmqpTopology, 'driveExchange' | 'driveRoutingKey'>,
+  exchange: string,
   timeoutMs: number
-): DrivePublisher {
-  const { driveExchange: exchange, driveRoutingKey: routingKey } = topology
+): SweepPublisher {
   let open:
     | { connection: amqplib.ChannelModel; channel: amqplib.ConfirmChannel }
     | undefined
@@ -297,9 +299,9 @@ export function drivePublisher(
   }
   return {
     // The deadline also covers opening the channel: the caller holds the
-    // command's row lock meanwhile, and amqplib's own timeout stops at the
+    // message's row lock meanwhile, and amqplib's own timeout stops at the
     // handshake.
-    async publish(command) {
+    async publish(routingKey, message) {
       let returned = false as boolean
       let expired = false
       const send = async () => {
@@ -313,7 +315,7 @@ export function drivePublisher(
           channel.publish(
             exchange,
             routingKey,
-            Buffer.from(JSON.stringify(command)),
+            Buffer.from(JSON.stringify(message)),
             {
               persistent: true,
               mandatory: true,

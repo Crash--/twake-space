@@ -370,18 +370,21 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 
 ### POST /spaces/:spaceId/feed/posts
 
-- Body: `{"body": "..."}`, 1 to 4000 characters once trimmed. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed.
+- Body: `{"body": "...", "mentions": ["<user uuid>"]}`. `body` is 1 to 4000 characters once trimmed. `mentions` is optional, up to 50 member ids. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed.
+- Each mentioned member of the space other than the author gets a `card_mention` notification, and the mention is published on `activity` ([Events](events.md#mentions-in-posts)). An id that is no member of the space is left out.
 - Editors and admins only, otherwise `403 {"error":"cannot_post"}`. An account token posts with its account's role, an organization token with its own.
+- An account token mentions as its account. An organization token speaks for no person, so its mentions answer `403 {"error":"cannot_mention"}`.
 - Answers `201` with the post.
 
 ### PATCH /spaces/:spaceId/feed/posts/:itemId
 
-- Body: `{"body": "..."}`. Answers the post. A poll keeps its options and votes.
+- Body: `{"body": "...", "mentions": [...]}`, as for a new post without the poll. Answers the post. A poll keeps its options and votes.
+- Only the members the post did not mention before are notified and published.
 - Its author only, otherwise `403 {"error":"not_author"}`. A token's post belongs to that token, and to the person of its account, from a session, even once the token is revoked.
 
 ### DELETE /spaces/:spaceId/feed/posts/:itemId
 
-Deletes the post, its reactions and its votes. Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. Answers `204`.
+Deletes the post, its reactions, its votes and the notifications of its mentions. Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. Answers `204`.
 
 ### PUT /spaces/:spaceId/feed/posts/:itemId/vote
 

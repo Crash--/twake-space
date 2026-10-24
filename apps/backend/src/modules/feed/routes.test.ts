@@ -9,6 +9,7 @@ import {
   it,
   vi
 } from 'vitest'
+import { outgoingActivity } from '../../events/schema.ts'
 import { createServer } from '../../infra/http.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
@@ -48,6 +49,7 @@ beforeEach(async () => {
   live.mockClear()
   const { db } = testDb
   await db.delete(notifications)
+  await db.delete(outgoingActivity)
   await db.delete(feedItemReactions)
   await db.delete(feedPosts)
   await db.delete(apiTokens)
@@ -1042,6 +1044,165 @@ describe('posts', () => {
     )
 
     expect(response.statusCode).toBe(404)
+  })
+})
+
+describe('mentions', () => {
+  const mentioned = () =>
+    testDb.db
+      .select({ userId: notifications.userId, type: notifications.type })
+      .from(notifications)
+  const outgoing = async () =>
+    (await testDb.db.select().from(outgoingActivity)).map(row => row.event)
+
+  it('notifies the members a post mentions and publishes each mention', async () => {
+    const send = setUp()
+
+    const response = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      { body: '@Bob can you review?', mentions: [BOB, ALICE, DAN] }
+    )
+
+    expect(response.statusCode).toBe(201)
+    const post = response.json<Item>()
+    expect(await mentioned()).toEqual([{ userId: BOB, type: 'card_mention' }])
+    const [event, ...others] = await outgoing()
+    expect(others).toEqual([])
+    expect(event).toEqual({
+      specversion: '1.0',
+      id: expect.any(String) as string,
+      source: 'twake://space',
+      type: 'com.twake.space.post.mentioned.v1',
+      time: expect.any(String) as string,
+      twakeorg: 'org-1',
+      twakeactorid: ALICE,
+      twakeactor: 'alice@example.com',
+      data: {
+        object: {
+          type: 'post',
+          id: post.id,
+          title: 'Design',
+          space: { id: DESIGN, name: 'Design' }
+        },
+        preview: '@Bob can you review?',
+        recipients: [
+          { uuid: BOB, email: 'bob@example.com', reason: 'mentioned' }
+        ]
+      }
+    })
+    const feed = await send('GET', `/spaces/${DESIGN}/feed`, 'bob')
+    expect(feed.json<Page>().items.map(item => item.id)).toEqual([post.id])
+    const unread = await send('GET', '/feed/unread', 'bob')
+    expect(unread.json()).toEqual({
+      spaces: [{ spaceId: DESIGN, items: 0, mentions: 1 }]
+    })
+  })
+
+  it('cuts the preview to 280 characters', async () => {
+    await setUp()('POST', `/spaces/${DESIGN}/feed/posts`, 'alice', {
+      body: 'é'.repeat(300),
+      mentions: [BOB]
+    })
+
+    const [event] = await outgoing()
+    expect(event?.data).toMatchObject({ preview: 'é'.repeat(280) })
+  })
+
+  it('notifies on an edit only the members the post did not mention yet', async () => {
+    const send = setUp()
+    const created = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      {
+        body: '@Bob',
+        mentions: [BOB]
+      }
+    )
+    const url = `/spaces/${DESIGN}/feed/posts/${created.json<Item>().id}`
+
+    const edited = await send('PATCH', url, 'alice', {
+      body: '@Bob @Carol',
+      mentions: [BOB, CAROL]
+    })
+
+    expect(edited.statusCode).toBe(200)
+    expect(await mentioned()).toEqual([
+      { userId: BOB, type: 'card_mention' },
+      { userId: CAROL, type: 'card_mention' }
+    ])
+    expect(
+      (await outgoing()).map(event => event.data as { recipients: unknown })
+    ).toMatchObject([
+      { recipients: [{ uuid: BOB }] },
+      { recipients: [{ uuid: CAROL }] }
+    ])
+  })
+
+  it('takes the notifications back with the post', async () => {
+    const send = setUp()
+    const created = await send(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      {
+        body: '@Bob',
+        mentions: [BOB]
+      }
+    )
+    await vi.waitFor(() => {
+      expect(live).toHaveBeenCalledWith(BOB, 'notification', {})
+    })
+    live.mockClear()
+
+    await send(
+      'DELETE',
+      `/spaces/${DESIGN}/feed/posts/${created.json<Item>().id}`
+    )
+
+    expect(await mentioned()).toEqual([])
+    expect(await outgoing()).toEqual([])
+    await vi.waitFor(() => {
+      expect(live).toHaveBeenCalledWith(BOB, 'notification', {})
+    })
+  })
+
+  it('refuses mentions that are not ids', async () => {
+    const response = await setUp()(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'alice',
+      { body: 'Hi', mentions: ['bob'] }
+    )
+
+    expect(response.statusCode).toBe(400)
+  })
+
+  it('lets an account token mention as its account, and no organization token', async () => {
+    await aToken()
+    const byAccount = await setUp(
+      aTokenCaller({ userId: ALICE, scopes: ['feed:write'] })
+    )('POST', `/spaces/${DESIGN}/feed/posts`, 'tws_bot', {
+      body: '@Bob',
+      mentions: [BOB]
+    })
+    const byOrganization = await setUp(
+      aTokenCaller({ userId: null, role: 'editor', scopes: ['feed:write'] })
+    )('POST', `/spaces/${DESIGN}/feed/posts`, 'tws_bot', {
+      body: '@Bob',
+      mentions: [BOB]
+    })
+
+    expect(byAccount.statusCode).toBe(201)
+    expect(await mentioned()).toEqual([{ userId: BOB, type: 'card_mention' }])
+    expect((await outgoing())[0]).toMatchObject({
+      twakeactorid: ALICE,
+      twakeactor: 'alice@example.com'
+    })
+    expect(byOrganization.statusCode).toBe(403)
+    expect(byOrganization.json()).toEqual({ error: 'cannot_mention' })
   })
 })
 

@@ -36,6 +36,7 @@ flowchart LR
   B -->|HTTP routes| PG
   B -->|meeting request| M[twake-space exchange]
   PG -->|drive commands, after commit| D[drive exchange]
+  PG -->|post mentions, after commit| A
 ```
 
 ## Consuming RabbitMQ
@@ -223,6 +224,47 @@ sequenceDiagram
 - The backend declares the `drive` exchange, durable topic, when it is missing. A publish fails at once while the broker is unreachable: the next pass connects again.
 - Each replica locks the command it publishes and skips the ones another replica holds. A replica stopping between the publish and the commit leaves the command to send again, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
 
+## Mentions in posts
+
+A post names the members it mentions by id ([API](api.md#post-spacesspaceidfeedposts)). Each member of the space it mentions, its author aside, gets a `card_mention` notification, and the mention is published on `activity` for their assistant ([ADR 006](https://github.com/linagora/twake-space-architecture/blob/3f3fb07b23f135113e168d081364a5dcd961e848/ADR006.md)).
+
+```json
+{
+  "specversion": "1.0",
+  "id": "<uuid>",
+  "source": "twake://space",
+  "type": "com.twake.space.post.mentioned.v1",
+  "time": "2026-10-24T09:00:00.000Z",
+  "twakeorg": "<organization id>",
+  "twakeactorid": "<author uuid>",
+  "twakeactor": "alice@example.com",
+  "data": {
+    "object": {
+      "type": "post",
+      "id": "<post id>",
+      "title": "Design Sprint",
+      "space": { "id": "<space id>", "name": "Design Sprint" }
+    },
+    "preview": "@Bob can you review the mockups?",
+    "recipients": [
+      {
+        "uuid": "<member uuid>",
+        "email": "bob@example.com",
+        "reason": "mentioned"
+      }
+    ]
+  }
+}
+```
+
+- One event per post and member, with that member alone in `data.recipients`. An edit publishes only the members the post did not mention before, and a member mentioned again is not notified again.
+- `data.object.title` is the space's name, as a post has no title. `data.preview` is the post's text, cut to 280 characters. No link: the assistant builds it from the ids.
+- Each mention is stored in `activity_events`, with no card, so its notification counts in the feed's unread mentions and reads like any other. Deleting the post deletes those rows, their notifications and the events not published yet.
+- A member who turned `card_mention` off gets no notification in Space, and the mention is published all the same: their assistant has its own settings.
+- An edit that drops a mention leaves its notification.
+- The event waits in `outgoing_activity`, written in the post's transaction, until the broker confirms it, as the drive commands do: after the commit and every 10 s, a replica locks the oldest row, skipping locked ones, publishes it (confirmed, mandatory) and deletes it. A refused publish keeps it for the next pass.
+- The backend's own activity queue receives the event too, and leaves it unrouted.
+
 ## Activity events
 
 ### Resources provisioned by apps
@@ -316,6 +358,7 @@ sequenceDiagram
 flowchart LR
   AE[Activity event data.recipients] --> NR[notifyRecipients]
   AS[POST /notifications/suggestions] --> NU[notifyUsers]
+  PM[Post mention] --> NU
   NR --> NU
   NU -->|per user settings| N[(notifications)]
   N -->|live: notification| SSE[GET /stream]

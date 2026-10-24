@@ -1,6 +1,7 @@
 import { eq, isNotNull, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import { afterCommit, beforeCommit, type Db, type Tx } from '../../infra/db.ts'
+import { scheduleSweep } from '../../infra/sweep.ts'
 import {
   driveCommands,
   spaceGroups,
@@ -180,34 +181,16 @@ export function scheduleDriveCommands(
   publish: PublishCommand,
   logger: Pick<Logger, 'warn'>
 ): () => Promise<void> {
-  let running: Promise<void> | undefined
-  let again = false
-  let stopped = false
-  const flush = () => {
-    if (running) {
-      again = true
-      return
+  const sweep = scheduleSweep(
+    stopped => publishDriveCommands(db, publish, stopped),
+    SWEEP_EVERY_MS,
+    error => {
+      logger.warn({ err: error }, 'drive commands were not published')
     }
-    running = publishDriveCommands(db, publish, () => stopped)
-      .catch((error: unknown) => {
-        logger.warn({ err: error }, 'drive commands were not published')
-      })
-      .finally(() => {
-        running = undefined
-        if (again) {
-          again = false
-          flush()
-        }
-      })
-  }
-  nudge = flush
-  flush()
-  const timer = setInterval(flush, SWEEP_EVERY_MS)
-  return async () => {
+  )
+  nudge = sweep.nudge
+  return () => {
     nudge = () => undefined
-    stopped = true
-    clearInterval(timer)
-    again = false
-    await running
+    return sweep.stop()
   }
 }

@@ -20,8 +20,8 @@ import {
   consumerStats,
   deadLetterQueue,
   deliveryHandler,
-  drivePublisher,
-  subscription
+  subscription,
+  sweepPublisher
 } from './amqp.ts'
 
 const properties = (
@@ -416,15 +416,15 @@ function fakeBroker() {
   }
 }
 
-describe('drivePublisher', () => {
-  const topology = amqpTopology.parse({}).amqp
+describe('sweepPublisher', () => {
+  const KEY = 'drive.org_drive.ensure'
 
-  it('declares the drive exchange and publishes the command mandatory', async () => {
+  it('declares the exchange and publishes the message mandatory', async () => {
     const broker = fakeBroker()
-    const drives = drivePublisher(broker.connect, topology, 1000)
+    const drives = sweepPublisher(broker.connect, 'drive', 1000)
 
-    await drives.publish({ revision: 1 })
-    await drives.publish({ revision: 2 })
+    await drives.publish(KEY, { revision: 1 })
+    await drives.publish(KEY, { revision: 2 })
 
     const [channel] = broker.channels
     expect(broker.connects).toHaveBeenCalledTimes(1)
@@ -442,50 +442,50 @@ describe('drivePublisher', () => {
   it('fails while the broker refuses to declare the exchange, and declares it again on the next publish', async () => {
     const broker = fakeBroker()
     broker.state.declarable = false
-    const drives = drivePublisher(broker.connect, topology, 1000)
+    const drives = sweepPublisher(broker.connect, 'drive', 1000)
 
-    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+    await expect(drives.publish(KEY, { revision: 1 })).rejects.toThrow(
       'ACCESS_REFUSED'
     )
     expect(broker.connections[0]?.close).toHaveBeenCalled()
 
     broker.state.declarable = true
-    await drives.publish({ revision: 1 })
+    await drives.publish(KEY, { revision: 1 })
     expect(broker.connects).toHaveBeenCalledTimes(2)
   })
 
   it('fails a command no queue takes', async () => {
     const broker = fakeBroker()
     broker.state.unroutable = true
-    const drives = drivePublisher(broker.connect, topology, 1000)
+    const drives = sweepPublisher(broker.connect, 'drive', 1000)
 
-    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+    await expect(drives.publish(KEY, { revision: 1 })).rejects.toThrow(
       'no queue is bound'
     )
   })
 
   it('fails at once while the broker is unreachable, and reconnects once it is back', async () => {
     const broker = fakeBroker()
-    const drives = drivePublisher(broker.connect, topology, 1000)
-    await drives.publish({ revision: 1 })
+    const drives = sweepPublisher(broker.connect, 'drive', 1000)
+    await drives.publish(KEY, { revision: 1 })
     broker.state.reachable = false
     broker.connections[0]?.emit('close')
 
-    await expect(drives.publish({ revision: 2 })).rejects.toThrow(
+    await expect(drives.publish(KEY, { revision: 2 })).rejects.toThrow(
       'ECONNREFUSED'
     )
 
     broker.state.reachable = true
-    await drives.publish({ revision: 2 })
+    await drives.publish(KEY, { revision: 2 })
     expect(broker.connects).toHaveBeenCalledTimes(3)
   })
 
   it('drops the connection when the broker does not confirm in time', async () => {
     const broker = fakeBroker()
     broker.state.confirming = false
-    const drives = drivePublisher(broker.connect, topology, 10)
+    const drives = sweepPublisher(broker.connect, 'drive', 10)
 
-    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+    await expect(drives.publish(KEY, { revision: 1 })).rejects.toThrow(
       'did not confirm in time'
     )
     expect(broker.connections[0]?.close).toHaveBeenCalled()
@@ -494,9 +494,9 @@ describe('drivePublisher', () => {
   it('fails in time when the broker stalls before the channel is ready', async () => {
     const broker = fakeBroker()
     broker.state.answering = false
-    const drives = drivePublisher(broker.connect, topology, 10)
+    const drives = sweepPublisher(broker.connect, 'drive', 10)
 
-    await expect(drives.publish({ revision: 1 })).rejects.toThrow(
+    await expect(drives.publish(KEY, { revision: 1 })).rejects.toThrow(
       'did not confirm in time'
     )
     expect(broker.channels[0]?.publish).not.toHaveBeenCalled()
