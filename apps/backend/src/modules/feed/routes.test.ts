@@ -1023,6 +1023,20 @@ describe('posts', () => {
     expect(deleted.statusCode).toBe(403)
   })
 
+  it('lets an author made a viewer take their post down, not edit it', async () => {
+    const poll = await aPost('Lunch?', '2026-10-05T10:00:00Z', BOB, ['A', 'B'])
+    const post = `/spaces/${DESIGN}/feed/posts/${poll}`
+    const call = setUp()
+
+    const edited = await call('PATCH', post, 'bob', { body: 'Taken over' })
+    const closed = await call('POST', `${post}/close`, 'bob')
+    const deleted = await call('DELETE', post, 'bob')
+
+    expect(edited.json()).toEqual({ error: 'cannot_post' })
+    expect(closed.statusCode).toBe(200)
+    expect(deleted.statusCode).toBe(204)
+  })
+
   it('deletes a post with its reactions', async () => {
     const post = await aPost('Oops', '2026-10-05T10:00:00Z')
     await testDb.db

@@ -1310,6 +1310,23 @@ describe('FeedPanel', () => {
     })
   })
 
+  it('lets me only delete my post once I am a viewer', async () => {
+    renderFeed(
+      [post(2, { author: { type: 'user', id: 'u-me', name: 'Alice Martin' } })],
+      { space: { ...roadmap, role: 'viewer' } }
+    )
+    const article = await screen.findByRole('article', { name: 'Alice Martin' })
+
+    fireEvent.click(
+      within(article).getByRole('button', { name: 'More actions' })
+    )
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Edit' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
+  })
+
   it('follows the live changes of this space', async () => {
     const { feed, live } = renderFeed([post(1)])
     await screen.findByText('Message 1')

@@ -676,6 +676,8 @@ function Post({
   const time = useTime()
   const author = useActorName(post.author) ?? t('feed.someone')
   const mine = post.author.type === 'user' && post.author.id === myId
+  // An author made a viewer since may only take the post down.
+  const canChange = mine && space.role !== 'viewer'
   const [draft, setDraft] = useState<string | null>(null)
   const people = useMentionable(space)
   const edit = useMutation({
@@ -736,14 +738,15 @@ function Post({
           mine && (
             <ItemMenu
               onEdit={
-                post.approval || post.feedback
+                !canChange || post.approval || post.feedback
                   ? null
                   : () => {
                       setDraft(post.body)
                     }
               }
               onPin={
-                post.announcement
+                post.announcement &&
+                (canChange || post.announcement.pinnedAt !== null)
                   ? {
                       pinned: post.announcement.pinnedAt !== null,
                       onClick: () => {

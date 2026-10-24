@@ -218,7 +218,13 @@ export function registerFeedRoutes(
     return params.data.itemId
   }
 
-  async function authoredPost(tx: Tx, request: FastifyRequest) {
+  // An author made a viewer since may still take their post down: delete,
+  // close or unpin it, nothing that reaches the space further.
+  async function authoredPost(
+    tx: Tx,
+    request: FastifyRequest,
+    { takingDown = false } = {}
+  ) {
     const { caller, space } = await reach(request)
     const spaceId = space.id
     const postId = itemOf(request)
@@ -242,6 +248,9 @@ export function registerFeedRoutes(
         : post.authorId === caller.userId ||
           post.tokenAccountId === caller.userId
     if (!authored) throw new Refusal(403, 'not_author')
+    if (space.role === 'viewer' && !takingDown) {
+      throw new Refusal(403, 'cannot_post')
+    }
     return { spaceId, postId, caller, kind: post.kind }
   }
 
@@ -579,7 +588,9 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         await db.transaction(async tx => {
-          const { spaceId, postId } = await authoredPost(tx, request)
+          const { spaceId, postId } = await authoredPost(tx, request, {
+            takingDown: true
+          })
           await tx.delete(feedPosts).where(eq(feedPosts.id, postId))
           await tx
             .delete(feedItemReactions)
@@ -659,7 +670,9 @@ export function registerFeedRoutes(
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
-          const { spaceId, postId, caller } = await authoredPost(tx, request)
+          const { spaceId, postId, caller } = await authoredPost(tx, request, {
+            takingDown: true
+          })
           const [closed] = await tx
             .update(feedPosts)
             .set({ pollClosedAt: new Date() })
@@ -695,7 +708,8 @@ export function registerFeedRoutes(
         const item = await db.transaction(async tx => {
           const { spaceId, postId, caller, kind } = await authoredPost(
             tx,
-            request
+            request,
+            { takingDown: !pinned }
           )
           if (kind !== 'announcement') throw new Refusal(404, 'not_found')
           const [moved] = await tx
