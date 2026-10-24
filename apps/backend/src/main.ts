@@ -8,6 +8,7 @@ import { scheduleActivity } from './events/outbox.ts'
 import { parkIn, scheduleParkedRetries } from './events/parking.ts'
 import { createMessageHandler, type Routes } from './events/router.ts'
 import {
+  connectLive,
   consumerAlive,
   consumerStats,
   deadLetterQueue,
@@ -187,6 +188,8 @@ const handlerDeps = {
 }
 const handle = createMessageHandler({ routes, ...handlerDeps })
 // Live updates first, so the changes the consumers commit reach browsers.
+const live = await connectLive(config, logger, consumerStatus)
+await listenForLive(live, config.amqp.liveExchange, streams, logger)
 const consumers = await startConsumers(
   config,
   logger,
@@ -199,8 +202,7 @@ const consumers = await startConsumers(
       ...handlerDeps
     })
   },
-  consumerStatus,
-  client => listenForLive(client, config.amqp.liveExchange, streams, logger)
+  consumerStatus
 )
 const consumer = consumers.space
 // The client waits for the broker without end and retries for over a minute,
@@ -244,7 +246,10 @@ const activity = sweepPublisher(
   PUBLISH_TIMEOUT_MS
 )
 const stopActivity = scheduleActivity(db, activity.publish, logger)
-isAlive = consumerAlive([consumers.space, consumers.activity], consumerStatus)
+isAlive = consumerAlive(
+  [consumers.space, consumers.activity, live],
+  consumerStatus
+)
 const stopParked = scheduleParkedRetries(
   db,
   handle,
@@ -273,6 +278,7 @@ lifecycle.started(async () => {
     await Promise.all([
       consumers.space.close(),
       consumers.activity.close(),
+      live.close(),
       drives.close(),
       activity.close()
     ])

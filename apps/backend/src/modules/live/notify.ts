@@ -95,7 +95,9 @@ export async function listenForLive(
     },
     {
       exclusive: true,
-      bindings: [{ exchange, routingKey: REVOKED }]
+      bindings: [{ exchange, routingKey: REVOKED }],
+      // A replica that falls behind drops the oldest rather than grow the queue.
+      queueArguments: { 'x-max-length': 1000 }
     }
   )
   // A message is only worth something now, so it gets a single attempt. That

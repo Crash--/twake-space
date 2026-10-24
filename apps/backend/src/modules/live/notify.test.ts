@@ -91,3 +91,24 @@ it('keeps publishing after a failed publish leaves the client disconnected', asy
 
   expect(publish).toHaveBeenCalledTimes(2)
 })
+
+it('listens on a queue of its own that keeps at most 1000 messages', async () => {
+  const subscribe = vi.fn(() => Promise.resolve())
+  await listenForLive(
+    { subscribe, publish: vi.fn() },
+    'live',
+    { send: vi.fn(), closeSession: vi.fn() },
+    pino({ level: 'silent' })
+  )
+
+  expect(subscribe).toHaveBeenCalledWith(
+    'live',
+    'live.update',
+    'live.replica',
+    expect.any(Function),
+    expect.objectContaining({
+      exclusive: true,
+      queueArguments: { 'x-max-length': 1000 }
+    })
+  )
+})

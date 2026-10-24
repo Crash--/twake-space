@@ -199,8 +199,8 @@ The backend starts in this order. A failure at any step stops the process.
 4. With `REDIS_URL`, starts connecting to Redis without waiting for it.
 5. Runs OIDC discovery on `OIDC_ISSUER` (5 second timeout).
 6. Starts the API and metrics servers.
-7. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
-8. Opens a second connection, declares the activity queue, its binding and dead letter queue, and starts consuming it.
+7. Opens a RabbitMQ connection for live updates alone and declares its own exclusive queue on the live exchange, for live updates and session revocations.
+8. Opens one more connection per queue it consumes, declares the activity queue, its binding and dead letter queue, and starts consuming it.
 9. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
 10. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
 

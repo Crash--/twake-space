@@ -251,6 +251,13 @@ async function connect(
   return client
 }
 
+// Its own connection, so live messages never wait behind a platform event.
+export const connectLive = (
+  config: Config,
+  logger: Logger,
+  stats: ConsumerStats
+) => connect(config, logger, stats, `${config.amqp.liveExchange}.replica`, 10)
+
 export interface SweepPublisher {
   publish: (
     routingKey: string,
@@ -397,13 +404,11 @@ export async function startConsumers(
   config: Config,
   logger: Logger,
   handle: { space: Handle; activity: Handle },
-  stats: ConsumerStats,
-  beforeConsuming: (client: RabbitMQClient) => Promise<void>
+  stats: ConsumerStats
 ): Promise<{ space: RabbitMQClient; activity: RabbitMQClient }> {
   const { amqp } = config
   // One message at a time keeps the order the publishers sent.
   const space = await connect(config, logger, stats, amqp.queue, 1)
-  await beforeConsuming(space)
   const activity = await connect(
     config,
     logger,
