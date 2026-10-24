@@ -901,6 +901,30 @@ describe('FeedPanel', () => {
       expect(screen.getByText('Could not save your vote.')).toBeInTheDocument()
     })
 
+    it('asks to slow down when a vote is refused for going too fast', async () => {
+      const { feed } = renderFeed([lunch()])
+      const poll = await screen.findByRole('group', { name: 'Which day?' })
+      vi.mocked(feed.vote).mockRejectedValueOnce(
+        Object.assign(new Error('rate_limited'), {
+          status: 429,
+          code: 'rate_limited'
+        })
+      )
+
+      fireEvent.click(
+        within(poll).getByRole('button', { name: 'Friday: 0 votes' })
+      )
+
+      expect(
+        await screen.findByText(
+          "You're going too fast. Wait a moment and try again."
+        )
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('Could not save your vote.')
+      ).not.toBeInTheDocument()
+    })
+
     it('offers no one else to close it, and lets a viewer vote', async () => {
       const { feed } = renderFeed([lunch()], {
         space: { ...roadmap, role: 'viewer' }
@@ -1177,6 +1201,38 @@ describe('FeedPanel', () => {
 
       expect(await pinnedStrip()).toBeInTheDocument()
       expect(feed.pin).toHaveBeenCalledWith('a1', 'post-1', true)
+    })
+
+    it('tells the newest failure, not an older one', async () => {
+      const { feed } = renderFeed([
+        post(1, {
+          author: { type: 'user', id: 'u-me', name: 'Alice Martin' },
+          announcement: { pinnedAt: null }
+        })
+      ])
+      vi.mocked(feed.remove).mockRejectedValueOnce(new Error('offline'))
+      vi.mocked(feed.pin).mockRejectedValueOnce(
+        Object.assign(new Error('rate_limited'), {
+          status: 429,
+          code: 'rate_limited'
+        })
+      )
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'More actions' })
+      )
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+      expect(
+        await screen.findByText('Could not change the message.')
+      ).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Pin to the top' }))
+
+      expect(
+        await screen.findByText(
+          "You're going too fast. Wait a moment and try again."
+        )
+      ).toBeInTheDocument()
     })
 
     it('offers no one else to unpin it', async () => {

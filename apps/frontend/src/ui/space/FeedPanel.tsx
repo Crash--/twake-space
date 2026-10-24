@@ -112,6 +112,7 @@ import {
   usePinned
 } from '@/ui/space/feedQueries'
 import { ApprovalDialog } from '@/ui/space/ApprovalDialog'
+import { FeedFailure } from '@/ui/space/FeedFailure'
 import { PeopleDialog } from '@/ui/space/PeopleDialog'
 import { PollDialog } from '@/ui/space/PollDialog'
 import { TextPostDialog } from '@/ui/space/TextPostDialog'
@@ -403,11 +404,22 @@ function Pinned({
               : null
         }))}
       />
-      {unpin.isError && (
-        <Alert severity="error">{t('feed.changeFailed')}</Alert>
-      )}
+      <FeedFailure error={unpin.error} message={t('feed.changeFailed')} />
     </>
   )
+}
+
+// A mutation keeps its error until it runs again: show the newest one.
+function latestError(
+  ...mutations: { error: Error | null; submittedAt: number }[]
+): Error | null {
+  return mutations.reduce<{ error: Error | null; submittedAt: number }>(
+    (latest, mutation) =>
+      mutation.error && mutation.submittedAt >= latest.submittedAt
+        ? mutation
+        : latest,
+    { error: null, submittedAt: 0 }
+  ).error
 }
 
 function usePin(spaceId: string) {
@@ -482,7 +494,7 @@ function Composer({ space }: { space: Space }): ReactElement {
   })
   return (
     <>
-      {send.isError && <Alert severity="error">{t('feed.postFailed')}</Alert>}
+      <FeedFailure error={send.error} message={t('feed.postFailed')} />
       <FeedComposer
         label={t('feed.composer')}
         sendLabel={t('feed.send')}
@@ -828,9 +840,10 @@ function Post({
           }
         />
       )}
-      {(edit.isError || remove.isError || close.isError || pin.isError) && (
-        <Alert severity="error">{t('feed.changeFailed')}</Alert>
-      )}
+      <FeedFailure
+        error={latestError(edit, remove, close, pin)}
+        message={t('feed.changeFailed')}
+      />
       <FeedFooter time={time(post.time)}>
         <Reactions item={post} spaceId={space.id} myId={myId} />
       </FeedFooter>
@@ -922,9 +935,7 @@ function PollVotes({
         }}
         close={onClose && { label: t('feed.poll.close'), onClick: onClose }}
       />
-      {vote.isError && (
-        <Alert severity="error">{t('feed.poll.voteFailed')}</Alert>
-      )}
+      <FeedFailure error={vote.error} message={t('feed.poll.voteFailed')} />
     </>
   )
 }
@@ -1008,9 +1019,10 @@ function ApprovalDecisions({
         }
         close={onClose && { label: t('feed.approval.close'), onClick: onClose }}
       />
-      {decide.isError && (
-        <Alert severity="error">{t('feed.approval.decideFailed')}</Alert>
-      )}
+      <FeedFailure
+        error={decide.error}
+        message={t('feed.approval.decideFailed')}
+      />
     </>
   )
 }
@@ -1083,9 +1095,10 @@ function FeedbackAnswers({
         }
         close={onClose && { label: t('feed.feedback.close'), onClick: onClose }}
       />
-      {answer.isError && (
-        <Alert severity="error">{t('feed.feedback.answerFailed')}</Alert>
-      )}
+      <FeedFailure
+        error={answer.error}
+        message={t('feed.feedback.answerFailed')}
+      />
     </>
   )
 }

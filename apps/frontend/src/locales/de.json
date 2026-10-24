@@ -286,6 +286,7 @@
     "cancel": "Abbrechen",
     "edited": "bearbeitet",
     "changeFailed": "Nachricht konnte nicht geändert werden.",
+    "tooFast": "Sie sind zu schnell. Warten Sie einen Moment und versuchen Sie es erneut.",
     "react": "Reaktion hinzufügen",
     "reaction": "%{emoji} %{count}",
     "open": {

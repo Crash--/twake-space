@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -14,6 +13,7 @@ import type { FeedItem } from '@/application/feed'
 import { DialogHeader } from '@/ds/Dialog'
 import { useI18n } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
+import { FeedFailure } from '@/ui/space/FeedFailure'
 
 /** A new announcement, pinned once published, or a feedback request. */
 export function TextPostDialog({
@@ -71,9 +71,7 @@ export function TextPostDialog({
                 setText(event.target.value)
               }}
             />
-            {publish.isError && (
-              <Alert severity="error">{t('feed.postFailed')}</Alert>
-            )}
+            <FeedFailure error={publish.error} message={t('feed.postFailed')} />
           </Stack>
         </DialogContent>
         <DialogActions>

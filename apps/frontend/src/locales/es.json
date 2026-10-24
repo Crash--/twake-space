@@ -286,6 +286,7 @@
     "cancel": "Cancelar",
     "edited": "editado",
     "changeFailed": "No se pudo cambiar el mensaje.",
+    "tooFast": "Vas demasiado rápido. Espera un momento y vuelve a intentarlo.",
     "react": "Añadir una reacción",
     "reaction": "%{emoji} %{count}",
     "open": {

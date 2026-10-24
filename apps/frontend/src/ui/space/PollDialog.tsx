@@ -1,6 +1,5 @@
 import { Icon, Plus } from '@linagora/twake-icons'
 import {
-  Alert,
   Button,
   Dialog,
   DialogActions,
@@ -16,6 +15,7 @@ import { DialogHeader } from '@/ds/Dialog'
 import { FeedPollOption } from '@/ds/Feed'
 import { useI18n } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
+import { FeedFailure } from '@/ui/space/FeedFailure'
 
 // `key` keeps a field in place when one above it is removed.
 interface OptionField {
@@ -133,9 +133,7 @@ export function PollDialog({
                 </Button>
               </div>
             )}
-            {publish.isError && (
-              <Alert severity="error">{t('feed.postFailed')}</Alert>
-            )}
+            <FeedFailure error={publish.error} message={t('feed.postFailed')} />
           </Stack>
         </DialogContent>
         <DialogActions>

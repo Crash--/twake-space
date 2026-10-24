@@ -286,6 +286,7 @@
     "cancel": "Hủy",
     "edited": "đã sửa",
     "changeFailed": "Không thể thay đổi tin nhắn.",
+    "tooFast": "Bạn thao tác quá nhanh. Vui lòng đợi một lát rồi thử lại.",
     "react": "Thêm biểu cảm",
     "reaction": "%{emoji} %{count}",
     "open": {
