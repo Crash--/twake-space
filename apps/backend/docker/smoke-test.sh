@@ -104,8 +104,6 @@ queues="$(docker exec "$RUN-rabbitmq" rabbitmqctl list_queues -q name arguments 
 bindings="$(docker exec "$RUN-rabbitmq" rabbitmqctl list_bindings -q source_name destination_name routing_key 2>&1 || true)"
 expect 'declared the platform queue every replica consumes' \
   "$(grep $'^twake-space\\.platform\t' <<<"$queues" | grep -vc x-single-active-consumer || true)" '1'
-expect 'declared no queue of older versions on a new broker' \
-  "$(grep -c $'^twake-space\t' <<<"$queues" || true)" '0'
 expect 'bound every activity event to the activity queue' \
   "$(grep -cxF $'activity\ttwake-space.activity\t#' <<<"$bindings" || true)" '1'
 expect 'kept them off the platform queue' \

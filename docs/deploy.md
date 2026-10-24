@@ -171,7 +171,7 @@ Matrix homeserver, in one of two modes. Without either, the backend runs without
 
 The defaults match the platform. [Events](events.md#consuming-rabbitmq) lists the bindings they produce.
 
-- `AMQP_QUEUE`: the prefix of the queue names, default `twake-space`. The platform events queue is `<queue>.platform`, and its dead letter queue `<queue>.platform.dlq`. `<queue>` itself is the queue of older versions, which the backend drains.
+- `AMQP_QUEUE`: the prefix of the queue names, default `twake-space`. The platform events queue is `<queue>.platform`, and its dead letter queue `<queue>.platform.dlq`.
 - `AMQP_DEAD_LETTER_EXCHANGE`: default `<queue>.dlx`.
 - `AMQP_DELIVERY_LIMIT`: deliveries before RabbitMQ dead-letters a message, default `20`, on both queues.
 - `AMQP_ACTIVITY_QUEUE`: the queue for the apps' activity events, default `<queue>.activity`. Its dead letter queue is `<activity queue>.dlq`.
@@ -202,8 +202,7 @@ The backend starts in this order. A failure at any step stops the process.
 7. Opens a RabbitMQ connection for live updates alone and declares its own exclusive queue on the live exchange, for live updates and session revocations.
 8. Opens one more connection per queue it consumes, declares the activity queue, its binding and dead letter queue, and starts consuming it.
 9. Checks the exchanges other services own, declares the platform events queue, its bindings and dead letter queue, and starts consuming it.
-10. When the queue of older versions exists, opens one more connection, consumes what it still holds one message at a time, and removes its bindings and those of its dead letter queue, again after each reconnection ([Events](events.md#consuming-rabbitmq)).
-11. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
+10. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
 
 On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry, a reconciliation pass, or a drive command or activity event publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers, the Redis connection and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
 
@@ -253,7 +252,6 @@ Optional, set with `REDIS_URL`. It holds only the rate limit counts, under `twak
 - Meeting requests are published on `twake-space` with publisher confirms and `mandatory`, with a 10 second timeout: they fail while no calendar consumer has a queue bound.
 - Live updates are published once, and dropped while the replica is disconnected.
 - Every replica consumes both queues. The events of one space take turns under a Postgres advisory lock ([Events](events.md#ordering)).
-- `twake-space` and `twake-space.dlq`, the queues of older versions, lose their bindings and are drained. Delete both once every replica runs this version and they are empty.
 - An event the backend cannot process ends in `twake-space.platform.dlq`, or `twake-space.activity.dlq` for an activity event. See [Events](events.md#consuming-rabbitmq).
 - A message that fails for over 25 minutes is logged as an error. RabbitMQ's `consumer_timeout` (30 minutes by default) then closes the channel and delivers it again. After 21 deliveries (about 10 hours of failures, less with restarts) RabbitMQ dead-letters it and the queue moves on.
 

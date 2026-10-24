@@ -132,9 +132,6 @@ export const amqpTopology = z
       env.AMQP_ACTIVITY_QUEUE ?? `${env.AMQP_QUEUE}.activity`
     return {
       amqp: {
-        queue: env.AMQP_QUEUE,
-        // AMQP_QUEUE itself had a single active consumer, which a declared queue
-        // cannot drop, so it is only drained now.
         platformQueue: `${env.AMQP_QUEUE}.platform`,
         deadLetterExchange:
           env.AMQP_DEAD_LETTER_EXCHANGE ?? `${env.AMQP_QUEUE}.dlx`,

@@ -64,9 +64,6 @@ Both queues:
 - Get each message acknowledged only after its Postgres transaction commits.
 
 Each replica consumes `twake-space.platform` with prefetch 1, and `twake-space.activity` with prefetch 10 (`AMQP_ACTIVITY_CONCURRENCY`), handling up to 10 of its messages at once. The events of one space take turns, see [Ordering](#ordering).
-
-Older versions consumed `twake-space`, with a single active consumer, an argument a declared queue cannot drop. When it exists, each start consumes what it still holds, one message at a time, and removes its bindings and those of `twake-space.dlq`, so new events and dead letters only reach the new queues. A replica of an older version still running declares them again when it reconnects, so each reconnection of the draining consumer removes them again. Both queues can be deleted once every replica runs this version and they are empty.
-
 Startup fails when `space`, `b2b`, `admin-panel`, or an exchange `AMQP_EVENTS` moves an event to, is missing, since other services own them. The backend declares `activity` and `settings` itself, as durable topic exchanges: the apps declare `activity` the same way, and declaring `settings` lets the backend run on a platform without common settings.
 
 Every name above is a setting, listed in [Deploying](deploy.md#rabbitmq-names). The router and the handlers always see the default routing keys and the default `activity` name: the consumer translates them back before routing. A renamed platform exchange is kept as is, so `parked_events` rows and log lines show the deployment's name.

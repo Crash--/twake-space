@@ -51,23 +51,6 @@ export function subscription(topology: AmqpTopology) {
   return { ...primary, queue: topology.platformQueue, options }
 }
 
-// The queue of older versions, declared as they did.
-export function oldSubscription(topology: AmqpTopology) {
-  const current = subscription(topology)
-  const { options } = current
-  return {
-    ...current,
-    queue: topology.queue,
-    options: {
-      ...options,
-      queueArguments: {
-        ...options.queueArguments,
-        'x-single-active-consumer': true
-      }
-    }
-  }
-}
-
 // Each activity event stands alone, so every replica consumes the queue.
 export function activitySubscription(topology: AmqpTopology) {
   const options = {
@@ -401,92 +384,12 @@ async function consume(
   logger.info({ queue }, 'consuming from RabbitMQ')
 }
 
-// A missing queue closes the channel that checked it, so the check has its own
-// connection.
-async function queueExists(url: string, queue: string) {
-  const connection = await amqplib.connect(url)
-  connection.on('error', () => undefined)
-  try {
-    const channel = await connection.createChannel()
-    channel.on('error', () => undefined)
-    await channel.checkQueue(queue)
-    return true
-  } catch {
-    return false
-  } finally {
-    await connection.close().catch(() => undefined)
-  }
-}
-
-// Removing a binding already gone does nothing. The `#` one on the activity
-// exchange is from even older versions.
-async function unbindOldQueue(url: string, topology: AmqpTopology) {
-  const { queue, exchange, routingKey, options } = oldSubscription(topology)
-  const connection = await amqplib.connect(url)
-  try {
-    const channel = await connection.createChannel()
-    for (const binding of [
-      { exchange, routingKey },
-      ...options.bindings,
-      { exchange: topology.activityExchange, routingKey: '#' }
-    ]) {
-      await channel.unbindQueue(queue, binding.exchange, binding.routingKey)
-    }
-    await channel.unbindQueue(
-      `${queue}.dlq`,
-      topology.deadLetterExchange,
-      `${routingKey}.dead`
-    )
-  } finally {
-    await connection.close()
-  }
-}
-
-// Older versions consumed AMQP_QUEUE. It gets nothing new: each start drains it
-// one message at a time, and unbinds it and its dead letter queue, so dead
-// letters only reach the new one. An older replica still running binds it again
-// when it reconnects, so each reconnection unbinds it again. A later release
-// deletes both.
-async function drainOldQueue(
-  config: Config,
-  logger: Logger,
-  stats: ConsumerStats,
-  handle: Handle
-): Promise<RabbitMQClient | undefined> {
-  const { AMQP_URL: url, amqp } = config
-  if (!(await queueExists(url, amqp.queue))) return undefined
-  const unbind = () =>
-    unbindOldQueue(url, amqp).catch((error: unknown) => {
-      logger.error({ err: error }, 'unbinding the old queue failed')
-    })
-  const client = new RabbitMQClient({
-    url,
-    prefetch: 1,
-    retryDelay: FIRST_RETRY_MS,
-    logger: logger.child(
-      { component: 'amqp', queue: amqp.queue },
-      { level: 'warn' }
-    ),
-    hooks: { onReconnect: () => void unbind() }
-  })
-  await client.init()
-  await consume(client, config, logger, stats, oldSubscription(amqp), handle)
-  await unbind()
-  return client
-}
-
-// The activity queue first, so it holds every activity event before the old
-// queue lets them go.
 export async function startConsumers(
   config: Config,
   logger: Logger,
   handle: { space: Handle; activity: Handle },
   stats: ConsumerStats
-): Promise<{
-  space: RabbitMQClient
-  activity: RabbitMQClient
-  old: RabbitMQClient | undefined
-}> {
+): Promise<{ space: RabbitMQClient; activity: RabbitMQClient }> {
   const { amqp } = config
   // One message at a time per replica: an event waiting for its space's lock
   // holds a database connection.
@@ -501,6 +404,5 @@ export async function startConsumers(
   const subscribed = activitySubscription(amqp)
   await consume(activity, config, logger, stats, subscribed, handle.activity)
   await consume(space, config, logger, stats, subscription(amqp), handle.space)
-  const old = await drainOldQueue(config, logger, stats, handle.space)
-  return { space, activity, old }
+  return { space, activity }
 }

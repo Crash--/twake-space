@@ -153,7 +153,7 @@ describe('loadConfig: RabbitMQ topology', () => {
     const { amqp } = loadConfig(base)
 
     expect(amqp).toMatchObject({
-      queue: 'twake-space',
+      platformQueue: 'twake-space.platform',
       deadLetterExchange: 'twake-space.dlx',
       deliveryLimit: 20,
       activityQueue: 'twake-space.activity',
@@ -202,7 +202,7 @@ describe('loadConfig: RabbitMQ topology', () => {
       driveRoutingKey: 'twake-space.drive.ensure',
       provisionedBinding: 'apps.*.provisioned',
       driveRepliesBinding: 'apps.drive.replies.#',
-      queue: 'space-events',
+      platformQueue: 'space-events.platform',
       deadLetterExchange: 'space-events.dlx',
       activityQueue: 'space-events.activity',
       activityDeadLetterExchange: 'space-events.activity.dlx',
