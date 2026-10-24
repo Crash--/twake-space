@@ -63,6 +63,8 @@ const configSchema = z
   .object({
     AMQP_URL: z.url({ protocol: /^amqps?$/ }),
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+    // Rate limit counts; without it each replica keeps its own in memory.
+    REDIS_URL: z.url({ protocol: /^rediss?$/ }).optional(),
     LDAP_REST_URL: z.url({ protocol: /^https?$/ }),
     LDAP_REST_SERVICE_ID: z.string().min(1),
     LDAP_REST_SECRET: z.string().min(32),

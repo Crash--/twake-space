@@ -26,6 +26,7 @@
     "openid-client": "^6.8.8",
     "pino": "^10.4.0",
     "postgres": "^3.4.9",
+    "redis": "^6.3.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

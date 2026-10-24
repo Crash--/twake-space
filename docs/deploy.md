@@ -143,6 +143,7 @@ Optional, with defaults:
 - `MATRIX_LOCALPART`: `uid` or `email`, default `uid`. It tells the backend how Matrix user localparts map to directory users.
 - `SPACE_APPS`: the apps that prepare a resource for each space on this deployment, comma separated, among `chat`, `tasks`, `drive`, `mail` and `calendar`. Default: all five. A space shows no tab for an app left out. Chat also needs a Matrix homeserver (below), or it is left out too.
 - `SENTRY_DSN`, `SENTRY_ENVIRONMENT`: error reporting. Unset `SENTRY_DSN` disables it.
+- `REDIS_URL`: a `redis://` or `rediss://` URL where replicas share rate limit counts. Unset, each replica counts in its own memory. While Redis is unreachable, each replica also counts in its own memory, so requests are never held or refused because of it.
 
 Matrix homeserver, in one of two modes. Without either, the backend runs without chat.
 

@@ -39,6 +39,11 @@ services:
       interval: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '127.0.0.1:6379:6379'
+
   backend:
     profiles: [app]
     build:

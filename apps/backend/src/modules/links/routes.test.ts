@@ -1,6 +1,7 @@
 import { pino } from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from '../../infra/http.ts'
+import { fixedWindows } from '../auth/index.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { LinkPreview } from './preview.ts'
 import { cachedPreviews, registerLinkRoutes } from './routes.ts'
@@ -23,7 +24,7 @@ function request(url: string, preview = vi.fn(), token = 'alice') {
     t => (t === 'alice' ? anIdentity() : null),
     t => (t === 'tws_bot' ? aTokenCaller() : null)
   )
-  registerLinkRoutes(app, { authorize, preview })
+  registerLinkRoutes(app, { authorize, limiter: fixedWindows(), preview })
   return app.inject({
     method: 'GET',
     url,
@@ -77,7 +78,11 @@ describe('GET /link-preview', () => {
     })
     const authorize = fakeAuth(app, () => anIdentity())
     const fetch = vi.fn().mockResolvedValue(found)
-    registerLinkRoutes(app, { authorize, preview: cachedPreviews(fetch) })
+    registerLinkRoutes(app, {
+      authorize,
+      limiter: fixedWindows(),
+      preview: cachedPreviews(fetch)
+    })
     const get = (path: string) =>
       app.inject({
         method: 'GET',
@@ -108,7 +113,7 @@ describe('GET /link-preview', () => {
 describe('cachedPreviews', () => {
   const uncapped = (...args: Parameters<typeof cachedPreviews>) => {
     const preview = cachedPreviews(...args)
-    return (url: URL) => preview(url, () => true)
+    return (url: URL) => preview(url, () => Promise.resolve(true))
   }
 
   it('fetches a link once for the hour, then again', async () => {
@@ -157,12 +162,14 @@ describe('cachedPreviews', () => {
     const preview = cachedPreviews(fetch)
     const url = new URL('https://example.com/a')
 
-    await preview(url, () => true)
+    await preview(url, () => Promise.resolve(true))
 
-    expect(await preview(url, () => false)).toEqual(found)
-    expect(await preview(new URL('https://example.com/b'), () => false)).toBe(
-      'limited'
-    )
+    expect(await preview(url, () => Promise.resolve(false))).toEqual(found)
+    expect(
+      await preview(new URL('https://example.com/b'), () =>
+        Promise.resolve(false)
+      )
+    ).toBe('limited')
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

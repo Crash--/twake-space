@@ -22,7 +22,13 @@ import {
   ldapRestDirectory,
   ldapRestSpaces
 } from './infra/ldap-rest.ts'
-import { scheduleRevocationSweep, setUpAuth } from './modules/auth/index.ts'
+import { connectRedis } from './infra/redis.ts'
+import {
+  fixedWindows,
+  redisWindows,
+  scheduleRevocationSweep,
+  setUpAuth
+} from './modules/auth/index.ts'
 import { activityRoute } from './modules/feed/activity.ts'
 import { registerMetrics } from './modules/feed/metrics.ts'
 import { schedulePurge } from './modules/feed/retention.ts'
@@ -104,6 +110,9 @@ const routes: Routes = {
   )
 }
 
+const redis = config.REDIS_URL ? connectRedis(config.REDIS_URL, logger) : null
+const limiter = redis ? redisWindows(redis) : fixedWindows()
+
 let accepting = false
 const consumerStatus = consumerStats()
 let isAlive = () => true
@@ -122,7 +131,8 @@ const authorize = await setUpAuth(server, {
   },
   directory,
   newTokenChecks: config.NEW_TOKEN_CHECKS,
-  newTokensWaiting: config.NEW_TOKENS_WAITING
+  newTokensWaiting: config.NEW_TOKENS_WAITING,
+  limiter
 })
 registerSpaceRoutes(server, {
   db,
@@ -146,7 +156,7 @@ registerNotificationRoutes(server, {
   localpart: config.MATRIX_LOCALPART
 })
 registerFeedRoutes(server, { db, authorize })
-registerLinkRoutes(server, { authorize })
+registerLinkRoutes(server, { authorize, limiter })
 // Publishing reuses the consumer's client, which starts after the server listens.
 let publish: Publish = () => Promise.reject(new Error('not connected yet'))
 registerMeetingRoutes(server, {
@@ -261,6 +271,7 @@ lifecycle.started(async () => {
     await delay(DRAIN_MS)
     await server.close()
     await metrics.close()
+    redis?.destroy()
     await sql.end({ timeout: 5 })
   } finally {
     await Sentry.close(2000)

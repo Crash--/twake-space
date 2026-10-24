@@ -159,6 +159,7 @@ A new scope is a new value in the `token_scope` enum in `modules/tokens/schema.t
 
 - Vitest, with tests next to the code as `*.test.ts`. There is no vitest config file in the backend.
 - Tests need the compose Postgres. `createTestDb()` from `infra/testing.ts` creates a fresh migrated database per test file and drops it after, so files run in parallel. Set `TEST_DATABASE_URL` to use another server.
+- The rate limit tests also need the compose Redis. Set `TEST_REDIS_URL` to use another server.
 - Tests do not need RabbitMQ, ldap-rest, the SSO or Matrix. Handlers are called directly, and the directory and Matrix are passed in as fakes.
 - Route tests build a server with `createServer` from `infra/http.ts` and use `fakeAuth`, `anIdentity` and `aTokenCaller` from `modules/auth/testing.ts`, then call `app.inject`.
 

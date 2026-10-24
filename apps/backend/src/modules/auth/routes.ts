@@ -108,7 +108,7 @@ export function registerAuth(
         : `token:${caller.tokenId}`
     const { config, method, url } = request.routeOptions
     const key = config.limit ? `${who} ${String(method)} ${String(url)}` : who
-    const waitMs = limiter(key, config.limit ?? DEFAULT_LIMIT)
+    const waitMs = await limiter(key, config.limit ?? DEFAULT_LIMIT)
     if (waitMs === 0) return
     request.log.warn({ caller: who, route: url }, 'rate limited')
     return reply

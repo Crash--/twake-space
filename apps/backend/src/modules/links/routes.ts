@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { HttpServer } from '../../infra/http.ts'
-import { fixedWindows, perMinute, type Authorize } from '../auth/index.ts'
+import { perMinute, type Authorize, type Limiter } from '../auth/index.ts'
 import { fetchPreview, type LinkPreview } from './preview.ts'
 
 const CACHED_MS = 60 * 60 * 1000
@@ -24,7 +24,7 @@ const FETCH_LIMIT = perMinute(30)
 type Fetch = (url: URL) => Promise<LinkPreview | null>
 type Preview = (
   url: URL,
-  mayFetch: () => boolean
+  mayFetch: () => Promise<boolean>
 ) => Promise<LinkPreview | null | 'limited'>
 
 // One fetch per link for the hour, whoever asks, also while it runs. A link
@@ -37,9 +37,16 @@ export function cachedPreviews(fetch: Fetch, now = Date.now): Preview {
   >()
   return async (url, mayFetch) => {
     const key = url.href
-    const hit = cache.get(key)
-    if (hit && hit.until > now()) return hit.preview
-    if (!mayFetch()) return 'limited'
+    const cached = () => {
+      const hit = cache.get(key)
+      return hit && hit.until > now() ? hit.preview : null
+    }
+    const hit = cached()
+    if (hit) return hit
+    if (!(await mayFetch())) return 'limited'
+    // Another request may have started the fetch while this one waited.
+    const started = cached()
+    if (started) return started
     cache.delete(key)
     const preview = fetch(url).catch(() => null)
     const entry = { until: now() + CACHED_MS, preview }
@@ -58,10 +65,9 @@ export function cachedPreviews(fetch: Fetch, now = Date.now): Preview {
 
 export function registerLinkRoutes(
   app: HttpServer,
-  deps: { authorize: Authorize; preview?: Preview }
+  deps: { authorize: Authorize; limiter: Limiter; preview?: Preview }
 ) {
   const preview = deps.preview ?? cachedPreviews(url => fetchPreview(url))
-  const fetches = fixedWindows()
 
   app.get(
     '/link-preview',
@@ -74,7 +80,7 @@ export function registerLinkRoutes(
       const caller = request.caller?.userId ?? ''
       const found = await preview(
         query.data.url,
-        () => fetches(caller, FETCH_LIMIT) === 0
+        async () => (await deps.limiter(`fetch:${caller}`, FETCH_LIMIT)) === 0
       )
       if (found === 'limited') {
         return reply
