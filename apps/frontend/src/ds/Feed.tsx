@@ -14,9 +14,13 @@ import {
   Checkbox,
   IconButton,
   InputBase,
+  List,
+  ListItemButton,
   ListItemText,
   Menu,
   MenuItem,
+  Paper,
+  Popper,
   TextField,
   Tooltip,
   Typography
@@ -27,6 +31,7 @@ import {
   useContext,
   useEffect,
   useEffectEvent,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -42,6 +47,7 @@ import {
   SidePanelIcon,
   Videocam
 } from '@/ds/icons'
+import { NameAvatar } from '@/ds/AppFrame'
 import type { SpaceTokens } from '@/ds/theme'
 
 // How close to the newest item still counts as being there, and how close to
@@ -846,6 +852,23 @@ export function FeedBody({ children }: { children: ReactNode }): ReactElement {
   )
 }
 
+export function FeedMention({ children }: { children: string }): ReactElement {
+  return (
+    <Box
+      component="span"
+      sx={theme => ({
+        px: '0.35em',
+        borderRadius: '4px',
+        fontWeight: 500,
+        color: theme.vars.palette.primary.main,
+        bgcolor: theme.alpha(theme.vars.palette.primary.main, 0.12)
+      })}
+    >
+      {children}
+    </Box>
+  )
+}
+
 /** Reactions and actions on the left, the time on the right. */
 export function FeedFooter({
   children,
@@ -1413,11 +1436,24 @@ export function FeedPoll({
   )
 }
 
+export interface MentionablePerson {
+  id: string
+  name: string
+  email: string
+  avatar: string | null
+}
+
+// "@" and what follows it up to the caret, at the start or after a space.
+const MENTION_QUERY = /(?:^|\s)@([^\s@]*)$/
+const MENTION_OPTIONS = 8
+
 export function FeedComposer({
   label,
   sendLabel,
   emojiLabel,
   emojis,
+  people,
+  peopleLabel,
   value,
   onChange,
   onSend,
@@ -1428,6 +1464,9 @@ export function FeedComposer({
   sendLabel: string
   emojiLabel: string
   emojis: string[]
+  /** Who an "@" offers to mention. */
+  people: MentionablePerson[]
+  peopleLabel: string
   value: string
   onChange: (value: string) => void
   onSend: () => void
@@ -1437,22 +1476,69 @@ export function FeedComposer({
 }): ReactElement {
   const empty = value.trim() === ''
   const field = useRef<HTMLTextAreaElement>(null)
+  const [form, setForm] = useState<HTMLFormElement | null>(null)
+  const listId = useId()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  // The emoji goes where the caret is, and the caret stays after it.
-  const insert = (emoji: string) => {
+  const [mention, setMention] = useState<{
+    start: number
+    query: string
+  } | null>(null)
+  const [active, setActive] = useState(0)
+  const query = mention?.query.toLowerCase()
+  const options =
+    query === undefined
+      ? []
+      : people
+          .filter(
+            p =>
+              p.name.toLowerCase().includes(query) ||
+              p.email.toLowerCase().includes(query)
+          )
+          .slice(0, MENTION_OPTIONS)
+  const picking = options.length > 0
+  const current = picking ? Math.min(active, options.length - 1) : -1
+  useEffect(() => {
+    document
+      .getElementById(`${listId}-${String(current)}`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [listId, current])
+  // The caret stays after the new text.
+  const replace = (start: number, end: number, text: string) => {
     const input = field.current
-    const start = input?.selectionStart ?? value.length
-    const end = input?.selectionEnd ?? value.length
-    onChange(value.slice(0, start) + emoji + value.slice(end))
-    const caret = start + emoji.length
+    onChange(value.slice(0, start) + text + value.slice(end))
+    const caret = start + text.length
     requestAnimationFrame(() => {
       input?.focus()
       input?.setSelectionRange(caret, caret)
     })
   }
+  const insert = (emoji: string) => {
+    const input = field.current
+    replace(
+      input?.selectionStart ?? value.length,
+      input?.selectionEnd ?? value.length,
+      emoji
+    )
+  }
+  const pick = (person: MentionablePerson) => {
+    if (!mention) return
+    const end = mention.start + 1 + mention.query.length
+    replace(mention.start, end, `@${person.name} `)
+    setMention(null)
+  }
+  const follow = (text: string, caret: number) => {
+    const found = MENTION_QUERY.exec(text.slice(0, caret))?.[1]
+    setMention(
+      found === undefined
+        ? null
+        : { start: caret - found.length - 1, query: found }
+    )
+    setActive(0)
+  }
   return (
     <Box
       component="form"
+      ref={setForm}
       onSubmit={event => {
         event.preventDefault()
         if (!empty && !disabled) onSend()
@@ -1465,12 +1551,49 @@ export function FeedComposer({
         maxRows={6}
         placeholder={label}
         inputRef={field}
-        inputProps={{ 'aria-label': label, maxLength: 4000 }}
+        inputProps={{
+          'aria-label': label,
+          maxLength: 4000,
+          'aria-autocomplete': 'list',
+          'aria-controls': picking ? listId : undefined,
+          'aria-activedescendant': picking
+            ? `${listId}-${String(current)}`
+            : undefined
+        }}
         value={value}
         onChange={event => {
           onChange(event.target.value)
         }}
+        // Typing and moving the caret both change what the "@" asks for.
+        onSelect={event => {
+          const input = event.target as HTMLTextAreaElement
+          follow(input.value, input.selectionStart)
+        }}
+        onBlur={() => {
+          setMention(null)
+        }}
         onKeyDown={event => {
+          if (picking && !event.nativeEvent.isComposing) {
+            const count = options.length
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault()
+              setActive(
+                (current + (event.key === 'ArrowDown' ? 1 : count - 1)) % count
+              )
+              return
+            }
+            const chosen = options[current]
+            if ((event.key === 'Enter' || event.key === 'Tab') && chosen) {
+              event.preventDefault()
+              pick(chosen)
+              return
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              setMention(null)
+              return
+            }
+          }
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault()
             event.currentTarget.closest('form')?.requestSubmit()
@@ -1542,6 +1665,62 @@ export function FeedComposer({
           </MenuItem>
         ))}
       </Menu>
+      <Popper
+        open={picking}
+        anchorEl={form}
+        placement="top-start"
+        modifiers={[{ name: 'offset', options: { offset: [0, 8] } }]}
+        sx={{ zIndex: 'modal' }}
+      >
+        <Paper
+          elevation={8}
+          // The field keeps its focus and caret while the pointer picks or scrolls.
+          onMouseDown={event => {
+            event.preventDefault()
+          }}
+          sx={{ width: 280, maxWidth: 'calc(100vw - 32px)' }}
+        >
+          <List
+            id={listId}
+            role="listbox"
+            aria-label={peopleLabel}
+            dense
+            sx={{ maxHeight: 280, overflowY: 'auto', py: 0.5 }}
+          >
+            {options.map((person, index) => (
+              <ListItemButton
+                key={person.id}
+                component="li"
+                role="option"
+                id={`${listId}-${String(index)}`}
+                aria-selected={index === current}
+                selected={index === current}
+                onClick={() => {
+                  pick(person)
+                }}
+                sx={{ gap: 1.5 }}
+              >
+                <NameAvatar name={person.name} size="s" src={person.avatar} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" noWrap>
+                    {person.name}
+                  </Typography>
+                  {person.name !== person.email && (
+                    <Typography
+                      variant="caption"
+                      color="textSecondary"
+                      component="div"
+                      noWrap
+                    >
+                      {person.email}
+                    </Typography>
+                  )}
+                </Box>
+              </ListItemButton>
+            ))}
+          </List>
+        </Paper>
+      </Popper>
       <IconButton
         type="submit"
         aria-label={sendLabel}

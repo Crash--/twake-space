@@ -684,8 +684,39 @@ describe('FeedPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))
 
     expect(await screen.findByText('Hello team')).toBeInTheDocument()
-    expect(feed.post).toHaveBeenCalledWith('a1', 'Hello team')
+    expect(feed.post).toHaveBeenCalledWith('a1', 'Hello team', [])
     expect(composer).toHaveValue('')
+  })
+
+  it('mentions the member picked after an "@"', async () => {
+    const { feed } = renderFeed([post(1)], {
+      space: {
+        ...roadmap,
+        members: [
+          {
+            id: 'u-bob',
+            username: 'bob',
+            email: 'bob@acme',
+            displayName: 'Bob Durand',
+            workplaceFqdn: null,
+            role: 'editor'
+          }
+        ]
+      }
+    })
+    const composer = await screen.findByRole('textbox', {
+      name: 'Text message'
+    })
+
+    fireEvent.change(composer, { target: { value: 'Thanks @bo' } })
+    fireEvent.select(composer)
+    fireEvent.click(await screen.findByRole('option', { name: /Bob Durand/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findByText('@Bob Durand')).toBeInTheDocument()
+    expect(feed.post).toHaveBeenCalledWith('a1', 'Thanks @Bob Durand', [
+      'u-bob'
+    ])
   })
 
   it('lets a viewer react, but not post', async () => {
@@ -778,7 +809,7 @@ describe('FeedPanel', () => {
       expect(
         await screen.findByRole('group', { name: 'Which day?' })
       ).toBeInTheDocument()
-      expect(feed.post).toHaveBeenCalledWith('a1', 'Which day?', {
+      expect(feed.post).toHaveBeenCalledWith('a1', 'Which day?', [], {
         options: ['Tuesday', 'Friday']
       })
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

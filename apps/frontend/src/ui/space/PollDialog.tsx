@@ -47,7 +47,7 @@ export function PollDialog({
     options.length >= POLL_OPTIONS.min &&
     new Set(options.map(o => o.toLowerCase())).size === options.length
   const publish = useMutation({
-    mutationFn: () => feed.post(spaceId, question.trim(), { options }),
+    mutationFn: () => feed.post(spaceId, question.trim(), [], { options }),
     onSuccess: onPublished
   })
 

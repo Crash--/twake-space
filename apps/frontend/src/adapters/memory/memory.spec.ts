@@ -244,9 +244,9 @@ describe('memoryFeed', () => {
 
   it("edits, reacts to and deletes the caller's own post", async () => {
     const feed = feedFor('admin')
-    const post = await feed.post('roadmap', 'Hi all')
+    const post = await feed.post('roadmap', 'Hi all', [])
 
-    await feed.edit('roadmap', post.id, 'Hello all')
+    await feed.edit('roadmap', post.id, 'Hello all', [])
     await feed.react('roadmap', post.id, '🎉')
 
     expect(await feed.item('roadmap', post.id)).toMatchObject({
@@ -264,9 +264,9 @@ describe('memoryFeed', () => {
   })
 
   it('refuses a post from a viewer', async () => {
-    await expect(feedFor('viewer').post('roadmap', 'Hi')).rejects.toMatchObject(
-      { status: 403, code: 'cannot_post' }
-    )
+    await expect(
+      feedFor('viewer').post('roadmap', 'Hi', [])
+    ).rejects.toMatchObject({ status: 403, code: 'cannot_post' })
   })
 })
 

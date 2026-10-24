@@ -5,6 +5,8 @@ import {
   cardApp,
   fileExtension,
   firstLink,
+  mentionsIn,
+  splitMentions,
   toEventState,
   toFeedChange,
   withReaction,
@@ -197,5 +199,40 @@ describe('firstLink', () => {
     ['No link here, nor in ftp://example.com', null]
   ])('reads %j', (text, link) => {
     expect(firstLink(text)).toBe(link)
+  })
+})
+
+describe('mentionsIn', () => {
+  const people = [
+    { id: 'u1', name: 'Ann' },
+    { id: 'u2', name: 'Ann Lee' },
+    { id: 'u3', name: 'Bob' }
+  ]
+
+  it.each([
+    { text: 'Thanks @Bob!', ids: ['u3'] },
+    { text: 'Thanks @Bobby', ids: [] },
+    { text: '@Ann Lee and @Bob', ids: ['u2', 'u3'] },
+    { text: '@Ann, @Ann Lee', ids: ['u1', 'u2'] },
+    { text: 'Bob, no at sign', ids: [] },
+    { text: 'write to help@Bob', ids: [] }
+  ])('reads $ids in "$text"', ({ text, ids }) => {
+    expect(mentionsIn(text, people)).toEqual(ids)
+  })
+})
+
+describe('splitMentions', () => {
+  it('puts each mention between the text around it', () => {
+    expect(
+      splitMentions('Hi @Ann Lee, see @Bob.', ['Ann', 'Ann Lee', 'Bob'])
+    ).toEqual(['Hi ', '@Ann Lee', ', see ', '@Bob', '.'])
+  })
+
+  it('reads a name with regex characters as plain text', () => {
+    expect(splitMentions('@J.R. (ops)', ['J.R. (ops)'])).toEqual([
+      '',
+      '@J.R. (ops)',
+      ''
+    ])
   })
 })

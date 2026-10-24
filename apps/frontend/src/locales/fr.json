@@ -385,6 +385,7 @@
       "close": "Clore le sondage",
       "voteFailed": "Impossible d’enregistrer votre vote."
     },
+    "mention": "Mentionner un membre",
     "members": {
       "title": "Membres de l'espace",
       "show": "Afficher les membres",

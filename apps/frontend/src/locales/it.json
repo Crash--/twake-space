@@ -385,6 +385,7 @@
       "close": "Chiudi il sondaggio",
       "voteFailed": "Impossibile salvare il tuo voto."
     },
+    "mention": "Menziona un membro",
     "members": {
       "title": "Membri dello spazio",
       "show": "Mostra i membri",

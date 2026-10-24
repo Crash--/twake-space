@@ -99,7 +99,7 @@ export function AssistantPanel({
   const service = intent.status === 'ready' ? intent.service : null
   const [posted, setPosted] = useState(false)
   const post = useMutation({
-    mutationFn: (text: string) => feed.post(spaceId, text),
+    mutationFn: (text: string) => feed.post(spaceId, text, []),
     onSuccess: item => {
       add(item)
       setPosted(true)

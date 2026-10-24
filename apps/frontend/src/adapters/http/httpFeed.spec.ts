@@ -76,7 +76,7 @@ describe('httpFeed', () => {
   it('answers a new post with the item', async () => {
     fetchMock.mockResolvedValue(Response.json(post, { status: 201 }))
 
-    await expect(feed.post('a1', 'Hello')).resolves.toEqual(post)
+    await expect(feed.post('a1', 'Hello', [])).resolves.toEqual(post)
   })
 
   it("reads a link's preview", async () => {
@@ -109,16 +109,21 @@ describe('httpFeed', () => {
 
   it.each([
     {
-      write: () => feed.post('a1', 'Hello'),
+      write: () => feed.post('a1', 'Hello @Alice', ['u1']),
       method: 'POST',
       path: 'spaces/a1/feed/posts',
-      body: { body: 'Hello' }
+      body: { body: 'Hello @Alice', mentions: ['u1'] }
     },
     {
-      write: () => feed.post('a1', 'Lunch?', { options: ['Pizza', 'Sushi'] }),
+      write: () =>
+        feed.post('a1', 'Lunch?', [], { options: ['Pizza', 'Sushi'] }),
       method: 'POST',
       path: 'spaces/a1/feed/posts',
-      body: { body: 'Lunch?', poll: { options: ['Pizza', 'Sushi'] } }
+      body: {
+        body: 'Lunch?',
+        mentions: [],
+        poll: { options: ['Pizza', 'Sushi'] }
+      }
     },
     {
       write: () => feed.vote('a1', 'p1', 1),
@@ -139,10 +144,10 @@ describe('httpFeed', () => {
       body: null
     },
     {
-      write: () => feed.edit('a1', 'p1', 'Hi'),
+      write: () => feed.edit('a1', 'p1', 'Hi', []),
       method: 'PATCH',
       path: 'spaces/a1/feed/posts/p1',
-      body: { body: 'Hi' }
+      body: { body: 'Hi', mentions: [] }
     },
     {
       write: () => feed.remove('a1', 'p1'),

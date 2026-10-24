@@ -26,6 +26,8 @@ import {
   fileExtension,
   firstLink,
   firstUnread,
+  mentionsIn,
+  splitMentions,
   toEventState,
   type Actor,
   type FeedCard,
@@ -50,6 +52,7 @@ import {
   FeedAction,
   FeedAttachment,
   FeedBody,
+  FeedMention,
   FeedCentered,
   FeedComposer,
   FeedComposerTool,
@@ -69,6 +72,7 @@ import {
   FeedToolbar,
   FeedWithSide,
   JoinButton,
+  type MentionablePerson,
   ReactionChip,
   ReactionPicker,
   VisioChip
@@ -363,14 +367,29 @@ function FilterMenu({
   )
 }
 
+// The other members, by the name a mention writes.
+function useMentionable(space: Space): MentionablePerson[] {
+  const myId = useSession().user.id
+  return space.members
+    .filter(member => member.id !== myId)
+    .map(member => ({
+      id: member.id,
+      name: member.displayName ?? member.username,
+      email: member.email,
+      avatar: avatarUrl(member.workplaceFqdn)
+    }))
+}
+
 function Composer({ space }: { space: Space }): ReactElement {
   const { t } = useI18n()
   const { feed } = useServices()
   const { add } = useFeedCache(space.id)
   const [body, setBody] = useState('')
   const [polling, setPolling] = useState(false)
+  const people = useMentionable(space)
   const send = useMutation({
-    mutationFn: (text: string) => feed.post(space.id, text),
+    mutationFn: (text: string) =>
+      feed.post(space.id, text, mentionsIn(text, people)),
     onSuccess: item => {
       add(item)
       setBody('')
@@ -384,6 +403,8 @@ function Composer({ space }: { space: Space }): ReactElement {
         sendLabel={t('feed.send')}
         emojiLabel={t('feed.emoji')}
         emojis={COMPOSER_EMOJIS}
+        people={people}
+        peopleLabel={t('feed.mention')}
         value={body}
         onChange={setBody}
         onSend={() => {
@@ -538,8 +559,10 @@ function Post({
   const author = useActorName(post.author) ?? t('feed.someone')
   const mine = post.author.type === 'user' && post.author.id === myId
   const [draft, setDraft] = useState<string | null>(null)
+  const people = useMentionable(space)
   const edit = useMutation({
-    mutationFn: (body: string) => feed.edit(space.id, post.id, body),
+    mutationFn: (body: string) =>
+      feed.edit(space.id, post.id, body, mentionsIn(body, people)),
     onSuccess: item => {
       replace(item)
       setDraft(null)
@@ -601,7 +624,20 @@ function Post({
           />
         ) : (
           <>
-            <FeedBody>{post.body}</FeedBody>
+            <FeedBody>
+              {splitMentions(
+                post.body,
+                space.members.map(
+                  member => member.displayName ?? member.username
+                )
+              ).map((part, index) =>
+                index % 2 === 1 ? (
+                  <FeedMention key={index}>{part}</FeedMention>
+                ) : (
+                  part
+                )
+              )}
+            </FeedBody>
             <PostLink body={post.body} />
           </>
         )

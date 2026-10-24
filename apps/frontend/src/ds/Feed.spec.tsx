@@ -120,6 +120,11 @@ function Composer({ onSend }: { onSend: () => void }): ReactElement {
       sendLabel="Send"
       emojiLabel="Add an emoji"
       emojis={['😍', '🎉']}
+      people={[
+        { id: 'u1', name: 'Alice Martin', email: 'alice@x.org', avatar: null },
+        { id: 'u2', name: 'Bob Leroy', email: 'bob@x.org', avatar: null }
+      ]}
+      peopleLabel="Mention a member"
       value={value}
       onChange={setValue}
       onSend={onSend}
@@ -151,6 +156,57 @@ describe('FeedComposer', () => {
     })
     fireEvent.click(send)
 
+    expect(onSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the members after an "@" and puts the one picked by keyboard', async () => {
+    const onSend = vi.fn()
+    renderWithProviders(<Composer onSend={onSend} />)
+    const field = await screen.findByRole('textbox', { name: 'Text message' })
+    fireEvent.change(field, { target: { value: 'Thanks @' } })
+    fireEvent.select(field)
+
+    const list = await screen.findByRole('listbox', {
+      name: 'Mention a member'
+    })
+    expect(list).toHaveTextContent('Alice Martin')
+    expect(list).toHaveTextContent('Bob Leroy')
+
+    fireEvent.keyDown(field, { key: 'ArrowDown' })
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    expect(field).toHaveValue('Thanks @Bob Leroy ')
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('narrows the members to the name typed and closes on Escape', async () => {
+    renderWithProviders(<Composer onSend={vi.fn()} />)
+    const field = await screen.findByRole('textbox', { name: 'Text message' })
+    fireEvent.change(field, { target: { value: '@ali' } })
+    fireEvent.select(field)
+
+    const options = await screen.findAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      'AMAlice Martinalice@x.org'
+    ])
+
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  })
+
+  it('sends on Enter once the caret leaves the "@"', async () => {
+    const onSend = vi.fn()
+    renderWithProviders(<Composer onSend={onSend} />)
+    const field = await screen.findByRole('textbox', { name: 'Text message' })
+    fireEvent.change(field, { target: { value: 'see @bo' } })
+    fireEvent.select(field)
+    expect(await screen.findByRole('listbox')).toBeInTheDocument()
+
+    ;(field as HTMLTextAreaElement).setSelectionRange(0, 0)
+    fireEvent.select(field)
+    fireEvent.keyDown(field, { key: 'Enter' })
+
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
     expect(onSend).toHaveBeenCalledTimes(1)
   })
 })

@@ -385,6 +385,7 @@
       "close": "Umfrage beenden",
       "voteFailed": "Ihre Stimme konnte nicht gespeichert werden."
     },
+    "mention": "Mitglied erwähnen",
     "members": {
       "title": "Mitglieder des Bereichs",
       "show": "Mitglieder anzeigen",

@@ -118,14 +118,23 @@ export interface FeedService {
   markRead: (spaceId: string, readAt: string) => Promise<void>
   /** Only the spaces with something new; a feed never opened has no new items. */
   news: () => Promise<SpaceNews[]>
-  /** Editors and admins only: a viewer is refused with `cannot_post`. With
-   * `poll`, the body is its question. */
+  /**
+   * Editors and admins only: a viewer is refused with `cannot_post`. Each
+   * mentioned member is notified once per post, an edit included. With
+   * `poll`, the body is its question.
+   */
   post: (
     spaceId: string,
     body: string,
+    mentions: string[],
     poll?: { options: string[] }
   ) => Promise<FeedItem>
-  edit: (spaceId: string, postId: string, body: string) => Promise<FeedItem>
+  edit: (
+    spaceId: string,
+    postId: string,
+    body: string,
+    mentions: string[]
+  ) => Promise<FeedItem>
   remove: (spaceId: string, postId: string) => Promise<void>
   /** Moves the user's vote to `option`, an index in the poll's options; a
    * closed poll refuses it with `poll_closed`. */
@@ -146,6 +155,37 @@ export interface LinkPreview {
   description: string | null
   image: string | null
   site: string
+}
+
+/**
+ * Splits the text around each `@name` of the given names, as a whole word:
+ * odd parts are the mentions, "@" included. The longest name wins.
+ */
+export function splitMentions(text: string, names: string[]): string[] {
+  const words = names
+    .filter(name => name !== '')
+    .sort((a, b) => b.length - a.length)
+    .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (words.length === 0) return [text]
+  return text.split(
+    new RegExp(`(?<=^|\\s)(@(?:${words.join('|')}))(?![\\p{L}\\p{N}])`, 'u')
+  )
+}
+
+/** The ids of the people the text mentions by `@name`. */
+export function mentionsIn(
+  text: string,
+  people: { id: string; name: string }[]
+): string[] {
+  const named = new Set(
+    splitMentions(
+      text,
+      people.map(person => person.name)
+    ).filter((_, index) => index % 2 === 1)
+  )
+  return people
+    .filter(person => named.has(`@${person.name}`))
+    .map(person => person.id)
 }
 
 /** The first web link in a post's text, without the punctuation that ends a sentence. */

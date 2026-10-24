@@ -112,7 +112,7 @@ export function memoryFeed(
         ? Promise.resolve(structuredClone(item))
         : refuse(404, 'not_found')
     },
-    post: (spaceId, body, poll) => {
+    post: (spaceId, body, _mentions, poll) => {
       if (roles[spaceId] === 'viewer') return refuse(403, 'cannot_post')
       const time = new Date().toISOString()
       const post: FeedPost = {

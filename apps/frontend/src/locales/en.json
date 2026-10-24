@@ -385,6 +385,7 @@
       "close": "Close the poll",
       "voteFailed": "Could not save your vote."
     },
+    "mention": "Mention a member",
     "members": {
       "title": "Space members",
       "show": "Show the members",

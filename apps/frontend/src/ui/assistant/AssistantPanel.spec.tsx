@@ -121,7 +121,7 @@ describe('AssistantPanel', () => {
     })
 
     await waitFor(() => {
-      expect(feed.post).toHaveBeenCalledWith('a1', 'Hello all')
+      expect(feed.post).toHaveBeenCalledWith('a1', 'Hello all', [])
     })
     expect(await screen.findByText('Posted in the feed')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open the feed' })).toHaveAttribute(
