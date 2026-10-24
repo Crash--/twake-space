@@ -9,7 +9,12 @@ import type {
   SpaceDirectory,
   SpaceRole
 } from '../../infra/ldap-rest.ts'
-import type { Authorize, Caller } from '../auth/index.ts'
+import {
+  perHour,
+  perMinute,
+  type Authorize,
+  type Caller
+} from '../auth/index.ts'
 import { tell, tellSpaceMembers } from '../live/notify.ts'
 import {
   createSpace,
@@ -242,7 +247,7 @@ export function registerSpaceWriteRoutes(
 
   app.post(
     '/spaces',
-    writeSpace,
+    { ...writeSpace, config: { limit: perHour(20) } },
     refusing(async (request, reply) => {
       const body = parse(
         z.object({
@@ -366,7 +371,11 @@ export function registerSpaceWriteRoutes(
   // make us read 5 MB.
   app.put(
     '/spaces/:id/banner',
-    { onRequest: authorize('space:write'), bodyLimit: BANNER_LIMIT },
+    {
+      onRequest: authorize('space:write'),
+      bodyLimit: BANNER_LIMIT,
+      config: { limit: perHour(20) }
+    },
     refusing(async (request, reply) => {
       const { id } = parse(spaceParams, request.params)
       const image = request.body
@@ -449,7 +458,7 @@ export function registerSpaceWriteRoutes(
 
   app.post(
     '/spaces/:id/members',
-    writeMembers,
+    { ...writeMembers, config: { limit: perMinute(20) } },
     refusing(async (request, reply) => {
       const { id } = parse(spaceParams, request.params)
       const body = parse(
@@ -547,7 +556,7 @@ export function registerSpaceWriteRoutes(
 
   app.post(
     '/spaces/:id/groups',
-    writeMembers,
+    { ...writeMembers, config: { limit: perMinute(20) } },
     refusing(async (request, reply) => {
       const { id } = parse(spaceParams, request.params)
       const body = parse(

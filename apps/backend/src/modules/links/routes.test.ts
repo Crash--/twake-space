@@ -42,7 +42,10 @@ describe('GET /link-preview', () => {
 
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual(found)
-    expect(preview).toHaveBeenCalledWith(new URL('https://example.com/a'))
+    expect(preview).toHaveBeenCalledWith(
+      new URL('https://example.com/a'),
+      expect.any(Function)
+    )
   })
 
   it('answers 404 when the link has no preview', async () => {
@@ -67,6 +70,30 @@ describe('GET /link-preview', () => {
     expect(preview).not.toHaveBeenCalled()
   })
 
+  it('answers 429 once a person fetched 30 new links in the minute', async () => {
+    const app = createServer({
+      logger: pino({ level: 'silent' }),
+      isReady: () => Promise.resolve(true)
+    })
+    const authorize = fakeAuth(app, () => anIdentity())
+    const fetch = vi.fn().mockResolvedValue(found)
+    registerLinkRoutes(app, { authorize, preview: cachedPreviews(fetch) })
+    const get = (path: string) =>
+      app.inject({
+        method: 'GET',
+        url: `/link-preview?url=https://example.com/${path}`,
+        headers: { authorization: 'Bearer alice' }
+      })
+
+    for (let i = 0; i < 30; i++) await get(String(i))
+    const limited = await get('new')
+
+    expect(limited.statusCode).toBe(429)
+    expect(limited.headers['retry-after']).toBe('60')
+    expect((await get('0')).statusCode).toBe(200)
+    expect(fetch).toHaveBeenCalledTimes(30)
+  })
+
   it('serves a person, not an API token', async () => {
     const response = await request(
       '/link-preview?url=https://example.com/',
@@ -79,10 +106,15 @@ describe('GET /link-preview', () => {
 })
 
 describe('cachedPreviews', () => {
+  const uncapped = (...args: Parameters<typeof cachedPreviews>) => {
+    const preview = cachedPreviews(...args)
+    return (url: URL) => preview(url, () => true)
+  }
+
   it('fetches a link once for the hour, then again', async () => {
     let now = 0
     const fetch = vi.fn().mockResolvedValue(found)
-    const preview = cachedPreviews(fetch, () => now)
+    const preview = uncapped(fetch, () => now)
     const url = new URL('https://example.com/a')
 
     await Promise.all([preview(url), preview(url)])
@@ -95,7 +127,7 @@ describe('cachedPreviews', () => {
   it('tries a link with no preview again after five minutes', async () => {
     let now = 0
     const fetch = vi.fn().mockResolvedValue(null)
-    const preview = cachedPreviews(fetch, () => now)
+    const preview = uncapped(fetch, () => now)
     const url = new URL('https://example.com/a')
 
     await preview(url)
@@ -109,7 +141,7 @@ describe('cachedPreviews', () => {
 
   it('keeps the latest links only', async () => {
     const fetch = vi.fn().mockResolvedValue(null)
-    const preview = cachedPreviews(fetch)
+    const preview = uncapped(fetch)
 
     for (let i = 0; i <= 200; i++) {
       await preview(new URL(`https://example.com/${String(i)}`))
@@ -118,5 +150,19 @@ describe('cachedPreviews', () => {
     await preview(new URL('https://example.com/200'))
 
     expect(fetch).toHaveBeenCalledTimes(202)
+  })
+
+  it('asks before a fetch, never before answering from the cache', async () => {
+    const fetch = vi.fn().mockResolvedValue(found)
+    const preview = cachedPreviews(fetch)
+    const url = new URL('https://example.com/a')
+
+    await preview(url, () => true)
+
+    expect(await preview(url, () => false)).toEqual(found)
+    expect(await preview(new URL('https://example.com/b'), () => false)).toBe(
+      'limited'
+    )
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

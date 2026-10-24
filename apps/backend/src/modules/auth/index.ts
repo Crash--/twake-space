@@ -7,6 +7,7 @@ import { discoverIdentityProvider, type OidcOptions } from './oidc.ts'
 import { registerAuth, type Authorize } from './routes.ts'
 import { postgresAuthStore } from './store.ts'
 
+export { fixedWindows, perHour, perMinute } from './limits.ts'
 export type { Identity } from './oidc.ts'
 export type { Authorize, Caller } from './routes.ts'
 export { scheduleRevocationSweep } from './store.ts'

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { HttpServer } from '../../infra/http.ts'
-import type { Authorize } from '../auth/index.ts'
+import { fixedWindows, perMinute, type Authorize } from '../auth/index.ts'
 import { fetchPreview, type LinkPreview } from './preview.ts'
 
 const CACHED_MS = 60 * 60 * 1000
@@ -18,20 +18,28 @@ const previewQuery = z.object({
     })
 })
 
+// Only a fetch costs another site a request, so only a fetch counts.
+const FETCH_LIMIT = perMinute(30)
+
 type Fetch = (url: URL) => Promise<LinkPreview | null>
+type Preview = (
+  url: URL,
+  mayFetch: () => boolean
+) => Promise<LinkPreview | null | 'limited'>
 
 // One fetch per link for the hour, whoever asks, also while it runs. A link
 // with no preview is tried again sooner: the site may only have been slow. A Map
 // keeps insertion order, so the first key is the oldest.
-export function cachedPreviews(fetch: Fetch, now = Date.now): Fetch {
+export function cachedPreviews(fetch: Fetch, now = Date.now): Preview {
   const cache = new Map<
     string,
     { until: number; preview: Promise<LinkPreview | null> }
   >()
-  return url => {
+  return async (url, mayFetch) => {
     const key = url.href
     const hit = cache.get(key)
     if (hit && hit.until > now()) return hit.preview
+    if (!mayFetch()) return 'limited'
     cache.delete(key)
     const preview = fetch(url).catch(() => null)
     const entry = { until: now() + CACHED_MS, preview }
@@ -50,9 +58,10 @@ export function cachedPreviews(fetch: Fetch, now = Date.now): Fetch {
 
 export function registerLinkRoutes(
   app: HttpServer,
-  deps: { authorize: Authorize; preview?: Fetch }
+  deps: { authorize: Authorize; preview?: Preview }
 ) {
   const preview = deps.preview ?? cachedPreviews(url => fetchPreview(url))
+  const fetches = fixedWindows()
 
   app.get(
     '/link-preview',
@@ -62,7 +71,17 @@ export function registerLinkRoutes(
       if (!query.success) {
         return reply.code(400).send({ error: 'invalid_request' })
       }
-      const found = await preview(query.data.url)
+      const caller = request.caller?.userId ?? ''
+      const found = await preview(
+        query.data.url,
+        () => fetches(caller, FETCH_LIMIT) === 0
+      )
+      if (found === 'limited') {
+        return reply
+          .code(429)
+          .header('retry-after', 60)
+          .send({ error: 'rate_limited' })
+      }
       if (!found) return reply.code(404).send({ error: 'no_preview' })
       return reply.header('cache-control', 'private, max-age=3600').send(found)
     }

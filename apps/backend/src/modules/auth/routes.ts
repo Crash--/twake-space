@@ -7,6 +7,7 @@ import {
   type TokenCaller
 } from '../tokens/authenticator.ts'
 import type { Authenticate } from './authenticator.ts'
+import { DEFAULT_LIMIT, fixedWindows, type Limiter } from './limits.ts'
 import type { Identity, IdentityProvider } from './oidc.ts'
 import type { AuthStore } from './store.ts'
 
@@ -50,8 +51,10 @@ export function registerAuth(
     authenticateToken: (token: string) => Promise<TokenCaller | null>
     provider: IdentityProvider
     store: AuthStore
+    limiter?: Limiter
   }
 ): Authorize {
+  const limiter = deps.limiter ?? fixedWindows()
   app.decorateRequest('caller', null)
   app.addContentTypeParser(
     'application/x-www-form-urlencoded',
@@ -89,12 +92,26 @@ export function registerAuth(
           .send({ error: 'insufficient_scope' })
       }
       request.caller = identity
-      return
+    } else {
+      const { organizationId } = identity
+      if (!organizationId) return reply.code(403).send({ error: 'forbidden' })
+      request.caller = { ...identity, kind: 'session', organizationId }
     }
 
-    const { organizationId } = identity
-    if (!organizationId) return reply.code(403).send({ error: 'forbidden' })
-    request.caller = { ...identity, kind: 'session', organizationId }
+    const caller = request.caller
+    const who =
+      caller.kind === 'session'
+        ? `user:${caller.userId}`
+        : `token:${caller.tokenId}`
+    const { config, method, url } = request.routeOptions
+    const key = config.limit ? `${who} ${String(method)} ${String(url)}` : who
+    const waitMs = limiter(key, config.limit ?? DEFAULT_LIMIT)
+    if (waitMs === 0) return
+    request.log.warn({ caller: who, route: url }, 'rate limited')
+    return reply
+      .code(429)
+      .header('retry-after', Math.ceil(waitMs / 1000))
+      .send({ error: 'rate_limited' })
   }
 
   app.post('/auth/backchannel-logout', async (request, reply) => {
