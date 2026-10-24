@@ -20,6 +20,7 @@ import {
   consumerStats,
   deadLetterQueue,
   deliveryHandler,
+  oldSubscription,
   subscription,
   sweepPublisher
 } from './amqp.ts'
@@ -237,7 +238,7 @@ describe('subscription', () => {
     expect({ exchange, routingKey, queue }).toEqual({
       exchange: 'space',
       routingKey: 'twake.space.created',
-      queue: 'twake-space'
+      queue: 'twake-space.platform'
     })
     expect(options.bindings).toHaveLength(20)
     expect(options.bindings).toContainEqual({
@@ -280,7 +281,18 @@ describe('subscription', () => {
     }
     expect(options.passiveExchanges).toEqual(['space', 'b2b', 'dns'])
     expect(options.deadLetterExchange).toBe('twake-space.dlx')
-    expect(options.queueArguments).toMatchObject({
+    expect(options.queueArguments).toEqual({ 'x-delivery-limit': 20 })
+  })
+})
+
+describe('oldSubscription', () => {
+  it('declares the old queue as older versions did, so draining it does not fail', () => {
+    const topology = amqpTopology.parse({}).amqp
+    const { queue, options } = oldSubscription(topology)
+
+    expect(queue).toBe('twake-space')
+    expect(options.bindings).toEqual(subscription(topology).options.bindings)
+    expect(options.queueArguments).toEqual({
       'x-single-active-consumer': true,
       'x-delivery-limit': 20
     })

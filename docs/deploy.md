@@ -171,7 +171,7 @@ Matrix homeserver, in one of two modes. Without either, the backend runs without
 
 The defaults match the platform. [Events](events.md#consuming-rabbitmq) lists the bindings they produce.
 
-- `AMQP_QUEUE`: the queue, default `twake-space`. The dead letter queue is `<queue>.dlq`.
+- `AMQP_QUEUE`: the prefix of the queue names, default `twake-space`. The platform events queue is `<queue>.platform`, and its dead letter queue `<queue>.platform.dlq`. `<queue>` itself is the queue of older versions, which the backend drains.
 - `AMQP_DEAD_LETTER_EXCHANGE`: default `<queue>.dlx`.
 - `AMQP_DELIVERY_LIMIT`: deliveries before RabbitMQ dead-letters a message, default `20`, on both queues.
 - `AMQP_ACTIVITY_QUEUE`: the queue for the apps' activity events, default `<queue>.activity`. Its dead letter queue is `<activity queue>.dlq`.
@@ -183,11 +183,11 @@ The defaults match the platform. [Events](events.md#consuming-rabbitmq) lists th
 - `AMQP_LIVE_EXCHANGE`: the topic exchange replicas share live updates and session revocations on, default `twake-space.live`. The backend declares it, and each replica binds its own exclusive queue to it, named `<exchange>.replica.<uuid>`. The RabbitMQ user needs configure, write and read on both names.
 - `AMQP_DRIVE_EXCHANGE`: the topic exchange Twake Space sends each space's drive commands on, default `drive`. The backend declares it as a durable topic exchange when it is missing, so the RabbitMQ user needs configure and write on it. While a publish fails, the commands stay stored. [Events](events.md#drive-commands) has the command.
 - `AMQP_DRIVE_ROUTING_KEY`: the routing key of the drive commands, default `drive.org_drive.ensure`. A `*` or `#` in it is a configuration error.
-- `AMQP_PROVISIONED_BINDING`: the pattern that binds the apps' provisioned events from the activity exchange to `twake-space`, default `com.twake.*.space.provisioned.v1`.
-- `AMQP_DRIVE_REPLIES_BINDING`: the pattern that binds Drive's replies from the activity exchange to `twake-space`, default `com.twake.drive.org_drive.#`.
+- `AMQP_PROVISIONED_BINDING`: the pattern that binds the apps' provisioned events from the activity exchange to `twake-space.platform`, default `com.twake.*.space.provisioned.v1`.
+- `AMQP_DRIVE_REPLIES_BINDING`: the pattern that binds Drive's replies from the activity exchange to `twake-space.platform`, default `com.twake.drive.org_drive.#`.
 - `AMQP_EVENTS`: JSON that moves single events to another exchange or routing key, such as `{"dns.validated": {"exchange": "dns", "routingKey": "domain.dns.validated"}}`. An event the backend has no handler for, a key other than `exchange` and `routingKey`, a routing key with `*` or `#`, two events on the same exchange and key, or an event on the activity exchange is a configuration error. An exchange an event moves to must exist, like the platform exchanges: the backend only checks it.
 
-RabbitMQ refuses to redeclare a queue with other arguments, and the queue name, the dead letter exchange, the first `space` event's binding and the delivery limit are arguments, as are the client's fixed `x-overflow` and `x-dead-letter-strategy`. Changing one of them means deleting the queue first, after it has drained. Bindings an older version or setting left on the queue stay until it is deleted, except the `#` binding on the activity exchange, which each start removes from `twake-space`.
+RabbitMQ refuses to redeclare a queue with other arguments, and the queue name, the dead letter exchange, the first `space` event's binding and the delivery limit are arguments, as are the client's fixed `x-overflow` and `x-dead-letter-strategy`. Changing one of them means deleting the queue first, after it has drained. Bindings an older version or setting left on the queue stay until it is deleted.
 
 ### Startup
 
@@ -201,8 +201,9 @@ The backend starts in this order. A failure at any step stops the process.
 6. Starts the API and metrics servers.
 7. Opens a RabbitMQ connection for live updates alone and declares its own exclusive queue on the live exchange, for live updates and session revocations.
 8. Opens one more connection per queue it consumes, declares the activity queue, its binding and dead letter queue, and starts consuming it.
-9. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
-10. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
+9. Checks the exchanges other services own, declares the platform events queue, its bindings and dead letter queue, and starts consuming it.
+10. When the queue of older versions exists, opens one more connection, consumes what it still holds one message at a time, and removes its bindings and those of its dead letter queue, again after each reconnection ([Events](events.md#consuming-rabbitmq)).
+11. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
 
 On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry, a reconciliation pass, or a drive command or activity event publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers, the Redis connection and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
 
@@ -248,11 +249,12 @@ Optional, set with `REDIS_URL`. It holds only the rate limit counts, under `twak
 ### RabbitMQ
 
 - The `space`, `b2b` and `admin-panel` exchanges must exist before the backend starts, or it stops. Their owners declare them; compose declares them locally. These and the names below are the defaults: see [RabbitMQ names](#rabbitmq-names).
-- The backend declares the `activity` and `settings` exchanges, its `twake-space` and `twake-space.activity` quorum queues with their bindings, the `twake-space.dlx` and `twake-space.activity.dlx` exchanges, the `twake-space.dlq` and `twake-space.activity.dlq` queues, and the `twake-space`, `twake-space.live` and `drive` exchanges it publishes on, with one `twake-space.live.replica.<uuid>` queue per replica. Its user needs configure, write and read permissions on those.
+- The backend declares the `activity` and `settings` exchanges, its `twake-space.platform` and `twake-space.activity` quorum queues with their bindings, the `twake-space.dlx` and `twake-space.activity.dlx` exchanges, the `twake-space.platform.dlq` and `twake-space.activity.dlq` queues, and the `twake-space`, `twake-space.live` and `drive` exchanges it publishes on, with one `twake-space.live.replica.<uuid>` queue per replica. Its user needs configure, write and read permissions on those.
 - Meeting requests are published on `twake-space` with publisher confirms and `mandatory`, with a 10 second timeout: they fail while no calendar consumer has a queue bound.
 - Live updates are published once, and dropped while the replica is disconnected.
-- `twake-space` has a single active consumer, so only one replica consumes it at a time. The others take over when it goes away. Every replica consumes `twake-space.activity`.
-- An event the backend cannot process ends in `twake-space.dlq`, or `twake-space.activity.dlq` for an activity event. See [Events](events.md#consuming-rabbitmq).
+- Every replica consumes both queues. The events of one space take turns under a Postgres advisory lock ([Events](events.md#ordering)).
+- `twake-space` and `twake-space.dlq`, the queues of older versions, lose their bindings and are drained. Delete both once every replica runs this version and they are empty.
+- An event the backend cannot process ends in `twake-space.platform.dlq`, or `twake-space.activity.dlq` for an activity event. See [Events](events.md#consuming-rabbitmq).
 - A message that fails for over 25 minutes is logged as an error. RabbitMQ's `consumer_timeout` (30 minutes by default) then closes the channel and delivers it again. After 21 deliveries (about 10 hours of failures, less with restarts) RabbitMQ dead-letters it and the queue moves on.
 
 ### ldap-rest
@@ -284,6 +286,6 @@ The backend never calls the homeserver, and the homeserver never calls the backe
 ## Open questions
 
 - @rezk2ll The entrypoint writes `POSTHOG_KEY` and `POSTHOG_HOST` to `/.env.js` and adds `POSTHOG_HOST` to `connect-src`, but the frontend source does not read either. Is PostHog planned, or should the script drop them?
-- @rezk2ll `twake-space.dlq` and `twake-space.activity.dlq` have no length limit or TTL. Who watches it, and should it get a limit?
+- @rezk2ll `twake-space.platform.dlq` and `twake-space.activity.dlq` have no length limit or TTL. Who watches it, and should it get a limit?
 - @rezk2ll CI builds the images without a `platforms` setting. Is an arm64 image needed?
 - @rezk2ll Both a push to `main` and a release tag move `latest`, a pre-release tag included. Should deployments pin version tags only?

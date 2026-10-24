@@ -102,14 +102,14 @@ expect 'ready once started' "$(status "$API/health/ready")" '200'
 expect 'alive with its RabbitMQ consumer' "$(status "$API/health/live")" '200'
 queues="$(docker exec "$RUN-rabbitmq" rabbitmqctl list_queues -q name arguments 2>&1 || true)"
 bindings="$(docker exec "$RUN-rabbitmq" rabbitmqctl list_bindings -q source_name destination_name routing_key 2>&1 || true)"
-expect 'declared the space queue with a single active consumer' \
-  "$(grep -c $'^twake-space\t.*x-single-active-consumer' <<<"$queues" || true)" '1'
-expect 'declared the activity queue without one' \
-  "$(grep $'^twake-space\\.activity\t' <<<"$queues" | grep -vc x-single-active-consumer || true)" '1'
+expect 'declared the platform queue every replica consumes' \
+  "$(grep $'^twake-space\\.platform\t' <<<"$queues" | grep -vc x-single-active-consumer || true)" '1'
+expect 'declared no queue of older versions on a new broker' \
+  "$(grep -c $'^twake-space\t' <<<"$queues" || true)" '0'
 expect 'bound every activity event to the activity queue' \
   "$(grep -cxF $'activity\ttwake-space.activity\t#' <<<"$bindings" || true)" '1'
-expect 'kept them off the space queue' \
-  "$(grep -cxF $'activity\ttwake-space\t#' <<<"$bindings" || true)" '0'
+expect 'kept them off the platform queue' \
+  "$(grep -cxF $'activity\ttwake-space.platform\t#' <<<"$bindings" || true)" '0'
 expect 'runs as uid 1000' "$(docker exec "$RUN-backend" stat -c %u /proc/1)" '1000'
 expect 'applied every migration shipped' \
   "$(docker exec "$RUN-postgres" psql -U twake_space -tAc 'select count(*) from drizzle.__drizzle_migrations' 2>&1)" \

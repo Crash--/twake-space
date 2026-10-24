@@ -18,7 +18,7 @@ flowchart LR
   subgraph RabbitMQ
     P["space, b2b, admin-panel, settings"]
     A[activity]
-    Q[twake-space queue]
+    Q[twake-space.platform queue]
     AQ[twake-space.activity queue]
   end
   P --> Q
@@ -29,7 +29,7 @@ flowchart LR
   R -->|dedupe + handler, one transaction| PG[(Postgres)]
   R -->|NotYetKnownError| PE[(parked_events)]
   PE -->|retried every 5 s| R
-  R -->|rejected, or waiting over 30 min| DLQ["twake-space.dlq, twake-space.activity.dlq"]
+  R -->|rejected, or waiting over 30 min| DLQ["twake-space.platform.dlq, twake-space.activity.dlq"]
   R -->|after commit| L[twake-space.live exchange]
   L -->|one queue per replica| SSE[GET /stream]
   SSE --> B[Browser]
@@ -43,10 +43,10 @@ flowchart LR
 
 The backend consumes two queues through [@linagora/rabbitmq-client](https://github.com/linagora/rabbitmq-client/tree/v0.7.1), each on its own connection:
 
-- `twake-space` takes the events whose order matters: the platform events, the apps' provisioned events, which follow the space's creation, and Drive's replies.
-- `twake-space.activity` takes every activity event, and handles all but the provisioned events and Drive's replies, which it leaves unrouted. Each one stands alone, so every replica consumes it.
+- `twake-space.platform` takes the events whose order matters: the platform events, the apps' provisioned events, which follow the space's creation, and Drive's replies.
+- `twake-space.activity` takes every activity event, and handles all but the provisioned events and Drive's replies, which it leaves unrouted. Each one stands alone.
 
-At startup the backend declares `twake-space` and binds it to each platform event it handles, routing key equal to the event name:
+Every replica consumes both. At startup the backend declares `twake-space.platform` and binds it to each platform event it handles, routing key equal to the event name:
 
 - `space`: `twake.space.created`, `twake.space.updated`, `twake.space.deleted`, `twake.space.member.added`, `twake.space.member.role.changed`, `twake.space.member.removed`, `twake.space.group.linked`, `twake.space.group.role.changed`, `twake.space.group.unlinked`
 - `b2b`: `b2b.group.updated`, `b2b.member.role.changed`, `b2b.member.disabled`, `domain.user.deleted`, `domain.organization.deleted`, `chat.deprovision`, `chat.deployment.completed`, `chat.deployment.updated`
@@ -54,16 +54,18 @@ At startup the backend declares `twake-space` and binds it to each platform even
 - `settings`: `user.settings.updated`
 - `activity`: `com.twake.*.space.provisioned.v1` and `com.twake.drive.org_drive.#` (`AMQP_PROVISIONED_BINDING` and `AMQP_DRIVE_REPLIES_BINDING`)
 
-It declares `twake-space.activity` with one binding, `#` on `activity`. Older versions bound that key to `twake-space`, and each start removes it from there, once `twake-space.activity` holds those events. `twake-space` still handles the activity events it already held.
+It declares `twake-space.activity` with one binding, `#` on `activity`.
 
 Both queues:
 
 - Are quorum queues with a delivery limit of 20 (`AMQP_DELIVERY_LIMIT`).
-- Dead-letter to their own exchange, which routes to their own queue: `twake-space.dlx` to `twake-space.dlq`, and `twake-space.activity.dlx` to `twake-space.activity.dlq`. The backend declares them. The dead letter routing key is the queue's first binding, with `.dead` appended (`twake.space.created.dead` and `#.dead`).
+- Dead-letter to their own exchange, which routes to their own queue: `twake-space.dlx` to `twake-space.platform.dlq`, and `twake-space.activity.dlx` to `twake-space.activity.dlq`. The backend declares them. The dead letter routing key is the queue's first binding, with `.dead` appended (`twake.space.created.dead` and `#.dead`).
 - Have the client's other arguments, `x-overflow: reject-publish` and `x-dead-letter-strategy: at-least-once`.
 - Get each message acknowledged only after its Postgres transaction commits.
 
-`twake-space` has a single active consumer, with prefetch 1, so its messages are handled one at a time, in the order they were published. Each replica consumes `twake-space.activity` with prefetch 10 (`AMQP_ACTIVITY_CONCURRENCY`), and handles up to 10 of its messages at once.
+Each replica consumes `twake-space.platform` with prefetch 1, and `twake-space.activity` with prefetch 10 (`AMQP_ACTIVITY_CONCURRENCY`), handling up to 10 of its messages at once. The events of one space take turns, see [Ordering](#ordering).
+
+Older versions consumed `twake-space`, with a single active consumer, an argument a declared queue cannot drop. When it exists, each start consumes what it still holds, one message at a time, and removes its bindings and those of `twake-space.dlq`, so new events and dead letters only reach the new queues. A replica of an older version still running declares them again when it reconnects, so each reconnection of the draining consumer removes them again. Both queues can be deleted once every replica runs this version and they are empty.
 
 Startup fails when `space`, `b2b`, `admin-panel`, or an exchange `AMQP_EVENTS` moves an event to, is missing, since other services own them. The backend declares `activity` and `settings` itself, as durable topic exchanges: the apps declare `activity` the same way, and declaring `settings` lets the backend run on a platform without common settings.
 
@@ -85,14 +87,22 @@ Each message ends in one outcome:
 - unrouted: no handler for the key. Logged at debug and acknowledged.
 - malformed: a CloudEvent that does not parse, a platform event without a message id (nor a `request_id` in its body, which stands in for it), or a handler threw `MalformedEventError`. Logged and acknowledged. A body that is not JSON goes to the dead letter queue.
 - rejected: a handler threw `RejectedEventError`, or Postgres refused the event's data (an error of class 22, 23 or 54, such as a NUL byte in a preview or a key too long for its index). The message is dead-lettered to its queue's dead letter queue. It carries RabbitMQ's `x-death` header but no reason: the `event rejected` log line has it.
-- parked: a handler threw `NotYetKnownError`, because the event is about a space or member the copy does not hold yet. The event goes to the `parked_events` table and is acknowledged. One replica at a time (under an advisory lock) retries parked events, oldest first and up to 100 per pass, 5 seconds after its previous pass ended. One still waiting after 30 minutes, RabbitMQ's default `consumer_timeout`, is published through `twake-space.dlx` to `twake-space.dlq`, whichever queue it came from, with its message id and the headers `x-twake-space-exchange`, `x-twake-space-routing-key` and `x-twake-space-reason`; the row stays when that publish fails. A retry that throws keeps the row for the next pass. Any other outcome of a retry, rejected included, deletes the row without a dead letter: only the log line tells.
-- failed: any other error, such as Postgres being down. The message stays unacknowledged and is retried in the process, 1 second after the first failure, doubling up to a minute. It holds one of its queue's prefetch slots meanwhile, so on `twake-space` nothing behind it is handled. After 25 minutes of failures the backend logs an error, because RabbitMQ's `consumer_timeout` (30 minutes by default) then closes the channel and delivers the message again. Each such redelivery, like one after a restart, counts toward the delivery limit: once a message has been delivered 21 times (about 10 hours of failures), RabbitMQ sends it to its queue's dead letter queue and the queue moves on.
+- parked: a handler threw `NotYetKnownError`, because the event is about a space or member the copy does not hold yet. The event goes to the `parked_events` table and is acknowledged. One replica at a time (under an advisory lock) retries parked events, oldest first and up to 100 per pass, 5 seconds after its previous pass ended. One still waiting after 30 minutes, RabbitMQ's default `consumer_timeout`, is published through `twake-space.dlx` to `twake-space.platform.dlq`, whichever queue it came from, with its message id and the headers `x-twake-space-exchange`, `x-twake-space-routing-key` and `x-twake-space-reason`; the row stays when that publish fails. A retry that throws keeps the row for the next pass. Any other outcome of a retry, rejected included, deletes the row without a dead letter: only the log line tells.
+- failed: any other error, such as Postgres being down. The message stays unacknowledged and is retried in the process, 1 second after the first failure, doubling up to a minute. It holds one of its queue's prefetch slots meanwhile, so on `twake-space.platform` that replica handles nothing behind it, and the other events of its space wait for its lock. After 25 minutes of failures the backend logs an error, because RabbitMQ's `consumer_timeout` (30 minutes by default) then closes the channel and delivers the message again. Each such redelivery, like one after a restart, counts toward the delivery limit: once a message has been delivered 21 times (about 10 hours of failures), RabbitMQ sends it to its queue's dead letter queue and the queue moves on.
 
 The dedupe claim and the handler run in the same Postgres transaction, so a handler failure releases the claim.
 
-To replay a platform event by hand, such as one from `twake-space.dlq`, publish it with its original AMQP `message_id` property. Without one, and without a `request_id` in its body, the backend logs `missing message id` and drops it. A message that was rejected, parked or dead-lettered never kept its claim, so the original id is not seen as a duplicate.
+To replay a platform event by hand, such as one from `twake-space.platform.dlq`, publish it with its original AMQP `message_id` property. Without one, and without a `request_id` in its body, the backend logs `missing message id` and drops it. A message that was rejected, parked or dead-lettered never kept its claim, so the original id is not seen as a duplicate.
 
 ## Ordering
+
+The events of one space take turns under a Postgres advisory lock on the space, taken first in the event's transaction, so the events of other spaces go on meanwhile:
+
+- Space events, provisioned events and Drive's replies lock their space, and their organization shared.
+- `domain.organization.deleted` locks its organization exclusive, so it waits for the events of its spaces in flight, and they wait for it.
+- The other platform events take no lock: they touch no space, or only rows `last_changes` guards.
+
+Taking turns is not publish order: two events of a space that reach two replicas run in whichever order they get the lock. `last_changes` keeps an older event from undoing a newer one. An event without a time applies in the order it runs, and the nightly reconciliation ([Deploying](deploy.md#ldap-rest)) repairs what that leaves wrong.
 
 - Events can arrive out of order or be replayed. `last_changes` keeps, per object key, the time of the last change applied.
 - A change applies only if its time is at or after the stored one. An event without a time applies to every object.
@@ -324,7 +334,7 @@ A post can ask members of the space to approve it ([API](api.md#post-spacesspace
 
 ### The space's drive
 
-Drive answers each `drive.org_drive.ensure` command for a space with a reply on `activity` ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Each reply names the space by `data.reference` (`source` `twake-space`, `id` the space id) and carries the command's `data.revision`. The `twake-space` queue handles them.
+Drive answers each `drive.org_drive.ensure` command for a space with a reply on `activity` ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)). Each reply names the space by `data.reference` (`source` `twake-space`, `id` the space id) and carries the command's `data.revision`. The `twake-space.platform` queue handles them.
 
 - `com.twake.drive.org_drive.ready.v1` records `data.drive.id` as the space's `drive` resource, moves into the space the activity events on that drive, as a provisioned event does, and sends a `spaces` live event to the space's members. A reply with the drive already recorded does none of this.
 - `com.twake.drive.org_drive.removed.v1` removes the space's `drive` resource and, when there was one, sends the same live event.

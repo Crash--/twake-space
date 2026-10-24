@@ -194,7 +194,7 @@ const consumers = await startConsumers(
   config,
   logger,
   {
-    // It still drains the activity events older versions bound to it.
+    // The old queue it drains can still hold activity events.
     space: handle,
     // The space queue handles provisioned events and drive replies.
     activity: createMessageHandler({
@@ -278,6 +278,7 @@ lifecycle.started(async () => {
     await Promise.all([
       consumers.space.close(),
       consumers.activity.close(),
+      consumers.old?.close(),
       live.close(),
       drives.close(),
       activity.close()

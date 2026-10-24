@@ -24,6 +24,7 @@ import {
   revokeOrganizationTokens
 } from '../tokens/revocation.ts'
 import { ensureDrive, removeDrive } from './drives.ts'
+import { lockOrganization, lockSpace } from './locks.ts'
 import {
   driveCommands,
   groupNames,
@@ -381,6 +382,7 @@ const onCreated: Handler<PlatformEvent> = async (event, tx, log) => {
   )
   // An organization token's write names no person.
   const createdBy = actor?.includes('@') ? actor.toLowerCase() : null
+  await lockSpace(tx, space.organizationId, space.id)
   await createSpace(tx, log, { ...space, createdBy }, space.timestamp)
 }
 
@@ -421,12 +423,13 @@ export async function createSpace(
 }
 
 const onUpdated: Handler<PlatformEvent> = async (event, tx) => {
-  const { id, name, timestamp } = parseOrDrop(
+  const { organizationId, id, name, timestamp } = parseOrDrop(
     spaceUpdated,
     event.body,
     event.routingKey
   )
   if (name === undefined) return
+  await lockSpace(tx, organizationId, id)
   await renameSpace(tx, id, name, timestamp)
 }
 
@@ -456,11 +459,12 @@ export async function renameSpace(
 }
 
 const onDeleted: Handler<PlatformEvent> = async (event, tx) => {
-  const { id, timestamp } = parseOrDrop(
+  const { organizationId, id, timestamp } = parseOrDrop(
     spaceEvent,
     event.body,
     event.routingKey
   )
+  await lockSpace(tx, organizationId, id)
   await deleteSpace(tx, id, timestamp, event.routingKey)
 }
 
@@ -518,20 +522,22 @@ export async function deleteSpace(
 }
 
 const onMemberChanged: Handler<PlatformEvent> = async (event, tx, log) => {
-  const { id, timestamp, members } = parseOrDrop(
+  const { organizationId, id, timestamp, members } = parseOrDrop(
     memberChanged,
     event.body,
     event.routingKey
   )
+  await lockSpace(tx, organizationId, id)
   await upsertMembers(tx, log, id, timestamp, members)
 }
 
 const onMemberRemoved: Handler<PlatformEvent> = async (event, tx, log) => {
-  const { id, timestamp, members } = parseOrDrop(
+  const { organizationId, id, timestamp, members } = parseOrDrop(
     memberRemoved,
     event.body,
     event.routingKey
   )
+  await lockSpace(tx, organizationId, id)
   await removeSpaceMembers(tx, log, id, timestamp, members)
 }
 
@@ -552,20 +558,22 @@ export async function removeSpaceMembers(
 }
 
 const onGroupChanged: Handler<PlatformEvent> = async (event, tx) => {
-  const { id, timestamp, groups } = parseOrDrop(
+  const { organizationId, id, timestamp, groups } = parseOrDrop(
     groupChanged,
     event.body,
     event.routingKey
   )
+  await lockSpace(tx, organizationId, id)
   await upsertGroups(tx, id, timestamp, groups)
 }
 
 const onGroupUnlinked: Handler<PlatformEvent> = async (event, tx) => {
-  const { id, timestamp, groups } = parseOrDrop(
+  const { organizationId, id, timestamp, groups } = parseOrDrop(
     groupUnlinked,
     event.body,
     event.routingKey
   )
+  await lockSpace(tx, organizationId, id)
   await unlinkGroups(
     tx,
     id,
@@ -822,6 +830,7 @@ const onOrganizationDeleted: Handler<PlatformEvent> = async (event, tx) => {
     event.body,
     event.routingKey
   )
+  await lockOrganization(tx, organizationId, 'exclusive')
   await revokeOrganizationTokens(tx, organizationId, {
     actor: event.routingKey,
     reason: 'its organization was deleted',

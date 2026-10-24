@@ -12,6 +12,7 @@ import type { Tx } from '../../infra/db.ts'
 import { attachToSpace } from '../feed/activity.ts'
 import { tellSpaceMembers } from '../live/notify.ts'
 import { deletedAfter, resourceKey } from './events.ts'
+import { lockSpace } from './locks.ts'
 import {
   driveCommands,
   spaceResourceKind,
@@ -45,6 +46,7 @@ function onProvisioned(kind: SpaceResourceKind): Handler<CloudEvent> {
       twakeorg,
       data: { space_id, resource }
     } = parseOrDrop(provisioned, event, event.type)
+    await lockSpace(tx, twakeorg, space_id)
     const at = event.time === undefined ? undefined : new Date(event.time)
     if (await deletedAfter(tx, space_id, at)) return
     const [space] = await tx
@@ -126,6 +128,7 @@ async function applies(
 ): Promise<string | undefined> {
   if (reference.source !== 'twake-space') return undefined
   const spaceId = parseOrDrop(z.uuid(), reference.id, 'reference.id')
+  await lockSpace(tx, twakeorg, spaceId)
   const [commands] = await tx
     .select({ repliedRevision: driveCommands.repliedRevision })
     .from(driveCommands)

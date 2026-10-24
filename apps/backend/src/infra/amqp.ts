@@ -12,10 +12,10 @@ import { ACTIVITY_EXCHANGE } from '../events/envelope.ts'
 import type { DeadLetter, IncomingMessage, Outcome } from '../events/router.ts'
 import type { AmqpTopology } from '../events/topology.ts'
 
-// The events whose order matters. Only what a handler exists for: a binding
-// without one would only ack and drop. An app provisions on the space's created
-// event, so its provisioned event comes here, after it. Drive replies come here
-// too, so a reply and the space's deletion take turns.
+// The events whose order matters: those of one space take turns under its lock.
+// Only what a handler exists for: a binding without one would only ack and
+// drop. Provisioned events and drive replies come here too, so they take turns
+// with the events of their space.
 export function subscription(topology: AmqpTopology) {
   const platform = Object.values(topology.events)
   const [primary, ...rest] = platform
@@ -43,13 +43,29 @@ export function subscription(topology: AmqpTopology) {
     maxRetries: Infinity,
     maxRetryDelay: MAX_RETRY_MS,
     queueArguments: {
-      'x-single-active-consumer': true,
       // Failures retry in the process, so a redelivery means a crash or a
       // consumer_timeout: the default 20 rides out about 10 hours of outage.
       'x-delivery-limit': topology.deliveryLimit
     }
   } satisfies SubscribeOptions
-  return { ...primary, queue: topology.queue, options }
+  return { ...primary, queue: topology.platformQueue, options }
+}
+
+// The queue of older versions, declared as they did.
+export function oldSubscription(topology: AmqpTopology) {
+  const current = subscription(topology)
+  const { options } = current
+  return {
+    ...current,
+    queue: topology.queue,
+    options: {
+      ...options,
+      queueArguments: {
+        ...options.queueArguments,
+        'x-single-active-consumer': true
+      }
+    }
+  }
 }
 
 // Each activity event stands alone, so every replica consumes the queue.
@@ -385,30 +401,96 @@ async function consume(
   logger.info({ queue }, 'consuming from RabbitMQ')
 }
 
-// Older versions bound every activity event to the space queue, and the client
-// never removes a binding. Removing one already gone does nothing. To drop once
-// every deployment has run it.
-async function unbindOldActivity(url: string, topology: AmqpTopology) {
+// A missing queue closes the channel that checked it, so the check has its own
+// connection.
+async function queueExists(url: string, queue: string) {
+  const connection = await amqplib.connect(url)
+  connection.on('error', () => undefined)
+  try {
+    const channel = await connection.createChannel()
+    channel.on('error', () => undefined)
+    await channel.checkQueue(queue)
+    return true
+  } catch {
+    return false
+  } finally {
+    await connection.close().catch(() => undefined)
+  }
+}
+
+// Removing a binding already gone does nothing. The `#` one on the activity
+// exchange is from even older versions.
+async function unbindOldQueue(url: string, topology: AmqpTopology) {
+  const { queue, exchange, routingKey, options } = oldSubscription(topology)
   const connection = await amqplib.connect(url)
   try {
     const channel = await connection.createChannel()
-    await channel.unbindQueue(topology.queue, topology.activityExchange, '#')
+    for (const binding of [
+      { exchange, routingKey },
+      ...options.bindings,
+      { exchange: topology.activityExchange, routingKey: '#' }
+    ]) {
+      await channel.unbindQueue(queue, binding.exchange, binding.routingKey)
+    }
+    await channel.unbindQueue(
+      `${queue}.dlq`,
+      topology.deadLetterExchange,
+      `${routingKey}.dead`
+    )
   } finally {
     await connection.close()
   }
 }
 
-// The activity queue first, so it holds every activity event before the space
+// Older versions consumed AMQP_QUEUE. It gets nothing new: each start drains it
+// one message at a time, and unbinds it and its dead letter queue, so dead
+// letters only reach the new one. An older replica still running binds it again
+// when it reconnects, so each reconnection unbinds it again. A later release
+// deletes both.
+async function drainOldQueue(
+  config: Config,
+  logger: Logger,
+  stats: ConsumerStats,
+  handle: Handle
+): Promise<RabbitMQClient | undefined> {
+  const { AMQP_URL: url, amqp } = config
+  if (!(await queueExists(url, amqp.queue))) return undefined
+  const unbind = () =>
+    unbindOldQueue(url, amqp).catch((error: unknown) => {
+      logger.error({ err: error }, 'unbinding the old queue failed')
+    })
+  const client = new RabbitMQClient({
+    url,
+    prefetch: 1,
+    retryDelay: FIRST_RETRY_MS,
+    logger: logger.child(
+      { component: 'amqp', queue: amqp.queue },
+      { level: 'warn' }
+    ),
+    hooks: { onReconnect: () => void unbind() }
+  })
+  await client.init()
+  await consume(client, config, logger, stats, oldSubscription(amqp), handle)
+  await unbind()
+  return client
+}
+
+// The activity queue first, so it holds every activity event before the old
 // queue lets them go.
 export async function startConsumers(
   config: Config,
   logger: Logger,
   handle: { space: Handle; activity: Handle },
   stats: ConsumerStats
-): Promise<{ space: RabbitMQClient; activity: RabbitMQClient }> {
+): Promise<{
+  space: RabbitMQClient
+  activity: RabbitMQClient
+  old: RabbitMQClient | undefined
+}> {
   const { amqp } = config
-  // One message at a time keeps the order the publishers sent.
-  const space = await connect(config, logger, stats, amqp.queue, 1)
+  // One message at a time per replica: an event waiting for its space's lock
+  // holds a database connection.
+  const space = await connect(config, logger, stats, amqp.platformQueue, 1)
   const activity = await connect(
     config,
     logger,
@@ -419,6 +501,6 @@ export async function startConsumers(
   const subscribed = activitySubscription(amqp)
   await consume(activity, config, logger, stats, subscribed, handle.activity)
   await consume(space, config, logger, stats, subscription(amqp), handle.space)
-  await unbindOldActivity(config.AMQP_URL, amqp)
-  return { space, activity }
+  const old = await drainOldQueue(config, logger, stats, handle.space)
+  return { space, activity, old }
 }
