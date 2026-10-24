@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loadConfig } from './config.ts'
+import { DEFAULT_LIMITS } from './modules/auth/limits.ts'
 
 const base = {
   AMQP_URL: 'amqp://guest:guest@localhost:5672',
@@ -114,6 +115,35 @@ describe('loadConfig: space apps', () => {
   it('refuses an app it does not know', () => {
     expect(() => loadConfig({ ...base, SPACE_APPS: 'tasks,wiki' })).toThrow(
       'SPACE_APPS'
+    )
+  })
+})
+
+describe('loadConfig: rate limits', () => {
+  it('keeps the default limits unless told otherwise', () => {
+    expect(loadConfig(base).limits).toEqual(DEFAULT_LIMITS)
+  })
+
+  it('overrides the named limits only', () => {
+    const { limits } = loadConfig({
+      ...base,
+      RATE_LIMITS: '{"feedPost":"5/second","mention":"100/day"}'
+    })
+
+    expect(limits.feedPost).toEqual({ max: 5, perMs: 1000 })
+    expect(limits.mention).toEqual({ max: 100, perMs: 86_400_000 })
+    expect(limits.feedRead).toEqual(DEFAULT_LIMITS.feedRead)
+  })
+
+  it.each([
+    'not json',
+    '{"feedPosts":"10/minute"}',
+    '{"feedPost":"10/week"}',
+    '{"feedPost":"0/minute"}',
+    '{"feedPost":10}'
+  ])('refuses %s', value => {
+    expect(() => loadConfig({ ...base, RATE_LIMITS: value })).toThrow(
+      'RATE_LIMITS'
     )
   })
 })

@@ -20,6 +20,7 @@ import { listenInMemory } from '../live/testing.ts'
 import { notifications } from '../notifications/schema.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { encodeCursor, type Order } from './items.ts'
+import type { MentionLimiter } from './mentions.ts'
 import { registerFeedRoutes } from './routes.ts'
 import {
   activityEvents,
@@ -105,7 +106,7 @@ const USERS: Record<string, string> = {
 
 function setUp(
   tokenCaller: TokenCaller | null = null,
-  limiter = fixedWindows()
+  mentionLimiter: MentionLimiter = () => 0
 ) {
   const app = createServer({
     logger: pino({ level: 'silent' }),
@@ -119,7 +120,7 @@ function setUp(
     },
     token => (token === 'tws_bot' ? tokenCaller : null)
   )
-  registerFeedRoutes(app, { db: testDb.db, authorize, limiter })
+  registerFeedRoutes(app, { db: testDb.db, authorize, mentionLimiter })
   return (
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     url: string,
@@ -1122,12 +1123,12 @@ describe('mentions', () => {
     })
   })
 
-  const spentOnBob = () => {
+  const spentOnBob = (): MentionLimiter => {
     const limiter = fixedWindows()
     for (let i = 0; i < 20; i++) {
       void limiter(`mention:${ALICE}:${BOB}`, perHour(20))
     }
-    return limiter
+    return key => limiter(key, perHour(20))
   }
 
   it('stops notifying a member after 20 mentions by one author in an hour', async () => {

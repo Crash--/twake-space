@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
-import { perMinute, type Authorize, type Limiter } from '../auth/index.ts'
+import type { Authorize } from '../auth/index.ts'
 import type { Caller } from '../auth/routes.ts'
 import { notifications } from '../notifications/schema.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
@@ -20,7 +20,12 @@ import {
   type FeedItem
 } from './items.ts'
 import { tellFeed } from './live.ts'
-import { askApprovers, forgetMentions, mentionMembers } from './mentions.ts'
+import {
+  askApprovers,
+  forgetMentions,
+  mentionMembers,
+  type MentionLimiter
+} from './mentions.ts'
 import {
   activityEvents,
   feedCards,
@@ -185,9 +190,9 @@ const serialize = (item: FeedItem) => ({
 
 export function registerFeedRoutes(
   app: HttpServer,
-  deps: { db: Db; authorize: Authorize; limiter: Limiter }
+  deps: { db: Db; authorize: Authorize; mentionLimiter: MentionLimiter }
 ) {
-  const { db, limiter } = deps
+  const { db, mentionLimiter } = deps
   const read = deps.authorize('feed:read')
   const write = deps.authorize('feed:write')
   // Reactions, votes and read marks are a person's own, so no token gets them.
@@ -321,7 +326,7 @@ export function registerFeedRoutes(
   app.get(
     '/spaces/:spaceId/feed',
     // Paging, filters and search all read here, and a search scans every post.
-    { preHandler: read, config: { limit: perMinute(120) } },
+    { preHandler: read, config: { limit: 'feedRead' } },
     async (request, reply) => {
       try {
         const { caller, space } = await reach(request)
@@ -472,7 +477,7 @@ export function registerFeedRoutes(
 
   app.post(
     '/spaces/:spaceId/feed/posts',
-    { preHandler: write, config: { limit: perMinute(10) } },
+    { preHandler: write, config: { limit: 'feedPost' } },
     async (request, reply) => {
       try {
         const { caller, space } = await reach(request)
@@ -528,7 +533,7 @@ export function registerFeedRoutes(
               tx,
               sent,
               mentions.filter(id => !approval?.approvers.includes(id)),
-              limiter
+              mentionLimiter
             )
             if (approval) await askApprovers(tx, sent, approval.approvers)
           }
@@ -545,7 +550,7 @@ export function registerFeedRoutes(
 
   app.patch(
     '/spaces/:spaceId/feed/posts/:itemId',
-    { preHandler: write, config: { limit: perMinute(30) } },
+    { preHandler: write, config: { limit: 'feedEdit' } },
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
@@ -571,7 +576,7 @@ export function registerFeedRoutes(
               tx,
               { id: postId, spaceId, authorId: speaker, body },
               mentions,
-              limiter
+              mentionLimiter
             )
           }
           await tellFeed(tx, spaceId, postId, 'changed')
@@ -610,7 +615,7 @@ export function registerFeedRoutes(
 
   app.put(
     '/spaces/:spaceId/feed/posts/:itemId/vote',
-    { preHandler, config: { limit: perMinute(30) } },
+    { preHandler, config: { limit: 'feedVote' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)
@@ -641,7 +646,7 @@ export function registerFeedRoutes(
 
   app.delete(
     '/spaces/:spaceId/feed/posts/:itemId/vote',
-    { preHandler, config: { limit: perMinute(30) } },
+    { preHandler, config: { limit: 'feedVote' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)
@@ -743,7 +748,7 @@ export function registerFeedRoutes(
   // Answering again replaces the answer.
   app.put(
     '/spaces/:spaceId/feed/posts/:itemId/answer',
-    { preHandler, config: { limit: perMinute(30) } },
+    { preHandler, config: { limit: 'feedAnswer' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)
@@ -775,7 +780,7 @@ export function registerFeedRoutes(
   // An approver decides once.
   app.put(
     '/spaces/:spaceId/feed/posts/:itemId/decision',
-    { preHandler, config: { limit: perMinute(30) } },
+    { preHandler, config: { limit: 'feedDecision' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)
@@ -808,7 +813,7 @@ export function registerFeedRoutes(
 
   app.put(
     '/spaces/:spaceId/feed/items/:itemId/reactions/:key',
-    { preHandler, config: { limit: perMinute(60) } },
+    { preHandler, config: { limit: 'feedReaction' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)
@@ -831,7 +836,7 @@ export function registerFeedRoutes(
 
   app.delete(
     '/spaces/:spaceId/feed/items/:itemId/reactions/:key',
-    { preHandler, config: { limit: perMinute(60) } },
+    { preHandler, config: { limit: 'feedReaction' } },
     async (request, reply) => {
       try {
         const { spaceId, userId } = await memberOf(request)

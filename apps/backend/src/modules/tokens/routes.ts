@@ -6,7 +6,7 @@ import type { Db } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
 import type { Directory } from '../../infra/ldap-rest.ts'
 import { sha256 } from '../auth/authenticator.ts'
-import { perHour, type Authorize, type Caller } from '../auth/index.ts'
+import type { Authorize, Caller } from '../auth/index.ts'
 import { liveOrganizationRole } from '../spaces/managers.ts'
 import { spaceMembers, spaceRole, spaces } from '../spaces/schema.ts'
 import { API_TOKEN_PREFIX, type Scope } from './authenticator.ts'
@@ -240,7 +240,7 @@ function registerManagedTokens(
   preHandler: ReturnType<Authorize>,
   manage: Manage
 ) {
-  const create = { preHandler, config: { limit: perHour(20) } }
+  const create = { preHandler, config: { limit: 'tokenCreate' as const } }
   app.post(prefix, create, async (request, reply) => {
     const manager = await manage(request, db)
     if (typeof manager === 'string') return forbidden(reply, manager)

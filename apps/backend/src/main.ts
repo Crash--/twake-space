@@ -132,7 +132,8 @@ const authorize = await setUpAuth(server, {
   directory,
   newTokenChecks: config.NEW_TOKEN_CHECKS,
   newTokensWaiting: config.NEW_TOKENS_WAITING,
-  limiter
+  limiter,
+  limits: config.limits
 })
 registerSpaceRoutes(server, {
   db,
@@ -155,8 +156,15 @@ registerNotificationRoutes(server, {
   authorize,
   localpart: config.MATRIX_LOCALPART
 })
-registerFeedRoutes(server, { db, authorize, limiter })
-registerLinkRoutes(server, { authorize, limiter })
+registerFeedRoutes(server, {
+  db,
+  authorize,
+  mentionLimiter: key => limiter(key, config.limits.mention)
+})
+registerLinkRoutes(server, {
+  authorize,
+  fetchLimiter: key => limiter(key, config.limits.linkFetch)
+})
 // Publishing reuses the consumer's client, which starts after the server listens.
 let publish: Publish = () => Promise.reject(new Error('not connected yet'))
 registerMeetingRoutes(server, {

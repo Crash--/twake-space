@@ -5,19 +5,42 @@ export interface Limit {
   perMs: number
 }
 
-declare module 'fastify' {
-  interface FastifyContextConfig {
-    limit?: Limit
-  }
-}
-
 export const perMinute = (max: number): Limit => ({ max, perMs: 60_000 })
 export const perHour = (max: number): Limit => ({ max, perMs: 3_600_000 })
 
-// A caller's requests across the routes that set no limit of their own. Each
-// change in a space makes every open client read it, so a busy space spends a
-// viewer's budget too.
-export const DEFAULT_LIMIT = perMinute(600)
+// RATE_LIMITS overrides any of these by name.
+export const DEFAULT_LIMITS = {
+  // A caller's requests across the routes that name no limit. Each change in a
+  // space makes every open client read it, so a busy space spends a viewer's
+  // budget too.
+  any: perMinute(600),
+  feedRead: perMinute(120),
+  feedPost: perMinute(10),
+  feedEdit: perMinute(30),
+  feedVote: perMinute(30),
+  feedAnswer: perMinute(30),
+  feedDecision: perMinute(30),
+  feedReaction: perMinute(60),
+  // Fetches of links not cached yet, the only previews that cost another site
+  // a request.
+  linkFetch: perMinute(30),
+  // What one author can notify one member of, across posts.
+  mention: perHour(20),
+  meetingCreate: perHour(30),
+  spaceCreate: perHour(20),
+  spaceBanner: perHour(20),
+  spaceMembers: perMinute(20),
+  tokenCreate: perHour(20)
+} satisfies Record<string, Limit>
+
+export type LimitName = keyof typeof DEFAULT_LIMITS
+export type Limits = Record<LimitName, Limit>
+
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    limit?: LimitName
+  }
+}
 
 // Milliseconds until the key may be used again, or 0 when it may now.
 export type Limiter = (key: string, limit: Limit) => number | Promise<number>

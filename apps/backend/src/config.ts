@@ -1,9 +1,14 @@
 import { z } from 'zod'
-import { amqpTopology } from './events/topology.ts'
+import { amqpTopology, json } from './events/topology.ts'
 import {
   NEW_TOKEN_CHECKS,
   NEW_TOKENS_WAITING
 } from './modules/auth/authenticator.ts'
+import {
+  DEFAULT_LIMITS,
+  type Limit,
+  type LimitName
+} from './modules/auth/limits.ts'
 import { spaceApp } from './modules/spaces/resources.ts'
 
 // Number('') is 0, so a blank value would pass as a count of zero.
@@ -59,12 +64,37 @@ const homeserver = z
     }
   })
 
+const WINDOWS_MS = {
+  second: 1000,
+  minute: 60_000,
+  hour: 3_600_000,
+  day: 86_400_000
+}
+
+// For example {"feedPost":"10/minute"}.
+const rateLimits = json.pipe(
+  z.partialRecord(
+    z.enum(Object.keys(DEFAULT_LIMITS) as [LimitName, ...LimitName[]]),
+    z
+      .string()
+      .regex(/^[1-9]\d*\/(second|minute|hour|day)$/, 'must be like 10/minute')
+      .transform((value): Limit => {
+        const [max, window] = value.split('/') as [
+          string,
+          keyof typeof WINDOWS_MS
+        ]
+        return { max: Number(max), perMs: WINDOWS_MS[window] }
+      })
+  )
+)
+
 const configSchema = z
   .object({
     AMQP_URL: z.url({ protocol: /^amqps?$/ }),
     DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
     // Rate limit counts; without it each replica keeps its own in memory.
     REDIS_URL: z.url({ protocol: /^rediss?$/ }).optional(),
+    RATE_LIMITS: rateLimits.default({}),
     LDAP_REST_URL: z.url({ protocol: /^https?$/ }),
     LDAP_REST_SERVICE_ID: z.string().min(1),
     LDAP_REST_SECRET: z.string().min(32),
@@ -95,8 +125,9 @@ const configSchema = z
   })
   .and(homeserver)
   .and(amqpTopology)
-  .transform(({ SPACE_APPS, ...config }) => ({
+  .transform(({ SPACE_APPS, RATE_LIMITS, ...config }) => ({
     ...config,
+    limits: { ...DEFAULT_LIMITS, ...RATE_LIMITS },
     // Chat's resource is a Matrix space, which needs a homeserver.
     spaceApps:
       config.homeserver || config.controlPlane

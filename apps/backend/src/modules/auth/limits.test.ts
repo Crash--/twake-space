@@ -4,7 +4,12 @@ import type { RedisClientType } from 'redis'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { createServer } from '../../infra/http.ts'
 import { connectRedis } from '../../infra/redis.ts'
-import { fixedWindows, perMinute, redisWindows } from './limits.ts'
+import {
+  DEFAULT_LIMITS,
+  fixedWindows,
+  perMinute,
+  redisWindows
+} from './limits.ts'
 import { registerAuth } from './routes.ts'
 import { aTokenCaller, anIdentity } from './testing.ts'
 
@@ -82,13 +87,15 @@ function setUp() {
       Promise.resolve(aTokenCaller({ tokenId: token, scopes: ['space:read'] })),
     provider: { identify: unused, verifyLogoutToken: unused },
     store: { isRevoked: unused, revoke: unused },
-    limiter: fixedWindows(() => 0)
+    limiter: fixedWindows(() => 0),
+    limits: { ...DEFAULT_LIMITS, any: perMinute(3), feedPost: perMinute(2) }
   })
-  app.post(
-    '/posts',
-    { preHandler: authorize('space:read'), config: { limit: perMinute(2) } },
-    () => 'ok'
-  )
+  const posting = {
+    preHandler: authorize('space:read'),
+    config: { limit: 'feedPost' as const }
+  }
+  app.post('/posts', posting, () => 'ok')
+  app.post('/polls', posting, () => 'ok')
   app.get('/feed', { preHandler: authorize('space:read') }, () => 'ok')
   const as = (token: string, method: 'GET' | 'POST', url: string) =>
     app.inject({ method, url, headers: { authorization: `Bearer ${token}` } })
@@ -108,7 +115,7 @@ describe('authorize', () => {
     expect(response.json()).toEqual({ error: 'rate_limited' })
   })
 
-  it('counts each caller and each route on its own', async () => {
+  it('counts each caller and each limit on its own', async () => {
     const { as } = setUp()
     await as('alice', 'POST', '/posts')
     await as('alice', 'POST', '/posts')
@@ -118,10 +125,18 @@ describe('authorize', () => {
     expect((await as('alice', 'GET', '/feed')).statusCode).toBe(200)
   })
 
-  it('holds the routes without a limit of their own to the default', async () => {
+  it('shares one budget between the routes naming the same limit', async () => {
+    const { as } = setUp()
+    await as('alice', 'POST', '/posts')
+    await as('alice', 'POST', '/posts')
+
+    expect((await as('alice', 'POST', '/polls')).statusCode).toBe(429)
+  })
+
+  it('holds the routes naming no limit to the "any" limit', async () => {
     const { as } = setUp()
 
-    for (let i = 0; i < 600; i++) await as('alice', 'GET', '/feed')
+    for (let i = 0; i < 3; i++) await as('alice', 'GET', '/feed')
 
     expect((await as('alice', 'GET', '/feed')).statusCode).toBe(429)
     expect((await as('bob', 'GET', '/feed')).statusCode).toBe(200)

@@ -2,7 +2,6 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { publishLater, type OutgoingEvent } from '../../events/outbox.ts'
 import { outgoingActivity } from '../../events/schema.ts'
 import type { Tx } from '../../infra/db.ts'
-import { perHour, type Limiter } from '../auth/index.ts'
 import { tell } from '../live/notify.ts'
 import { notifyUsers } from '../notifications/recipients.ts'
 import { notifications } from '../notifications/schema.ts'
@@ -10,10 +9,11 @@ import { spaceMembers, spaces } from '../spaces/schema.ts'
 import { activityEvents, type Actor } from './schema.ts'
 
 const SOURCE = 'twake://space'
-// What one author can send one member in an hour, across posts. Past it the
-// post still names them, without a notification. The count lives outside the
+
+// Milliseconds until the key may notify again, or 0. Past the limit the post
+// still names the member, without a notification. The count lives outside the
 // database, so deleting the posts does not give it back.
-const MENTIONS = perHour(20)
+export type MentionLimiter = (key: string) => number | Promise<number>
 
 const REASONS = {
   mentioned: {
@@ -39,7 +39,7 @@ export const mentionMembers = (
   tx: Tx,
   post: Post,
   userIds: string[],
-  limiter: Limiter
+  limiter: MentionLimiter
 ) => notifyMembers(tx, post, userIds, 'mentioned', limiter)
 
 // An approver who is never told cannot decide, so these are never limited.
@@ -54,7 +54,7 @@ async function notifyMembers(
   post: Post,
   userIds: string[],
   reason: keyof typeof REASONS,
-  limiter?: Limiter
+  limiter?: MentionLimiter
 ): Promise<void> {
   const { type, notification, eventId } = REASONS[reason]
   const others = userIds.filter(id => id !== post.authorId)
@@ -108,9 +108,7 @@ async function notifyMembers(
   }
   const waits = await Promise.all(
     fresh.map(async ({ member }) =>
-      limiter
-        ? limiter(`mention:${author.userId}:${member.userId}`, MENTIONS)
-        : 0
+      limiter ? limiter(`mention:${author.userId}:${member.userId}`) : 0
     )
   )
   const events: OutgoingEvent[] = []

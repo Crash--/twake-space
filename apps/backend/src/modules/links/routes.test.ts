@@ -1,7 +1,7 @@
 import { pino } from 'pino'
 import { describe, expect, it, vi } from 'vitest'
 import { createServer } from '../../infra/http.ts'
-import { fixedWindows } from '../auth/index.ts'
+import { DEFAULT_LIMITS, fixedWindows } from '../auth/index.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { LinkPreview } from './preview.ts'
 import { cachedPreviews, registerLinkRoutes } from './routes.ts'
@@ -24,7 +24,7 @@ function request(url: string, preview = vi.fn(), token = 'alice') {
     t => (t === 'alice' ? anIdentity() : null),
     t => (t === 'tws_bot' ? aTokenCaller() : null)
   )
-  registerLinkRoutes(app, { authorize, limiter: fixedWindows(), preview })
+  registerLinkRoutes(app, { authorize, fetchLimiter: () => 0, preview })
   return app.inject({
     method: 'GET',
     url,
@@ -78,9 +78,11 @@ describe('GET /link-preview', () => {
     })
     const authorize = fakeAuth(app, () => anIdentity())
     const fetch = vi.fn().mockResolvedValue(found)
+    let now = 0
+    const limiter = fixedWindows(() => now)
     registerLinkRoutes(app, {
       authorize,
-      limiter: fixedWindows(),
+      fetchLimiter: key => limiter(key, DEFAULT_LIMITS.linkFetch),
       preview: cachedPreviews(fetch)
     })
     const get = (path: string) =>
@@ -91,10 +93,11 @@ describe('GET /link-preview', () => {
       })
 
     for (let i = 0; i < 30; i++) await get(String(i))
+    now = 45_000
     const limited = await get('new')
 
     expect(limited.statusCode).toBe(429)
-    expect(limited.headers['retry-after']).toBe('60')
+    expect(limited.headers['retry-after']).toBe('15')
     expect((await get('0')).statusCode).toBe(200)
     expect(fetch).toHaveBeenCalledTimes(30)
   })

@@ -37,7 +37,7 @@ const names = Object.keys(PLATFORM_EVENTS) as [
   ...PlatformEventName[]
 ]
 
-const json = z.string().transform((text, ctx) => {
+export const json = z.string().transform((text, ctx) => {
   try {
     return JSON.parse(text) as unknown
   } catch {

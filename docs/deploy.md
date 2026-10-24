@@ -144,6 +144,7 @@ Optional, with defaults:
 - `SPACE_APPS`: the apps that prepare a resource for each space on this deployment, comma separated, among `chat`, `tasks`, `drive`, `mail` and `calendar`. Default: all five. A space shows no tab for an app left out. Chat also needs a Matrix homeserver (below), or it is left out too.
 - `SENTRY_DSN`, `SENTRY_ENVIRONMENT`: error reporting. Unset `SENTRY_DSN` disables it.
 - `REDIS_URL`: a `redis://` or `rediss://` URL where replicas share rate limit counts. Unset, each replica counts in its own memory. While Redis is unreachable, each replica also counts in its own memory, so requests are never held or refused because of it.
+- `RATE_LIMITS`: JSON overriding rate limits by name, each value `<max>/<second|minute|hour|day>`, for example `{"feedPost":"20/minute","mention":"50/hour"}`. A name left out keeps its default; an unknown name is a configuration error. Every limit counts per signed-in person or API token, never per address. The names and defaults are in [`limits.ts`](../apps/backend/src/modules/auth/limits.ts). `any` covers the routes that name no limit; `mention` counts the mention notifications one author sends one member; `linkFetch` counts link previews not cached yet.
 
 Matrix homeserver, in one of two modes. Without either, the backend runs without chat.
 

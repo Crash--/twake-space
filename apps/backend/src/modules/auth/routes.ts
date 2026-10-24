@@ -7,7 +7,12 @@ import {
   type TokenCaller
 } from '../tokens/authenticator.ts'
 import { GateFullError, type Authenticate } from './authenticator.ts'
-import { DEFAULT_LIMIT, fixedWindows, type Limiter } from './limits.ts'
+import {
+  DEFAULT_LIMITS,
+  fixedWindows,
+  type Limiter,
+  type Limits
+} from './limits.ts'
 import type { Identity, IdentityProvider } from './oidc.ts'
 import type { AuthStore } from './store.ts'
 
@@ -52,9 +57,11 @@ export function registerAuth(
     provider: IdentityProvider
     store: AuthStore
     limiter?: Limiter
+    limits?: Limits
   }
 ): Authorize {
   const limiter = deps.limiter ?? fixedWindows()
+  const limits = deps.limits ?? DEFAULT_LIMITS
   app.decorateRequest('caller', null)
   app.addContentTypeParser(
     'application/x-www-form-urlencoded',
@@ -106,11 +113,10 @@ export function registerAuth(
       caller.kind === 'session'
         ? `user:${caller.userId}`
         : `token:${caller.tokenId}`
-    const { config, method, url } = request.routeOptions
-    const key = config.limit ? `${who} ${String(method)} ${String(url)}` : who
-    const waitMs = await limiter(key, config.limit ?? DEFAULT_LIMIT)
+    const name = request.routeOptions.config.limit ?? 'any'
+    const waitMs = await limiter(`${who} ${name}`, limits[name])
     if (waitMs === 0) return
-    request.log.warn({ caller: who, route: url }, 'rate limited')
+    request.log.warn({ caller: who, limit: name }, 'rate limited')
     return reply
       .code(429)
       .header('retry-after', Math.ceil(waitMs / 1000))

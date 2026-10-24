@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Db } from '../../infra/db.ts'
 import type { HttpServer } from '../../infra/http.ts'
-import { perHour, type Authorize } from '../auth/index.ts'
+import type { Authorize } from '../auth/index.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
 import { spaceResources } from '../spaces/schema.ts'
 
@@ -59,7 +59,7 @@ export function registerMeetingRoutes(
 
   app.post(
     '/spaces/:spaceId/meetings',
-    { preHandler: deps.authorize(), config: { limit: perHour(30) } },
+    { preHandler: deps.authorize(), config: { limit: 'meetingCreate' } },
     async (request, reply) => {
       const caller = request.caller
       if (caller?.kind !== 'session') {
