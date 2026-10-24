@@ -15,6 +15,7 @@ import { unionAll } from 'drizzle-orm/pg-core'
 import { z } from 'zod'
 import type { Db, Tx } from '../../infra/db.ts'
 import { spaceMembers } from '../spaces/schema.ts'
+import { apiTokens } from '../tokens/schema.ts'
 import {
   activityEvents,
   feedCards,
@@ -276,8 +277,9 @@ async function loadItems(
     postIds.length === 0
       ? []
       : db
-          .select()
+          .select({ post: feedPosts, tokenName: apiTokens.name })
           .from(feedPosts)
+          .leftJoin(apiTokens, eq(apiTokens.id, feedPosts.authorTokenId))
           .where(
             and(eq(feedPosts.spaceId, spaceId), inArray(feedPosts.id, postIds))
           ),
@@ -307,7 +309,7 @@ async function loadItems(
   ])
   const userIds = [
     ...cards.map(c => (c.actor?.type === 'user' ? c.actor.id : null)),
-    ...posts.map(p => p.authorId)
+    ...posts.map(p => p.post.authorId)
   ].filter(id => id !== null)
   const names = await memberNames(db, spaceId, userIds)
   const named = (actor: Actor | null): NamedActor | null => {
@@ -350,20 +352,23 @@ async function loadItems(
       reactions: reactionsOf(card.id)
     })
   }
-  for (const post of posts) {
+  for (const { post, tokenName } of posts) {
     items.set(post.id, {
       id: post.id,
       kind: 'post',
       category: 'messages',
       time: post.time,
       updatedAt: post.editedAt ?? post.time,
-      author: post.authorId
-        ? {
-            type: 'user',
-            id: post.authorId,
-            name: names.get(post.authorId) ?? null
-          }
-        : { type: 'deleted_user' },
+      author:
+        post.authorTokenId && tokenName !== null
+          ? { type: 'token', id: post.authorTokenId, name: tokenName }
+          : post.authorId
+            ? {
+                type: 'user',
+                id: post.authorId,
+                name: names.get(post.authorId) ?? null
+              }
+            : { type: 'deleted_user' },
       body: post.body,
       editedAt: post.editedAt,
       reactions: reactionsOf(post.id)

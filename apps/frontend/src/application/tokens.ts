@@ -5,7 +5,9 @@ export const TOKEN_SCOPES = [
   'space:write',
   'members:write',
   'feed:read',
-  'tokens:write'
+  'feed:write',
+  'tokens:write',
+  'notifications:read'
 ] as const
 
 export type TokenScope = (typeof TOKEN_SCOPES)[number]
@@ -15,8 +17,9 @@ export type AccessLevel = 'none' | 'read' | 'write'
 // One access level per resource, where write includes read.
 export const RESOURCE_SCOPES = {
   spaces: { read: ['space:read'], write: ['space:read', 'space:write'] },
-  feed: { read: ['feed:read'] },
+  feed: { read: ['feed:read'], write: ['feed:read', 'feed:write'] },
   members: { write: ['members:write'] },
+  notifications: { read: ['notifications:read'] },
   tokens: { write: ['tokens:write'] }
 } as const satisfies Record<
   string,
@@ -26,6 +29,13 @@ export const RESOURCE_SCOPES = {
 export type TokenResource = keyof typeof RESOURCE_SCOPES
 
 export const TOKEN_RESOURCES = Object.keys(RESOURCE_SCOPES) as TokenResource[]
+
+/** An organization token acts for no one, so it has no notifications. */
+export function tokenResources(owner: TokenOwner): TokenResource[] {
+  return owner === 'organization'
+    ? TOKEN_RESOURCES.filter(resource => resource !== 'notifications')
+    : TOKEN_RESOURCES
+}
 
 export type TokenAccess = Record<TokenResource, AccessLevel>
 
@@ -53,6 +63,8 @@ export const SCOPE_ROUTES: Record<TokenScope, string[]> = {
     'DELETE /spaces/bin'
   ],
   'members:write': [
+    'GET /organization/members',
+    'GET /organization/groups',
     'POST /spaces/:id/members',
     'PATCH, DELETE /spaces/:id/members/:userId',
     'POST /spaces/:id/groups',
@@ -62,11 +74,16 @@ export const SCOPE_ROUTES: Record<TokenScope, string[]> = {
     'GET /spaces/:spaceId/feed',
     'GET /spaces/:spaceId/feed/items/:itemId'
   ],
+  'feed:write': [
+    'POST /spaces/:spaceId/feed/posts',
+    'PATCH, DELETE /spaces/:spaceId/feed/posts/:itemId'
+  ],
   'tokens:write': [
     'GET, POST /tokens',
     'PATCH, DELETE /tokens/:id',
     'GET /organization/token-policy'
-  ]
+  ],
+  'notifications:read': ['GET /notifications']
 }
 
 /** Personal tokens act for the caller; organization tokens need an org admin. */
@@ -150,10 +167,14 @@ export function agentBrief(apiUrl: string, created: CreatedToken): string {
         : `The token reaches every space of the organization, as ${created.role}.`
       : `The token reaches ${String(created.spaces.length)} space(s)${created.role === null ? '' : `, as ${created.role}`}; any other space answers 404.`,
     'It may call:',
+    '- GET /tokens/self, which describes the token: its scopes, spaces and expiry',
     ...created.scopes.flatMap(scope =>
       SCOPE_ROUTES[scope].map(route => `- ${route}`)
     ),
     'Any other route answers 403 insufficient_scope.',
+    ...(created.scopes.includes('feed:write')
+      ? [`Posts are signed "${created.name}", never as a person.`]
+      : []),
     `Full reference: ${API_REFERENCE_URL}`
   ].join('\n')
 }

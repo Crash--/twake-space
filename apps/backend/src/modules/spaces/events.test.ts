@@ -21,6 +21,7 @@ import {
   feedReads
 } from '../feed/schema.ts'
 import { notifications } from '../notifications/schema.ts'
+import { apiTokens } from '../tokens/schema.ts'
 import { spacePlatformRoutes } from './events.ts'
 import {
   organizationMembers,
@@ -428,6 +429,36 @@ describe('space events', () => {
         expect(card?.memberId).not.toBe(JDOE_ID)
       }
     )
+
+    it('drops the name of their tokens from their tokens posts', async () => {
+      const [token] = await testDb.db
+        .insert(apiTokens)
+        .values({
+          organizationId: 'evilcorp123',
+          ownerKind: 'account',
+          accountId: JDOE_ID,
+          name: "John's assistant",
+          tokenHash: 'hash',
+          scopes: ['feed:write'],
+          createdBy: JDOE_ID
+        })
+        .returning({ id: apiTokens.id })
+      if (!token) throw new Error('no token')
+      await testDb.db.insert(feedPosts).values({
+        spaceId: SPACE_ID,
+        authorTokenId: token.id,
+        body: 'Standup notes',
+        time: new Date()
+      })
+
+      await deleted({ uuid: JDOE_ID })
+
+      expect(
+        await testDb.db
+          .select({ authorTokenId: feedPosts.authorTokenId })
+          .from(feedPosts)
+      ).toEqual([{ authorTokenId: null }])
+    })
   })
 
   it('refuses a space event without a space id', async () => {

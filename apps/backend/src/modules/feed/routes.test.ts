@@ -13,6 +13,7 @@ import { createServer } from '../../infra/http.ts'
 import { createTestDb, type TestDb } from '../../infra/testing.ts'
 import { aTokenCaller, anIdentity, fakeAuth } from '../auth/testing.ts'
 import type { TokenCaller } from '../tokens/authenticator.ts'
+import { apiTokens } from '../tokens/schema.ts'
 import { listenInMemory } from '../live/testing.ts'
 import { notifications } from '../notifications/schema.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
@@ -48,6 +49,7 @@ beforeEach(async () => {
   await db.delete(notifications)
   await db.delete(feedItemReactions)
   await db.delete(feedPosts)
+  await db.delete(apiTokens)
   await db.delete(feedReads)
   await db.delete(feedCards)
   await db.delete(activityEvents)
@@ -192,6 +194,20 @@ async function aPost(body: string, time: string, authorId = ALICE) {
     .returning({ id: feedPosts.id })
   if (!post) throw new Error('no post')
   return post.id
+}
+
+// The row behind aTokenCaller(), which names the posts it signs.
+async function aToken() {
+  await testDb.db.insert(apiTokens).values({
+    id: aTokenCaller().tokenId,
+    organizationId: 'org-1',
+    ownerKind: 'account',
+    accountId: ALICE,
+    name: 'Assistant',
+    tokenHash: 'hash',
+    scopes: ['feed:write'],
+    createdBy: ALICE
+  })
 }
 
 interface Item {
@@ -498,17 +514,16 @@ describe('with an API token', () => {
     expect(elsewhere.statusCode).toBe(404)
   })
 
-  it('never posts or reacts', async () => {
+  it('posts only with feed:write, and never reacts', async () => {
     const post = await aPost('Hello team', '2026-10-05T10:00:00Z')
-    const call = bot({ userId: ALICE })
 
-    const posted = await call(
+    const posted = await bot({ userId: ALICE })(
       'POST',
       `/spaces/${DESIGN}/feed/posts`,
       'tws_bot',
       { body: 'from a bot' }
     )
-    const reacted = await call(
+    const reacted = await bot({ userId: ALICE, scopes: ['feed:write'] })(
       'PUT',
       `/spaces/${DESIGN}/feed/items/${post}/reactions/👍`,
       'tws_bot'
@@ -516,6 +531,101 @@ describe('with an API token', () => {
 
     expect(posted.statusCode).toBe(403)
     expect(reacted.statusCode).toBe(403)
+  })
+
+  it('signs its posts with its own name, never its account', async () => {
+    await aToken()
+    const call = bot({ userId: ALICE, scopes: ['feed:write'] })
+
+    const posted = await call(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'tws_bot',
+      { body: 'Standup notes' }
+    )
+
+    expect(posted.statusCode).toBe(201)
+    expect(posted.json()).toMatchObject({
+      kind: 'post',
+      body: 'Standup notes',
+      author: { type: 'token', id: aTokenCaller().tokenId, name: 'Assistant' }
+    })
+    expect(
+      await testDb.db
+        .select({ authorId: feedPosts.authorId })
+        .from(feedPosts)
+        .where(eq(feedPosts.id, posted.json<{ id: string }>().id))
+    ).toEqual([{ authorId: null }])
+  })
+
+  it('posts where its account or its own role may', async () => {
+    await aToken()
+    const post = (overrides: Partial<TokenCaller>) =>
+      bot({ scopes: ['feed:write'], ...overrides })(
+        'POST',
+        `/spaces/${DESIGN}/feed/posts`,
+        'tws_bot',
+        { body: 'Hi' }
+      )
+
+    const viewer = await post({ userId: BOB })
+    const outside = await post({ userId: DAN })
+    const elsewhere = await post({ userId: ALICE, spaceIds: [OTHER] })
+    const orgViewer = await post({ userId: null, role: 'viewer' })
+    const orgEditor = await post({ userId: null, role: 'editor' })
+
+    expect(viewer.json()).toEqual({ error: 'cannot_post' })
+    expect(outside.statusCode).toBe(404)
+    expect(elsewhere.statusCode).toBe(404)
+    expect(orgViewer.json()).toEqual({ error: 'cannot_post' })
+    expect(orgEditor.statusCode).toBe(201)
+  })
+
+  it("leaves its posts to its account's person, even once revoked", async () => {
+    await aToken()
+    const posted = await bot({ userId: ALICE, scopes: ['feed:write'] })(
+      'POST',
+      `/spaces/${DESIGN}/feed/posts`,
+      'tws_bot',
+      { body: 'Oops' }
+    )
+    const post = `/spaces/${DESIGN}/feed/posts/${posted.json<{ id: string }>().id}`
+    await testDb.db.update(apiTokens).set({ revokedAt: new Date() })
+    const call = setUp()
+
+    const byCarol = await call('DELETE', post, 'carol')
+    const byAlice = await call('DELETE', post, 'alice')
+
+    expect(byCarol.json()).toEqual({ error: 'not_author' })
+    expect(byAlice.statusCode).toBe(204)
+  })
+
+  it('edits and deletes its own posts only', async () => {
+    await aToken()
+    const call = bot({ userId: ALICE, scopes: ['feed:write'] })
+    const mine = (
+      await call('POST', `/spaces/${DESIGN}/feed/posts`, 'tws_bot', {
+        body: 'Draft'
+      })
+    ).json<{ id: string }>().id
+    const alices = await aPost('Hello team', '2026-10-05T10:00:00Z')
+    const posts = `/spaces/${DESIGN}/feed/posts`
+
+    const byCarol = await call('PATCH', `${posts}/${mine}`, 'carol', {
+      body: 'Taken over'
+    })
+    const onAlices = await call('PATCH', `${posts}/${alices}`, 'tws_bot', {
+      body: 'Taken over'
+    })
+    const edited = await call('PATCH', `${posts}/${mine}`, 'tws_bot', {
+      body: 'Final'
+    })
+    const deleted = await call('DELETE', `${posts}/${mine}`, 'tws_bot')
+
+    expect(byCarol.json()).toEqual({ error: 'not_author' })
+    expect(onAlices.json()).toEqual({ error: 'not_author' })
+    expect(edited.json()).toMatchObject({ body: 'Final' })
+    expect(deleted.statusCode).toBe(204)
   })
 
   it('has no read marker', async () => {

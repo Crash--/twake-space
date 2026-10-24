@@ -418,7 +418,9 @@
       "space:write": "Modifier les espaces",
       "members:write": "Gérer les membres",
       "feed:read": "Lire les fils",
-      "tokens:write": "Gérer les jetons"
+      "feed:write": "Publier dans les fils",
+      "tokens:write": "Gérer les jetons",
+      "notifications:read": "Lire les notifications"
     },
     "spaces": "Espaces accessibles",
     "allSpaces": "Tous les espaces",
@@ -452,12 +454,14 @@
       "spaces": "Espaces",
       "feed": "Fil d’activité",
       "members": "Membres",
+      "notifications": "Notifications",
       "tokens": "Jetons d’API"
     },
     "resourceHint": {
       "spaces": "L’écriture permet aussi de créer, renommer et supprimer",
-      "feed": "Le fil d’activité de chaque espace",
+      "feed": "L’écriture permet aussi de publier, au nom du jeton",
       "members": "Ajouter, modifier et retirer membres et groupes",
+      "notifications": "Ce dont le compte est notifié",
       "tokens": "Créer et révoquer des jetons personnels"
     },
     "access": {
@@ -479,7 +483,7 @@
     "roleHelp": "Un jeton d’organisation n’est membre d’aucun espace : il utilise ce rôle dans chaque espace qu’il atteint.",
     "roleHint": {
       "viewer": "Lit les espaces",
-      "editor": "Publie aussi dans les espaces",
+      "editor": "Publie aussi dans les fils, avec l’accès en écriture",
       "admin": "Modifie et supprime aussi les espaces et gère leurs membres"
     },
     "copyButton": "Copier",

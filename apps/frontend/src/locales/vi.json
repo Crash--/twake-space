@@ -418,7 +418,9 @@
       "space:write": "Sửa không gian",
       "members:write": "Quản lý thành viên",
       "feed:read": "Đọc bảng tin",
-      "tokens:write": "Quản lý token"
+      "feed:write": "Đăng lên bảng tin",
+      "tokens:write": "Quản lý token",
+      "notifications:read": "Đọc thông báo"
     },
     "spaces": "Không gian truy cập được",
     "allSpaces": "Tất cả không gian",
@@ -452,12 +454,14 @@
       "spaces": "Không gian",
       "feed": "Luồng hoạt động",
       "members": "Thành viên",
+      "notifications": "Thông báo",
       "tokens": "Token API"
     },
     "resourceHint": {
       "spaces": "Quyền ghi cho phép tạo, đổi tên và xóa",
-      "feed": "Luồng hoạt động của từng không gian",
+      "feed": "Quyền ghi cũng cho phép đăng bài, dưới tên của token",
       "members": "Thêm, thay đổi và gỡ thành viên và nhóm",
+      "notifications": "Những gì tài khoản được thông báo",
       "tokens": "Tạo và thu hồi token cá nhân"
     },
     "access": {
@@ -479,7 +483,7 @@
     "roleHelp": "Token tổ chức không là thành viên của không gian nào, nên dùng vai trò này trong mọi không gian nó truy cập.",
     "roleHint": {
       "viewer": "Đọc các không gian",
-      "editor": "Đăng bài trong các không gian",
+      "editor": "Cũng đăng bài trong bảng tin, khi có quyền ghi",
       "admin": "Sửa, xóa các không gian và quản lý thành viên"
     },
     "copyButton": "Sao chép",

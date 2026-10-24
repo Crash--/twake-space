@@ -12,6 +12,7 @@ import {
 } from '../../events/router.ts'
 import type { Tx } from '../../infra/db.ts'
 import { notifyRecipients } from '../notifications/recipients.ts'
+import { apiTokens } from '../tokens/schema.ts'
 import {
   spaceMembers,
   spaceResourceKind,
@@ -339,6 +340,19 @@ export async function forgetActor(
       .update(feedPosts)
       .set({ authorId: null })
       .where(eq(feedPosts.authorId, uuid))
+    // A token's name often names its person.
+    await tx
+      .update(feedPosts)
+      .set({ authorTokenId: null })
+      .where(
+        inArray(
+          feedPosts.authorTokenId,
+          tx
+            .select({ id: apiTokens.id })
+            .from(apiTokens)
+            .where(eq(apiTokens.accountId, uuid))
+        )
+      )
     await tx.delete(feedItemReactions).where(eq(feedItemReactions.userId, uuid))
     await tx.delete(feedReads).where(eq(feedReads.userId, uuid))
     // Not null: the unique key treats nulls as equal, so the card would clash

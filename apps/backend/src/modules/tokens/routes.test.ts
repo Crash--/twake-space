@@ -663,6 +663,98 @@ describe('technical account tokens', () => {
   })
 })
 
+describe('notifications:read', () => {
+  it('is for account tokens only', async () => {
+    const call = setUp()
+    const scopes = ['notifications:read']
+
+    const own = await call('POST', '/tokens', create({ scopes }))
+    const org = await call('POST', '/organization/tokens', orgToken({ scopes }))
+
+    expect(own.statusCode).toBe(201)
+    expect(org.json()).toEqual({
+      error: 'forbidden',
+      message: 'notifications:read is for account tokens'
+    })
+  })
+})
+
+describe('feed:write', () => {
+  it('is refused to a viewer organization token', async () => {
+    const call = setUp()
+    const scopes = ['feed:write']
+
+    const viewer = await call(
+      'POST',
+      '/organization/tokens',
+      orgToken({ scopes, role: 'viewer' })
+    )
+    const editor = await call(
+      'POST',
+      '/organization/tokens',
+      orgToken({ scopes })
+    )
+
+    expect(viewer.statusCode).toBe(400)
+    expect(editor.statusCode).toBe(201)
+  })
+})
+
+describe('GET /tokens/self', () => {
+  it('describes the calling token, whatever its scopes', async () => {
+    const expiresAt = new Date(Date.now() + 10 * DAY)
+    const call = setUp(
+      aTokenCaller({
+        userId: ALICE,
+        scopes: ['feed:read'],
+        spaceIds: [SALES],
+        expiresAt
+      })
+    )
+
+    const response = await call('GET', '/tokens/self', undefined, 'tws_bot')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      id: aTokenCaller().tokenId,
+      name: 'release bot',
+      owner: 'account',
+      accountId: ALICE,
+      organizationId: 'org-1',
+      scopes: ['feed:read'],
+      spaces: [SALES],
+      role: null,
+      expiresAt: expiresAt.toISOString()
+    })
+  })
+
+  it('names an organization token and a technical account token', async () => {
+    const org = await setUp(
+      aTokenCaller({ userId: null, role: 'editor', scopes: [] })
+    )('GET', '/tokens/self', undefined, 'tws_bot')
+    const technical = await setUp(
+      aTokenCaller({ userId: CI, technical: true })
+    )('GET', '/tokens/self', undefined, 'tws_bot')
+
+    expect(org.json()).toMatchObject({
+      owner: 'organization',
+      accountId: null,
+      role: 'editor',
+      spaces: 'all'
+    })
+    expect(technical.json()).toMatchObject({
+      owner: 'technical_account',
+      accountId: CI
+    })
+  })
+
+  it('is for API tokens only', async () => {
+    const response = await setUp()('GET', '/tokens/self')
+
+    expect(response.statusCode).toBe(403)
+  })
+})
+
 describe('organization token policy', () => {
   it('caps the lifetime of new tokens', async () => {
     const call = setUp()

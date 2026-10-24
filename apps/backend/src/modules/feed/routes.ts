@@ -7,6 +7,7 @@ import type { Authorize } from '../auth/index.ts'
 import { notifications } from '../notifications/schema.ts'
 import { reachableSpaces } from '../spaces/routes.ts'
 import { spaceMembers, spaces } from '../spaces/schema.ts'
+import { apiTokens } from '../tokens/schema.ts'
 import {
   decodeCursor,
   findItem,
@@ -93,8 +94,9 @@ export function registerFeedRoutes(
   deps: { db: Db; authorize: Authorize }
 ) {
   const { db } = deps
-  // Tokens only read: posts and reactions are a person's own.
   const read = deps.authorize('feed:read')
+  const write = deps.authorize('feed:write')
+  // Reactions and read marks are a person's own, so no token gets them.
   const preHandler = deps.authorize()
 
   // Unknown ids answer 404 like spaces the caller is not in.
@@ -123,15 +125,28 @@ export function registerFeedRoutes(
   }
 
   async function authoredPost(tx: Tx, request: FastifyRequest) {
-    const { spaceId, userId } = await memberOf(request)
+    const { caller, space } = await reach(request)
+    const spaceId = space.id
     const postId = itemOf(request)
     const [post] = await tx
-      .select({ authorId: feedPosts.authorId })
+      .select({
+        authorId: feedPosts.authorId,
+        authorTokenId: feedPosts.authorTokenId,
+        tokenAccountId: apiTokens.accountId
+      })
       .from(feedPosts)
+      .leftJoin(apiTokens, eq(apiTokens.id, feedPosts.authorTokenId))
       .where(and(eq(feedPosts.id, postId), eq(feedPosts.spaceId, spaceId)))
-      .for('update')
+      .for('update', { of: feedPosts })
     if (!post) throw new Refusal(404, 'not_found')
-    if (post.authorId !== userId) throw new Refusal(403, 'not_author')
+    // A person also answers for the posts of their own tokens, revoked ones
+    // included.
+    const authored =
+      caller.kind === 'token'
+        ? post.authorTokenId === caller.tokenId
+        : post.authorId === caller.userId ||
+          post.tokenAccountId === caller.userId
+    if (!authored) throw new Refusal(403, 'not_author')
     return { spaceId, postId }
   }
 
@@ -285,16 +300,24 @@ export function registerFeedRoutes(
 
   app.post(
     '/spaces/:spaceId/feed/posts',
-    { preHandler },
+    { preHandler: write },
     async (request, reply) => {
       try {
-        const { spaceId, role, userId } = await memberOf(request)
-        if (role === 'viewer') throw new Refusal(403, 'cannot_post')
+        const { caller, space } = await reach(request)
+        const spaceId = space.id
+        if (space.role === 'viewer') throw new Refusal(403, 'cannot_post')
         const { body } = parse(postBody, request.body)
         const item = await db.transaction(async tx => {
           const [post] = await tx
             .insert(feedPosts)
-            .values({ spaceId, authorId: userId, body, time: new Date() })
+            .values({
+              spaceId,
+              ...(caller.kind === 'token'
+                ? { authorTokenId: caller.tokenId }
+                : { authorId: caller.userId }),
+              body,
+              time: new Date()
+            })
             .returning({ id: feedPosts.id })
           if (!post) throw new Error('the post insert returned no row')
           await tellFeed(tx, spaceId, post.id, 'added')
@@ -310,7 +333,7 @@ export function registerFeedRoutes(
 
   app.patch(
     '/spaces/:spaceId/feed/posts/:itemId',
-    { preHandler },
+    { preHandler: write },
     async (request, reply) => {
       try {
         const item = await db.transaction(async tx => {
@@ -333,7 +356,7 @@ export function registerFeedRoutes(
 
   app.delete(
     '/spaces/:spaceId/feed/posts/:itemId',
-    { preHandler },
+    { preHandler: write },
     async (request, reply) => {
       try {
         await db.transaction(async tx => {

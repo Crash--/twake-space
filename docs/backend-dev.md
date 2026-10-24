@@ -111,11 +111,13 @@ Every API route takes `Authorization: Bearer <token>`. There are no cookies. The
 
 - `authorize()` lets sessions in only. API tokens get 403 `insufficient_scope`.
 - `authorize('space:read')` lets sessions in, and API tokens holding that scope.
+- `authorize('any')` lets sessions and every API token in, for a route that only describes the caller.
 - `request.caller` is a `SessionCaller` (`kind: 'session'`) or a `TokenCaller` (`kind: 'token'`). Both carry `organizationId` and `userId`, and `userId` is null for an organization token.
 
 API tokens:
 
-- Scopes: `space:read`, `space:write`, `members:write`, `feed:read`, `tokens:write`, `notifications:write`. Only a technical account's token gets `notifications:write`.
+- Scopes: `space:read`, `space:write`, `members:write`, `feed:read`, `feed:write`, `tokens:write`, `notifications:read`, `notifications:write`. Only a technical account's token gets `notifications:write`, and only an account token `notifications:read`.
+- A token's feed post is signed by the token (`feed_posts.author_token_id`), never by its account.
 - A token covers every space or a list of spaces (`spaceIds`).
 - An account token acts for one account. An organization token acts for the organization and carries a space role (`viewer`, `editor` or `admin`) on every space it covers. A technical account token acts for an LDAP technical account, and the backend checks that account still exists (cached for 5 minutes).
 - Tokens are managed under `/tokens` (own account), `/organization/tokens` and `/organization/technical-accounts/:accountId/tokens` (organization owners and admins), all behind `tokens:write`. A token cannot create a token with more scopes, spaces or lifetime than itself.

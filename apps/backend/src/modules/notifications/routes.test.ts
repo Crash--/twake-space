@@ -13,6 +13,7 @@ import { notifications, notificationSettings } from './schema.ts'
 const ALICE = '8f14e45f-ceea-467a-9575-1d1c2b0c4b2e'
 const BOB = 'c9f0f895-fb98-4b91-a1a4-7f3e2d1c0b5a'
 const DESIGN = '3b9e2c71-5d4a-4f0e-9c8b-1a2d6e7f8091'
+const SALES = '9d1c7a52-0b3e-4f6a-8c2d-5e4f3a2b1c0d'
 
 let testDb: TestDb
 beforeAll(async () => {
@@ -26,14 +27,19 @@ beforeEach(async () => {
   await testDb.db.delete(activityEvents)
 })
 
-async function notify(userId: string, title: string, minute: number) {
+async function notify(
+  userId: string,
+  title: string,
+  minute: number,
+  spaceId = DESIGN
+) {
   const [event] = await testDb.db
     .insert(activityEvents)
     .values({
       source: 'drive',
       eventId: `${userId}-${title}`,
       organizationId: 'org-1',
-      spaceId: DESIGN,
+      spaceId,
       type: 'com.twake.drive.file.shared',
       category: 'files',
       actor: { type: 'user', id: BOB, email: 'bob@example.com' },
@@ -50,7 +56,7 @@ async function notify(userId: string, title: string, minute: number) {
       organizationId: 'org-1',
       userId,
       type: 'invitation',
-      spaceId: DESIGN,
+      spaceId,
       activityEventId: event.id,
       payload: {},
       createdAt: new Date(
@@ -78,32 +84,40 @@ function setUp() {
     token =>
       token === 'tws_bot'
         ? aTokenCaller({ userId: ALICE, scopes: ['feed:read'] })
-        : token === 'tws_harness'
-          ? aTokenCaller({
-              organizationId: 'acme',
-              technical: true,
-              scopes: ['notifications:write']
-            })
-          : token === 'tws_elsewhere'
+        : token === 'tws_reader'
+          ? aTokenCaller({ userId: ALICE, scopes: ['notifications:read'] })
+          : token === 'tws_sales_reader'
             ? aTokenCaller({
-                organizationId: 'other',
-                technical: true,
-                scopes: ['notifications:write']
+                userId: ALICE,
+                scopes: ['notifications:read'],
+                spaceIds: [SALES]
               })
-            : token === 'tws_member'
+            : token === 'tws_harness'
               ? aTokenCaller({
                   organizationId: 'acme',
-                  userId: BOB,
+                  technical: true,
                   scopes: ['notifications:write']
                 })
-              : token === 'tws_org'
+              : token === 'tws_elsewhere'
                 ? aTokenCaller({
-                    organizationId: 'acme',
-                    userId: null,
-                    role: 'admin',
+                    organizationId: 'other',
+                    technical: true,
                     scopes: ['notifications:write']
                   })
-                : null
+                : token === 'tws_member'
+                  ? aTokenCaller({
+                      organizationId: 'acme',
+                      userId: BOB,
+                      scopes: ['notifications:write']
+                    })
+                  : token === 'tws_org'
+                    ? aTokenCaller({
+                        organizationId: 'acme',
+                        userId: null,
+                        role: 'admin',
+                        scopes: ['notifications:write']
+                      })
+                    : null
   )
   registerNotificationRoutes(app, {
     db: testDb.db,
@@ -192,7 +206,7 @@ describe('GET /notifications', () => {
     expect(seen).toHaveLength(5)
   })
 
-  it('is for people signed in, not API tokens', async () => {
+  it('needs notifications:read on a token', async () => {
     const response = await setUp()(
       'GET',
       '/notifications',
@@ -201,6 +215,51 @@ describe('GET /notifications', () => {
     )
 
     expect(response.statusCode).toBe(403)
+  })
+
+  it("lists a token's account notifications, in the spaces it covers", async () => {
+    await notify(ALICE, 'brief', 1)
+    await notify(ALICE, 'pipeline', 2, SALES)
+    await notify(BOB, 'secret', 3)
+    await testDb.db.insert(notifications).values([
+      {
+        organizationId: 'org-1',
+        userId: ALICE,
+        type: 'assistant_suggestion',
+        spaceId: null,
+        externalId: 'call-1',
+        payload: { text: 'Plan it?', pendingCallId: 'c1', matrixRoomId: null }
+      },
+      {
+        organizationId: 'org-2',
+        userId: ALICE,
+        type: 'invitation',
+        spaceId: DESIGN,
+        externalId: 'elsewhere',
+        payload: {}
+      }
+    ])
+    const get = setUp()
+
+    const all = (
+      await get('GET', '/notifications', undefined, 'tws_reader')
+    ).json<Page>()
+    const sales = (
+      await get('GET', '/notifications', undefined, 'tws_sales_reader')
+    ).json<Page>()
+
+    expect(all.unread).toBe(2)
+    expect(all.notifications).toMatchObject([
+      { activity: { content: { object: { title: 'pipeline' } } } },
+      { activity: { content: { object: { title: 'brief' } } } }
+    ])
+    expect(sales.unread).toBe(1)
+    expect(sales.notifications).toMatchObject([
+      {
+        spaceId: SALES,
+        activity: { content: { object: { title: 'pipeline' } } }
+      }
+    ])
   })
 })
 
@@ -216,6 +275,19 @@ describe('marking as read', () => {
     const page = (await call('GET', '/notifications')).json<Page>()
     expect(page.unread).toBe(1)
     expect(page.notifications.find(n => n.id === id)?.read).toBe(true)
+  })
+
+  it('is left to the person, not a token', async () => {
+    const id = await notify(ALICE, 'brief', 1)
+
+    const response = await setUp()(
+      'POST',
+      `/notifications/${id}/read`,
+      undefined,
+      'tws_reader'
+    )
+
+    expect(response.statusCode).toBe(403)
   })
 
   it("never marks someone else's notification", async () => {

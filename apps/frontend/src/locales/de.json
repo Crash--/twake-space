@@ -418,7 +418,9 @@
       "space:write": "Spaces ändern",
       "members:write": "Mitglieder verwalten",
       "feed:read": "Feeds lesen",
-      "tokens:write": "Tokens verwalten"
+      "feed:write": "In Feeds posten",
+      "tokens:write": "Tokens verwalten",
+      "notifications:read": "Benachrichtigungen lesen"
     },
     "spaces": "Erreichbare Spaces",
     "allSpaces": "Alle Spaces",
@@ -452,12 +454,14 @@
       "spaces": "Spaces",
       "feed": "Aktivitätsfeed",
       "members": "Mitglieder",
+      "notifications": "Benachrichtigungen",
       "tokens": "API-Tokens"
     },
     "resourceHint": {
       "spaces": "Schreiben erlaubt auch Erstellen, Umbenennen und Löschen",
-      "feed": "Der Aktivitätsfeed jedes Space",
+      "feed": "Schreiben erlaubt auch Posten, im Namen des Tokens",
       "members": "Mitglieder und Gruppen hinzufügen, ändern und entfernen",
+      "notifications": "Was dem Konto gemeldet wird",
       "tokens": "Persönliche Tokens erstellen und widerrufen"
     },
     "access": {
@@ -479,7 +483,7 @@
     "roleHelp": "Ein Organisations-Token ist in keinem Space Mitglied und nutzt diese Rolle in jedem Space, den es erreicht.",
     "roleHint": {
       "viewer": "Liest die Spaces",
-      "editor": "Postet auch in den Spaces",
+      "editor": "Postet auch in den Feeds, mit Schreibzugriff darauf",
       "admin": "Bearbeitet und löscht auch die Spaces und verwaltet ihre Mitglieder"
     },
     "copyButton": "Kopieren",

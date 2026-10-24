@@ -131,6 +131,11 @@ describe('ApiTokensScreen', () => {
         within(dialog).getByRole('radiogroup', { name: 'Activity feed' })
       ).getByRole('radio', { name: 'Read' })
     )
+    fireEvent.click(
+      within(
+        within(dialog).getByRole('radiogroup', { name: 'Notifications' })
+      ).getByRole('radio', { name: 'Read' })
+    )
     choose('Expires in', '90 days')
     expect(
       within(dialog).queryByRole('combobox', { name: 'Acts in each space as' })
@@ -156,7 +161,7 @@ describe('ApiTokensScreen', () => {
     expect(brief).not.toContain('POST /spaces')
     expect(tokens.create).toHaveBeenCalledWith('personal', {
       name: 'Backup script',
-      scopes: ['space:read', 'feed:read'],
+      scopes: ['space:read', 'feed:read', 'notifications:read'],
       spaces: 'all',
       expiresInDays: 90
     })
@@ -223,6 +228,9 @@ describe('ApiTokensScreen', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'New organization token'
     })
+    expect(
+      within(dialog).queryByRole('radiogroup', { name: 'Notifications' })
+    ).not.toBeInTheDocument()
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Name' }), {
       target: { value: 'Digest' }
     })

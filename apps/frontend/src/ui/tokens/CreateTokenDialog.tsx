@@ -17,7 +17,7 @@ import {
   accessLevels,
   curlExample,
   scopesOf,
-  TOKEN_RESOURCES,
+  tokenResources,
   type AccessLevel,
   type CreatedToken,
   type TokenAccess,
@@ -74,6 +74,7 @@ export function CreateTokenDialog({
     spaces: 'read',
     feed: 'none',
     members: 'none',
+    notifications: 'none',
     tokens: 'none'
   })
   const scopes = scopesOf(access)
@@ -154,7 +155,7 @@ export function CreateTokenDialog({
                 labelledBy={accessId}
                 levels={LEVELS.map(level => t(`apiTokens.access.${level}`))}
               >
-                {TOKEN_RESOURCES.map(resource => (
+                {tokenResources(owner).map(resource => (
                   <AccessRow
                     key={resource}
                     id={`${accessId}-${resource}`}

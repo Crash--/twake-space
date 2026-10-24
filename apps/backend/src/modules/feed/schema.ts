@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
+  check,
   index,
   jsonb,
   pgEnum,
@@ -10,6 +11,7 @@ import {
   uuid
 } from 'drizzle-orm/pg-core'
 import { timestamptz } from '../../infra/db.ts'
+import { apiTokens } from '../tokens/schema.ts'
 
 // A user's id is null when only their email was sent and no space member has it.
 export type Actor =
@@ -92,14 +94,22 @@ export const feedPosts = pgTable(
   {
     id: uuid().primaryKey().defaultRandom(),
     spaceId: uuid('space_id').notNull(),
-    // Null once the author's account is deleted.
+    // Null once the author's account is deleted, and for a token's post.
     authorId: uuid('author_id'),
+    // Set for a post an API token wrote: the token signs it, not its account.
+    authorTokenId: uuid('author_token_id').references(() => apiTokens.id),
     body: text().notNull(),
     // Written from a JS Date, at the milliseconds the feed cursor carries.
     time: timestamptz('time').notNull(),
     editedAt: timestamptz('edited_at')
   },
-  table => [index().on(table.spaceId, table.time, table.id)]
+  table => [
+    index().on(table.spaceId, table.time, table.id),
+    check(
+      'feed_posts_one_author',
+      sql`${table.authorId} is null or ${table.authorTokenId} is null`
+    )
+  ]
 )
 
 // On a card or a post.

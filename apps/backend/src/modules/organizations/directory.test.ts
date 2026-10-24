@@ -36,7 +36,23 @@ function setUp() {
   const authorize = fakeAuth(
     app,
     token => (token === 'alice' ? anIdentity() : null),
-    token => (token === 'tws_bot' ? aTokenCaller() : null)
+    token =>
+      token === 'tws_bot'
+        ? aTokenCaller()
+        : token === 'tws_crew'
+          ? aTokenCaller({
+              organizationId: 'org-2',
+              userId: null,
+              role: 'admin',
+              scopes: ['members:write']
+            })
+          : token === 'tws_viewer'
+            ? aTokenCaller({
+                userId: null,
+                role: 'viewer',
+                scopes: ['members:write']
+              })
+            : null
   )
   registerDirectoryRoutes(app, { authorize, directory })
   const get = (url: string, token = 'alice') =>
@@ -82,10 +98,24 @@ describe('GET /organization/members', () => {
     expect(response.statusCode).toBe(400)
   })
 
-  it('is only for signed-in people', async () => {
+  it('lets in a token that manages members, of its organization', async () => {
+    const { get, queries } = setUp()
+
+    const response = await get('/organization/members?search=ali', 'tws_crew')
+
+    expect(response.statusCode).toBe(200)
+    expect(queries).toEqual([
+      ['members', 'org-2', { page: 1, limit: 20, search: 'ali' }]
+    ])
+  })
+
+  it('refuses a token that adds no one, and an unknown token', async () => {
     const { get } = setUp()
 
     expect((await get('/organization/members', 'tws_bot')).statusCode).toBe(403)
+    expect((await get('/organization/groups', 'tws_viewer')).statusCode).toBe(
+      403
+    )
     expect((await get('/organization/members', 'nobody')).statusCode).toBe(401)
   })
 })

@@ -418,7 +418,9 @@
       "space:write": "Modificar espacios",
       "members:write": "Gestionar miembros",
       "feed:read": "Leer feeds",
-      "tokens:write": "Gestionar tokens"
+      "feed:write": "Publicar en feeds",
+      "tokens:write": "Gestionar tokens",
+      "notifications:read": "Leer notificaciones"
     },
     "spaces": "Espacios a los que accede",
     "allSpaces": "Todos los espacios",
@@ -452,12 +454,14 @@
       "spaces": "Espacios",
       "feed": "Feed de actividad",
       "members": "Miembros",
+      "notifications": "Notificaciones",
       "tokens": "Tokens de API"
     },
     "resourceHint": {
       "spaces": "La escritura también crea, renombra y elimina",
-      "feed": "El feed de actividad de cada espacio",
+      "feed": "La escritura también publica, con el nombre del token",
       "members": "Añadir, cambiar y quitar miembros y grupos",
+      "notifications": "Lo que se notifica a la cuenta",
       "tokens": "Crear y revocar tokens personales"
     },
     "access": {
@@ -479,7 +483,7 @@
     "roleHelp": "Un token de organización no es miembro de ningún espacio, así que usa este rol en cada espacio al que llega.",
     "roleHint": {
       "viewer": "Lee los espacios",
-      "editor": "También publica en los espacios",
+      "editor": "También publica en los feeds, con acceso de escritura",
       "admin": "También edita y elimina los espacios y gestiona sus miembros"
     },
     "copyButton": "Copiar",

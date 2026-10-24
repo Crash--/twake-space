@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import type { Db } from '../../infra/db.ts'
@@ -132,13 +132,34 @@ export function registerNotificationRoutes(
     }
   )
 
-  app.get('/notifications', { preHandler }, async (request, reply) => {
-    const userId = userOf(request)
+  // A token may list; marking as read stays with the person.
+  const read = deps.authorize('notifications:read')
+
+  app.get('/notifications', { preHandler: read }, async (request, reply) => {
+    const caller = request.caller
+    if (!caller) throw new Error('authorize let a request through')
+    const { userId } = caller
+    if (userId === null) {
+      return reply.code(403).send({ error: 'insufficient_scope' })
+    }
     const query = listQuery.safeParse(request.query)
     if (!query.success) {
       return reply.code(400).send({ error: 'invalid_request' })
     }
     const { before, limit } = query.data
+    // A token reads only about the spaces of its organization it covers:
+    // nothing from another organization, nor the assistant's suggestions.
+    const mine = and(
+      eq(notifications.userId, userId),
+      caller.kind === 'token'
+        ? and(
+            eq(notifications.organizationId, caller.organizationId),
+            caller.spaceIds === null
+              ? isNotNull(notifications.spaceId)
+              : inArray(notifications.spaceId, caller.spaceIds)
+          )
+        : undefined
+    )
     const rows = await db
       .select({
         id: notifications.id,
@@ -162,7 +183,7 @@ export function registerNotificationRoutes(
       )
       .where(
         and(
-          eq(notifications.userId, userId),
+          mine,
           before === undefined
             ? undefined
             : sql`(${notifications.createdAt}, ${notifications.id}) < (
@@ -176,9 +197,7 @@ export function registerNotificationRoutes(
     const [unread] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
-      .where(
-        and(eq(notifications.userId, userId), isNull(notifications.readAt))
-      )
+      .where(and(mine, isNull(notifications.readAt)))
     return {
       notifications: rows.map(({ readAt, ...row }) => ({
         ...row,

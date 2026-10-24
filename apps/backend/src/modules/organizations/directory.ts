@@ -23,6 +23,16 @@ function searchOf(request: FastifyRequest) {
   }
 }
 
+// An organization token below admin adds no one to a space, so finds no one.
+function addsNoOne(request: FastifyRequest) {
+  const { caller } = request
+  return (
+    caller?.kind === 'token' &&
+    caller.userId === null &&
+    caller.role !== 'admin'
+  )
+}
+
 // The people and groups a space admin picks from.
 export function registerDirectoryRoutes(
   app: HttpServer,
@@ -31,33 +41,29 @@ export function registerDirectoryRoutes(
     directory: Pick<Directory, 'listMembers' | 'listGroups'>
   }
 ) {
-  const { authorize, directory } = deps
+  const { directory } = deps
+  // A token that adds people to spaces needs to find them.
+  const preHandler = deps.authorize('members:write')
 
-  app.get(
-    '/organization/members',
-    { preHandler: authorize() },
-    async (request, reply) => {
-      const search = searchOf(request)
-      if (!search) return reply.code(400).send({ error: 'invalid_request' })
-      const page = await directory.listMembers(search.orgId, search.query)
-      return {
-        members: page.members.map(({ username, email, displayName }) => ({
-          username,
-          email,
-          displayName
-        })),
-        hasNextPage: page.hasNextPage
-      }
+  app.get('/organization/members', { preHandler }, async (request, reply) => {
+    if (addsNoOne(request)) return reply.code(403).send({ error: 'forbidden' })
+    const search = searchOf(request)
+    if (!search) return reply.code(400).send({ error: 'invalid_request' })
+    const page = await directory.listMembers(search.orgId, search.query)
+    return {
+      members: page.members.map(({ username, email, displayName }) => ({
+        username,
+        email,
+        displayName
+      })),
+      hasNextPage: page.hasNextPage
     }
-  )
+  })
 
-  app.get(
-    '/organization/groups',
-    { preHandler: authorize() },
-    async (request, reply) => {
-      const search = searchOf(request)
-      if (!search) return reply.code(400).send({ error: 'invalid_request' })
-      return directory.listGroups(search.orgId, search.query)
-    }
-  )
+  app.get('/organization/groups', { preHandler }, async (request, reply) => {
+    if (addsNoOne(request)) return reply.code(403).send({ error: 'forbidden' })
+    const search = searchOf(request)
+    if (!search) return reply.code(400).send({ error: 'invalid_request' })
+    return directory.listGroups(search.orgId, search.query)
+  })
 }

@@ -23,7 +23,9 @@ export const tokenScope = pgEnum('token_scope', [
   'members:write',
   'feed:read',
   'tokens:write',
-  'notifications:write'
+  'notifications:write',
+  'feed:write',
+  'notifications:read'
 ])
 
 export const apiTokens = pgTable(

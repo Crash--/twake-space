@@ -23,12 +23,12 @@ This gives two kinds of caller.
 - A session caller holds an OIDC access token. Its user id is the `uuid` claim and its organization is the `org_id` claim.
 - A token caller holds an API token. An account token acts for one account (a person or a technical account). An organization token acts for no account and carries its own space role (`viewer`, `editor` or `admin`). Either one covers every space of the organization or a list of spaces.
 
-API token scopes are `space:read`, `space:write`, `members:write`, `feed:read`, `tokens:write` and `notifications:write`. Only a technical account's token gets `notifications:write`.
+API token scopes are `space:read`, `space:write`, `members:write`, `feed:read`, `feed:write`, `tokens:write`, `notifications:read` and `notifications:write`. Only a technical account's token gets `notifications:write`, and only an account token `notifications:read`.
 
 `authorize(scope)` decides who gets in.
 
 - A session caller gets in whatever the scope, as long as its identity has an `org_id`.
-- A token caller gets in only when the route names a scope and the token holds it. A route registered with `authorize()` and no scope is for session callers only.
+- A token caller gets in only when the route names a scope and the token holds it, or when the route names `any`, which lets every token in. A route registered with `authorize()` and no scope is for session callers only.
 
 ```mermaid
 flowchart TD
@@ -174,7 +174,7 @@ The refusals look like this.
 
 These routes list the people and groups of the caller's organization from ldap-rest, for a space admin to pick from. Pages hold 20 entries.
 
-- Caller: session only.
+- Caller: session, or token with `members:write`, which finds there the usernames and group ids it adds to spaces. An organization token below `admin` adds no one, so it gets `403 {"error":"forbidden"}`.
 - Query: `search` (optional, trimmed, at least 2 characters), `page` (integer from 1, default 1).
 - `400 {"error":"invalid_request"}` when the query fails.
 
@@ -223,12 +223,13 @@ A group's `name` is its display name, or its `cn` when it has none.
 
 ## Notifications
 
-All notification routes are for session callers only and act on the caller's own notifications, except `POST /notifications/suggestions`, which takes an API token.
+All notification routes are for session callers only and act on the caller's own notifications, except `GET /notifications`, which also takes an account token holding `notifications:read`, and `POST /notifications/suggestions`, which takes an API token.
 
 ### GET /notifications
 
+- Caller: session, or account token with `notifications:read`, which reads its account's notifications about the spaces of its organization that it covers. A token never reads an `assistant_suggestion`, nor a notification from another organization.
 - Query: `before` (optional UUID, the last notification of the previous page), `limit` (1 to 100, default 50).
-- Newest first. `unread` counts every unread notification of the user, not only this page.
+- Newest first. `unread` counts every unread notification the caller reads, not only this page.
 - `type` is one of `card_mention`, `assignment`, `invitation`, `attended_event_change`, `space_change`, `assistant_suggestion`.
 - `payload` is `{}` except for an `assistant_suggestion`: `{ text, pendingCallId, matrixRoomId }`.
 - `activity` comes from the activity event behind the notification. `category` is one of `messages`, `files`, `activities`, `events`.
@@ -304,7 +305,7 @@ For the user's assistant (Twake Harness), through an API token of a technical ac
 
 A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post and react.
 
-`GET /spaces/:spaceId/feed` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, on a space the token reaches. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
+`GET /spaces/:spaceId/feed` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes one holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
 
 A feed item:
 
@@ -370,17 +371,17 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 ### POST /spaces/:spaceId/feed/posts
 
 - Body: `{"body": "..."}`, 1 to 4000 characters once trimmed.
-- Editors and admins only, otherwise `403 {"error":"cannot_post"}`.
+- Editors and admins only, otherwise `403 {"error":"cannot_post"}`. An account token posts with its account's role, an organization token with its own.
 - Answers `201` with the post.
 
 ### PATCH /spaces/:spaceId/feed/posts/:itemId
 
 - Body: `{"body": "..."}`. Answers the post.
-- Its author only, otherwise `403 {"error":"not_author"}`.
+- Its author only, otherwise `403 {"error":"not_author"}`. A token's post belongs to that token, and to the person of its account, from a session, even once the token is revoked.
 
 ### DELETE /spaces/:spaceId/feed/posts/:itemId
 
-Deletes the post and its reactions. Its author only, otherwise `403 {"error":"not_author"}`. Answers `204`.
+Deletes the post and its reactions. Its author only, as for PATCH, otherwise `403 {"error":"not_author"}`. Answers `204`.
 
 ### PUT /spaces/:spaceId/feed/items/:itemId/reactions/:key
 
@@ -439,7 +440,7 @@ data: {"spaceId":"<uuid>"}
 
 ## Organization tokens
 
-All token routes use `authorize('tokens:write')`: a session caller, or a token caller holding `tokens:write`. The same five routes exist under three prefixes, one per owner.
+All token routes but [`GET /tokens/self`](#get-tokensself) use `authorize('tokens:write')`: a session caller, or a token caller holding `tokens:write`. The same five routes exist under three prefixes, one per owner.
 
 - `/tokens` manages the caller's own account tokens. An organization token gets `403 {"error":"forbidden","message":"not an account token"}`.
 - `/organization/tokens` manages organization tokens. The caller's account must be an `owner` or `admin` of the organization, as ldap-rest answers on each call.
@@ -448,6 +449,25 @@ All token routes use `authorize('tokens:write')`: a session caller, or a token c
 No token manages tokens on the two organization prefixes, sets the policy, reads the audit log or lists the token spaces (`403 forbidden`, `"the organization tokens are managed from a signed-in session"`). Through the tokens it created, a token would reach spaces its own account is not in.
 
 A token created by a token records it as its parent, and is revoked whenever its parent is, by hand or by an event.
+
+### GET /tokens/self
+
+- Caller: any API token, whatever its scopes. A session caller gets `403 forbidden`.
+- Describes the calling token, so a client checks what it was given and when it expires. `owner` is `account`, `technical_account` or `organization`. `accountId` is null and `role` set for an organization token, the reverse otherwise.
+
+```json
+{
+  "id": "<uuid>",
+  "name": "Assistant",
+  "owner": "account",
+  "accountId": "<uuid>",
+  "organizationId": "org-1",
+  "scopes": ["space:read", "feed:read"],
+  "spaces": "all",
+  "role": null,
+  "expiresAt": "2026-11-23T09:00:00.000Z"
+}
+```
 
 ### POST {prefix}
 
@@ -464,6 +484,8 @@ Refusals:
 - `400 invalid_request` when the body fails, the expiry is in the past, the organization's policy refuses the expiry, or a listed space is not one the owner reaches (a member space for an account, any organization space for the organization).
 - `403 forbidden` with `"more rights than the token creating it"` when a token caller asks for a scope it lacks, a space it does not cover, or a later expiry than its own.
 - `403 forbidden` with `"notifications:write is for technical accounts"` when a person's token or an organization token asks for that scope.
+- `403 forbidden` with `"notifications:read is for account tokens"` when an organization token asks for that scope.
+- `400 invalid_request` when a `viewer` organization token asks for `feed:write`, as a viewer posts nothing.
 
 Answers `201`. The `token` value appears only in this response.
 

@@ -418,7 +418,9 @@
       "space:write": "Change spaces",
       "members:write": "Manage members",
       "feed:read": "Read feeds",
-      "tokens:write": "Manage tokens"
+      "feed:write": "Post in feeds",
+      "tokens:write": "Manage tokens",
+      "notifications:read": "Read notifications"
     },
     "spaces": "Spaces it reaches",
     "allSpaces": "All spaces",
@@ -452,12 +454,14 @@
       "spaces": "Spaces",
       "feed": "Activity feed",
       "members": "Members",
+      "notifications": "Notifications",
       "tokens": "API tokens"
     },
     "resourceHint": {
       "spaces": "Write also creates, renames and deletes",
-      "feed": "The activity feed of each space",
+      "feed": "Write also posts, signed with the token's name",
       "members": "Add, change and remove members and groups",
+      "notifications": "What the account is notified of",
       "tokens": "Create and revoke personal tokens"
     },
     "access": {
@@ -479,7 +483,7 @@
     "roleHelp": "An organization token isn't a member of any space, so it uses this role in every space it reaches.",
     "roleHint": {
       "viewer": "Reads the spaces",
-      "editor": "Also posts in the spaces",
+      "editor": "Also posts in the feeds, given write access to them",
       "admin": "Also edits and deletes the spaces and manages their members"
     },
     "copyButton": "Copy",

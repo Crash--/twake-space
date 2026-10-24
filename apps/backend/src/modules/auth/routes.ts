@@ -39,8 +39,9 @@ type PreHandler = (
   reply: FastifyReply
 ) => Promise<FastifyReply | undefined>
 
-// With a scope, API tokens holding it are let in too; without, only sessions.
-export type Authorize = (scope?: Scope) => PreHandler
+// With a scope, API tokens holding it are let in too, and every token with
+// 'any'; without, only sessions.
+export type Authorize = (scope?: Scope | 'any') => PreHandler
 
 export function registerAuth(
   app: HttpServer,
@@ -78,7 +79,7 @@ export function registerAuth(
     if (!identity) return unauthorized(reply, 'invalid_token')
 
     if ('kind' in identity) {
-      if (!scope || !identity.scopes.includes(scope)) {
+      if (!scope || (scope !== 'any' && !identity.scopes.includes(scope))) {
         return reply
           .code(403)
           .header(
