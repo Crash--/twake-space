@@ -3,7 +3,7 @@ name: Frontend Release
 on:
   push:
     tags:
-      - "frontend-v[0-9]+.[0-9]+.[0-9]+*"
+      - 'frontend-v[0-9]+.[0-9]+.[0-9]+*'
 
 permissions:
   contents: read
@@ -14,7 +14,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - uses: ./.github/actions/verify-release-tag
@@ -45,7 +45,7 @@ jobs:
 
   manifest:
     needs: [verify, check]
-    uses: linagora/twake-workflows/.github/workflows/publish-manifest.yml@v1
+    uses: linagora/twake-workflows/.github/workflows/publish-manifest.yml@578530b3996920ec3459d1ef1f322ec8b9fed2b7 # v1.5.0
     with:
       tag-prefix: frontend-v
       package-json: apps/frontend/package.json
@@ -59,7 +59,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Generate release notes
@@ -69,7 +69,7 @@ jobs:
           path: apps/frontend
           workflow-prefix: frontend
           tag-prefix: frontend-v
-      - uses: softprops/action-gh-release@v3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ github.ref_name }}
           name: Frontend ${{ needs.verify.outputs.version }}
