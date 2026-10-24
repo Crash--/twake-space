@@ -30,6 +30,7 @@ for (const [network, prefix] of [
   ['2002::', 16],
   ['fc00::', 7],
   ['fe80::', 10],
+  ['fec0::', 10],
   ['ff00::', 8]
 ] as const) {
   reserved.addSubnet(network, prefix, 'ipv6')
