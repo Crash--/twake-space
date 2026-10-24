@@ -14,6 +14,8 @@ flowchart LR
   be[Backend image<br/>API :8080, metrics :9464]
   pg[(PostgreSQL)]
   rabbitmq[(RabbitMQ)]
+  redis[(Redis<br/>optional)]
+  sites[Linked sites]
   ldap[ldap-rest]
   oidc[OIDC provider]
   cp[Chat control plane<br/>SaaS only]
@@ -35,7 +37,9 @@ flowchart LR
   browser -.-> sentry
   browser -.-> posthog
   be --> pg
-  be -->|consume, dead letters| rabbitmq
+  be -->|consume, publish| rabbitmq
+  be -.->|rate limit counts| redis
+  be -->|link previews| sites
   be --> ldap
   be -->|discovery, introspection, userinfo, JWKS| oidc
   oidc -->|back-channel logout| be
@@ -47,7 +51,7 @@ flowchart LR
 
 Both images go to `ghcr.io/<repository owner>/twake-space-frontend` and `ghcr.io/<repository owner>/twake-space-backend`. The workflows run per app, triggered by changes under `apps/<app>/`, the root `package.json`, lock file, `tsconfig.base.json` and `.dockerignore`, and the workflows themselves. Pull requests also watch `eslint.config.js`, `.prettierrc` and `.nvmrc`.
 
-- Pull request (and the merge queue): runs the app's check (`npm audit`, then `npm run check`, which lints, checks formatting, typechecks, tests and builds) and builds the image without pushing. The backend tests run against a `postgres:18` container.
+- Pull request (and the merge queue): runs the app's check (`npm audit`, then `npm run check`, which lints, checks formatting, typechecks, tests and builds) and builds the image without pushing. The backend tests run against a `postgres:18` and a `redis:7-alpine` container.
 - Push to `main`: runs the check, then builds and pushes the image tagged `latest`.
 - Tag `frontend-vX.Y.Z` or `backend-vX.Y.Z` (a suffix such as `-rc.1` is accepted): verifies the tag (the commit is on `main`, the version is greater than the previous release, and it matches the app's `package.json`), runs the check, pushes the image tagged with the version and `latest`, then creates a GitHub release with generated notes.
 - A frontend tag also publishes the app's manifest on the registry's dev channel, next to the image push. See [Publish it on the registry](../README.md#publish-it-on-the-registry).
@@ -135,21 +139,32 @@ Optional, with defaults:
 
 - `OIDC_CLIENT_ID`: default `twakespace-backend`.
 - `OIDC_AUDIENCE`: the audience access tokens must carry, default `twakespace`.
-- `NEW_TOKEN_CHECKS`, `NEW_TOKENS_WAITING`: how many access tokens never seen before are checked with the OIDC provider at once, default `10`, and how many more wait their turn, default `100`. Past both, a new token is refused with a 503 until the line clears. Tokens checked before are not held to either.
+- `NEW_TOKEN_CHECKS`, `NEW_TOKENS_WAITING`: how many access tokens never seen before are checked with the OIDC provider at once, default `10`, and how many more wait their turn, default `100`. Whole numbers, at least `1` and `0`; a blank value is a configuration error. Past both, a new token is refused with a 503 until the line clears. Tokens checked before are not held to either.
 - `HTTP_HOST`: default `0.0.0.0`, used by both the API and the metrics server.
-- `HTTP_PORT`: API port, default `8080`.
-- `METRICS_PORT`: metrics port, default `9464`. Keep it off the public network.
+- `HTTP_PORT`: API port, `1` to `65535`, default `8080`.
+- `METRICS_PORT`: metrics port, `1` to `65535`, default `9464`. Keep it off the public network.
 - `LOG_LEVEL`: `fatal`, `error`, `warn`, `info`, `debug` or `trace`, default `info`.
 - `MATRIX_LOCALPART`: `uid` or `email`, default `uid`. It tells the backend how Matrix user localparts map to directory users.
 - `SPACE_APPS`: the apps that prepare a resource for each space on this deployment, comma separated, among `chat`, `tasks`, `drive`, `mail` and `calendar`. Default: all five. A space shows no tab for an app left out. Chat also needs a Matrix homeserver (below), or it is left out too.
-- `SENTRY_DSN`, `SENTRY_ENVIRONMENT`: error reporting. Unset `SENTRY_DSN` disables it.
-- `REDIS_URL`: a `redis://` or `rediss://` URL where replicas share rate limit counts. Unset, each replica counts in its own memory. While Redis is unreachable, each replica also counts in its own memory, so requests are never held or refused because of it.
-- `RATE_LIMITS`: JSON overriding rate limits by name, each value `<max>/<second|minute|hour|day>`, for example `{"feedPost":"20/minute","mention":"50/hour"}`. A name left out keeps its default; an unknown name is a configuration error. Every limit counts per signed-in person or API token, never per address. The names and defaults are in [`limits.ts`](../apps/backend/src/modules/auth/limits.ts). `any` covers the routes that name no limit; `mention` counts the mention notifications one author sends one member; `linkFetch` counts link previews not cached yet.
+- `SENTRY_DSN`, `SENTRY_ENVIRONMENT`: error reporting. Unset `SENTRY_DSN` disables it. Sentry starts before the configuration is validated, so these two are not checked.
+- `REDIS_URL`: a `redis://` or `rediss://` URL where replicas share rate limit counts. Unset, each replica counts in its own memory. While Redis is unreachable, or takes over 200 ms to answer, each replica also counts in its own memory, so requests are never held or refused because of it.
+- `RATE_LIMITS`: JSON overriding rate limits by name, each value `<max>/<second|minute|hour|day>` with `<max>` a whole number from `1`, for example `{"feedPost":"20/minute","mention":"50/hour"}`. Default `{}`. A name left out keeps its default; an unknown name or a malformed value is a configuration error. Every limit counts per signed-in person or API token, never per address, in fixed windows. A request over a limit gets `429` with `Retry-After`, except over `mention` (below). The names and defaults, from [`limits.ts`](../apps/backend/src/modules/auth/limits.ts):
+  - `any`: `600/minute`, the routes that name no limit.
+  - `feedRead`: `120/minute`.
+  - `feedPost`: `10/minute`.
+  - `feedEdit`, `feedVote`, `feedAnswer`, `feedDecision`: `30/minute` each.
+  - `feedReaction`: `60/minute`.
+  - `linkFetch`: `30/minute`, link previews not cached yet.
+  - `mention`: `20/hour`, the mention notifications one author sends one member. Past it the post still names the member, without a notification.
+  - `meetingCreate`: `30/hour`.
+  - `spaceCreate`, `spaceBanner`: `20/hour` each.
+  - `spaceMembers`: `20/minute`.
+  - `tokenCreate`: `20/hour`.
 
 Matrix homeserver, in one of two modes. Without either, the backend runs without chat.
 
-- Single installation: set both `MATRIX_HOMESERVER_URL` and `MATRIX_SERVER_NAME`. This one homeserver serves every organization, and every organization has chat.
-- SaaS: set both `CHAT_CONTROL_PLANE_URL` and `CHAT_CONTROL_PLANE_TOKEN`. The control plane gives each organization its homeserver.
+- Single installation: set both `MATRIX_HOMESERVER_URL` (an `http` or `https` URL) and `MATRIX_SERVER_NAME`. This one homeserver serves every organization, and every organization has chat.
+- SaaS: set both `CHAT_CONTROL_PLANE_URL` (an `http` or `https` URL) and `CHAT_CONTROL_PLANE_TOKEN`. The control plane gives each organization its homeserver.
 - Setting only part of a group, or both groups, is a configuration error.
 
 ### RabbitMQ names
@@ -181,14 +196,15 @@ The backend starts in this order. A failure at any step stops the process.
 1. Validates the configuration.
 2. Applies the database migrations.
 3. In single installation mode, writes the homeserver settings to the database, links every organization to it and turns their chat on.
-4. Runs OIDC discovery on `OIDC_ISSUER` (5 second timeout).
-5. Starts the API and metrics servers.
-6. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
-7. Opens a second connection, declares the activity queue, its binding and dead letter queue, and starts consuming it.
-8. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
-9. Starts the background jobs and reports ready. The drive commands open their own connection on their first publish, and again after it drops.
+4. With `REDIS_URL`, starts connecting to Redis without waiting for it.
+5. Runs OIDC discovery on `OIDC_ISSUER` (5 second timeout).
+6. Starts the API and metrics servers.
+7. Connects to RabbitMQ and declares its own exclusive queue on the live exchange, for live updates and session revocations.
+8. Opens a second connection, declares the activity queue, its binding and dead letter queue, and starts consuming it.
+9. Checks the exchanges other services own, declares its queue, bindings and dead letter queue, starts consuming, then removes the `#` binding older versions left on that queue.
+10. Starts the background jobs and reports ready. The drive commands and the activity events Twake Space publishes each open their own connection on their first publish, and again after it drops.
 
-On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry or a drive command publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
+On `SIGTERM` or `SIGINT` it reports not ready, stops the jobs (waiting for a parked event retry, a reconciliation pass, or a drive command or activity event publish still running) and closes the RabbitMQ connections, after waiting up to 5 seconds for the messages in their handlers. A message still unacknowledged then is delivered again. After 5 seconds, so the load balancer has moved traffic away, it closes both servers, the Redis connection and the Postgres pool, then flushes Sentry. It exits with code 1 when this fails or takes over 25 seconds, which fits the default 30 second grace period. A signal during startup exits at once.
 
 ### Database migrations
 
@@ -201,7 +217,7 @@ On the API port:
 - `GET /health/live` answers `503 {"status":"unavailable"}` when a RabbitMQ connection has been down for over 60 seconds, when a client failed to restore its subscription after a reconnect, or when one message has been in its handler for over 5 minutes, `200 {"status":"ok"}` otherwise. Restarting the pod is the fix for all three. A short broker restart does not restart pods.
 - `GET /health/ready` answers `200` when startup has finished and `select 1` succeeds on Postgres, `503 {"status":"unavailable"}` otherwise. It turns `503` as soon as shutdown starts.
 
-Health requests are not logged. The metrics port answers `/health/live` and `/health/ready` too, but both always answer `200`: probe the API port.
+Neither checks Redis. Health requests are not logged. The metrics port answers `/health/live` and `/health/ready` too, but both always answer `200`: probe the API port.
 
 ### Metrics
 
@@ -211,7 +227,7 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 ### Logs and Sentry
 
-- Logs are JSON lines from pino on stdout, at `LOG_LEVEL`. RabbitMQ client logs carry `component: "amqp"`, at `warn` and above. An `access_token` in a logged URL is replaced by `[redacted]`.
+- Logs are JSON lines from pino on stdout, at `LOG_LEVEL`. RabbitMQ client logs carry `component: "amqp"`, at `warn` and above. Logged request URLs leave out the query string, which can carry search terms and shared links. Redis is logged once when it becomes unavailable and once when it is back, at `warn` and `info`.
 - Sentry is initialised before the app loads, so it instruments Fastify and pino. Log lines at `error` and `fatal` go to Sentry as errors. An unhandled promise rejection stops the process, as it does without Sentry.
 - ldap-rest calls time out after 5 seconds, control plane calls after 10.
 
@@ -222,6 +238,12 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 - Holds all state and the migrations.
 - Uses advisory locks so only one replica at a time runs the migrations, the single installation homeserver setup, the hourly purge and the parked event retries (every 5 seconds).
 - The hourly purge deletes feed events, cards, posts and reactions after 365 days, and notifications after 90 days.
+- Holds the activity events Twake Space publishes (`outgoing_activity`) until RabbitMQ confirms them.
+- Each organization's reconciliation is claimed by one replica in `space_reconciliations`.
+
+### Redis
+
+Optional, set with `REDIS_URL`. It holds only the rate limit counts, under `twake-space:limit:<key>`, so every replica shares them and they survive restarts. Without Redis, or while it is unreachable, each replica counts in its own memory. The backend never queues a command while disconnected and waits at most 200 ms for an answer. It needs no Redis 7 command.
 
 ### RabbitMQ
 
@@ -235,7 +257,11 @@ Health requests are not logged. The metrics port answers `/health/live` and `/he
 
 ### ldap-rest
 
-The directory: organizations, users, groups and technical accounts. Calls are authenticated with HMAC (`LDAP_REST_SERVICE_ID`, `LDAP_REST_SECRET`). The backend does not call it at startup, only while serving requests and events.
+The directory: organizations, users, groups and technical accounts. Calls are authenticated with HMAC (`LDAP_REST_SERVICE_ID`, `LDAP_REST_SECRET`). The backend calls it while serving requests and events, and for the reconciliation: once a night (from 02:00 UTC), checked at startup and then every hour, one replica reads each known organization's spaces, members and groups and repairs what lost events left in the copy.
+
+### Linked sites
+
+`GET /link-preview` fetches the page a post links to, from the backend: public addresses only, 5 second timeout, at most 3 redirects. The backend needs outbound HTTP and HTTPS to the internet for previews.
 
 ### OIDC provider
 
@@ -253,7 +279,7 @@ The backend never calls the homeserver, and the homeserver never calls the backe
 
 ## Local stack
 
-`docker compose up` starts RabbitMQ (declaring the `space`, `b2b` and `admin-panel` exchanges) and Postgres. The RabbitMQ management UI is on `http://localhost:15672` (`guest` / `guest`). `docker compose --profile app up` also builds and runs both images. The frontend runs read-only with a tmpfs `/tmp`, as in production. Compose gives it no environment, so the app stops at startup asking for `API_URL` until you add its [runtime configuration](#runtime-configuration). Compose has no ldap-rest or SSO: see [Backend development](backend-dev.md#run-it).
+`docker compose up` starts RabbitMQ (declaring the `space`, `b2b` and `admin-panel` exchanges), Postgres and Redis. The RabbitMQ management UI is on `http://localhost:15672` (`guest` / `guest`). `docker compose --profile app up` also builds and runs both images. Compose gives the backend no `REDIS_URL`, so it counts rate limits in memory. The frontend runs read-only with a tmpfs `/tmp`, as in production. Compose gives it no environment, so the app stops at startup asking for `API_URL` until you add its [runtime configuration](#runtime-configuration). Compose has no ldap-rest or SSO: see [Backend development](backend-dev.md#run-it).
 
 ## Open questions
 

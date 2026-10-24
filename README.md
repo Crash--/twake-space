@@ -41,7 +41,7 @@ To work on the frontend without a backend or SSO, run it on seed data with `npm 
 
 Twake Space shows in the Twake Workplace home and bar as a standalone app. The app ships no code: [manifest/manifest.webapp](manifest/manifest.webapp) and its icon are the whole archive, and the home and the bar open the URL held by the `space.embedded-app-url` flag instead of a subdomain. Set that flag to the Twake Space URL on each context.
 
-Every frontend release publishes the archive on the dev channel of the registry as `<version>-dev.<commit>` ([publish-manifest.yml](https://github.com/linagora/twake-workflows/blob/main/.github/workflows/publish-manifest.yml) in `frontend-release.yml`). The version comes from the release tag and must equal the one in `apps/frontend/package.json`; the manifest carries none.
+Every frontend release publishes the archive on the dev channel of the registry as `<version>-dev.<commit>` ([publish-manifest.yml](https://github.com/linagora/twake-workflows/blob/578530b3996920ec3459d1ef1f322ec8b9fed2b7/.github/workflows/publish-manifest.yml) in `frontend-release.yml`). The version comes from the release tag and must equal the one in `apps/frontend/package.json`; the manifest carries none.
 
 ## Docs
 

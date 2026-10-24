@@ -15,8 +15,8 @@ cp apps/backend/.env.example apps/backend/.env
 npm run dev -w @twake-space/backend
 ```
 
-- `docker compose up -d` starts RabbitMQ, declares the `space`, `b2b`, `admin-panel` and `drive` exchanges the backend expects, and starts Postgres. The `backend` and `frontend` services sit behind the `app` profile and do not start by default.
-- Fill in `LDAP_REST_SECRET` and `OIDC_CLIENT_SECRET` in `.env`. The other values in `.env.example` match the compose services.
+- `docker compose up -d` starts RabbitMQ, declares the `space`, `b2b` and `admin-panel` exchanges the backend expects, and starts Postgres and Redis. The `backend` and `frontend` services sit behind the `app` profile and do not start by default.
+- Fill in `LDAP_REST_SECRET` and `OIDC_CLIENT_SECRET` in `.env`. The other values in `.env.example` match the compose services. `.env.example` sets no `REDIS_URL`, so rate limits count in memory; add `REDIS_URL=redis://localhost:6379` to use the compose Redis.
 - `npm run dev` runs `src/main.ts` with `node --watch`, loads `.env` if it exists, and preloads `src/instrument.ts` for Sentry. Node runs the TypeScript directly, there is no build step in dev.
 - The API listens on port 8080. `/health/live` and `/health/ready` answer there, and `/metrics` answers on port 9464.
 
@@ -31,26 +31,29 @@ flowchart LR
   rabbitmq[(RabbitMQ queue)] --> events["events/<br>parse, dedupe, route"]
   events --> spaces & organizations & feed & settings
   http["HTTP clients<br>frontend, API tokens"] --> auth["auth/ + tokens/<br>authorize"]
-  auth --> spaces & tokens & notifications & directory["organizations/<br>directory routes"] & live & settings & meetings
+  auth --> spaces & tokens & notifications & directory["organizations/<br>directory routes"] & live & settings & meetings & links["links/<br>link previews"]
+  auth -. "rate limit counts" .-> redis[(Redis, optional)]
   feed --> notifications
   auth --> feed
   spaces & notifications & feed -- "after commit,<br>over RabbitMQ" --> live["live/<br>SSE /stream"]
   meetings -- "meeting request" --> exchange[(twake-space exchange)]
   spaces -- "drive commands,<br>after commit" --> drive[(drive exchange)]
+  feed -- "mentions,<br>after commit" --> activity[(activity exchange)]
 ```
 
-- `src/main.ts` is the only place that wires things. It loads the config, runs the migrations, sets up the single installation homeserver, builds the event routes, registers every module's routes on one Fastify server, starts the metrics server, then the RabbitMQ consumer and the background jobs.
-- `src/infra/` holds the adapters to the outside: `db.ts` (drizzle client, migrations under an advisory lock, `afterCommit`), `http.ts` (Fastify server with health routes and the error handler), `amqp.ts` (consumer, dead letter queue, liveness), `lifecycle.ts` (SIGTERM and SIGINT, the shutdown deadline), `ldap-rest.ts` (the `Directory` interface for reads, `SpaceDirectory` for space writes), `matrix.ts` (Matrix client), `secrets.ts` (AES-256-GCM and hashing), `testing.ts` (test database).
+- `src/main.ts` is the only place that wires things. It loads the config, runs the migrations, sets up the single installation homeserver, builds the event routes, picks the rate limiter (Redis with `REDIS_URL`, memory without), registers every module's routes on one Fastify server, starts the metrics server, then the RabbitMQ consumers, the publishers and the background jobs.
+- `src/infra/` holds the adapters to the outside: `db.ts` (drizzle client, migrations under an advisory lock, `afterCommit`), `http.ts` (Fastify server with health routes and the error handler), `amqp.ts` (consumers, dead letter queue, liveness, and the publishers of the sweeps), `redis.ts` (Redis client for the rate limit counts), `sweep.ts` (a periodic job that runs one pass at a time), `lifecycle.ts` (SIGTERM and SIGINT, the shutdown deadline), `ldap-rest.ts` (the `Directory` interface for reads, `SpaceDirectory` for space writes), `testing.ts` (test database).
 - `src/events/` turns RabbitMQ messages into handler calls, and `events/topology.ts` holds the exchanges, the queue and every platform event the queue binds. More below.
 - `src/modules/` holds one folder per feature. A module owns its `schema.ts` (its tables), its routes, and its event handlers.
 
 What each module owns:
 
-- `auth`: bearer authentication for sessions, the `authorize` pre-handler, back-channel logout and revoked sessions.
+- `auth`: bearer authentication for sessions, the `authorize` pre-handler, the rate limits (`limits.ts`), back-channel logout and revoked sessions.
 - `tokens`: API tokens (account, organization and technical account tokens), the organization's token policy, the token audit log, and revoking tokens when accounts, spaces or organizations go away.
-- `spaces`: spaces, their members, linked groups, organization roles and app resources, all kept up to date from platform events, plus what stays in twake-space: each space's settings (description, color, apps), banner and state (active, archived, in the Bin), and each person's pins and visits. Serves the read routes under `/spaces` (`routes.ts`) and the write routes, which go through ldap-rest first (`writes.ts`). Sends each space's drive commands to cozy-stack (`drives.ts`).
+- `spaces`: spaces, their members, linked groups, organization roles and app resources, all kept up to date from platform events, plus what stays in twake-space: each space's settings (description, color, apps), banner and state (active, archived, in the Bin), and each person's pins and visits. Serves the read routes under `/spaces` (`routes.ts`) and the write routes, which go through ldap-rest first (`writes.ts`). Sends each space's drive commands to cozy-stack (`drives.ts`), and reconciles the copy with ldap-rest once a night (`reconcile.ts`).
 - `organizations`: organizations (domain, chat and mail availability), homeservers, the chat control plane client, and the directory search routes `GET /organization/members` and `GET /organization/groups`.
-- `feed`: activity cards from app events, members' posts and reactions under `/spaces/:spaceId/feed`, the retention purge, and `/metrics`.
+- `feed`: activity cards from app events, members' posts and reactions under `/spaces/:spaceId/feed`, the mentions it publishes on the `activity` exchange through the `outgoing_activity` table (`events/outbox.ts`), the retention purge, and `/metrics`.
+- `links`: `GET /link-preview`, which fetches a linked page from the backend and caches its preview for an hour.
 - `notifications`: per user notifications and settings, under `/notifications`, and the assistant's suggestions.
 - `settings`: each person's Twake Workplace settings from `user.settings.updated`, served at `GET /settings`.
 - `meetings`: `POST /spaces/:spaceId/meetings`, which publishes a meeting request for the calendar on the `twake-space` exchange.
@@ -113,6 +116,7 @@ Every API route takes `Authorization: Bearer <token>`. There are no cookies. The
 - `authorize('space:read')` lets sessions in, and API tokens holding that scope.
 - `authorize('any')` lets sessions and every API token in, for a route that only describes the caller.
 - `request.caller` is a `SessionCaller` (`kind: 'session'`) or a `TokenCaller` (`kind: 'token'`). Both carry `organizationId` and `userId`, and `userId` is null for an organization token.
+- It then counts the request against the route's rate limit, per person or per token, and answers 429 `rate_limited` with `Retry-After` past it. A route names its limit with `config: { limit: '<name>' }`, a name from `DEFAULT_LIMITS` in `modules/auth/limits.ts`; a route that names none counts against `any`.
 
 API tokens:
 
@@ -135,7 +139,7 @@ Some routes do not use `authorize`:
 ## Add a route
 
 1. Write a `registerXRoutes(app, deps)` function in the module's `routes.ts`. Take what it needs (`db`, `authorize`, a `Directory`) as `deps`.
-2. Pass `authorize()` or `authorize('<scope>')` as the route's `preHandler`. Read the caller from `request.caller`, and scope every query to `caller.organizationId` (and `caller.spaceIds` for a token).
+2. Pass `authorize()` or `authorize('<scope>')` as the route's `preHandler`. Read the caller from `request.caller`, and scope every query to `caller.organizationId` (and `caller.spaceIds` for a token). To give the route its own rate limit, add a name to `DEFAULT_LIMITS` and set it in the route's `config`.
 3. Validate params, query and body with zod `safeParse`, and answer 400 `invalid_request` or 404 `not_found` on failure.
 4. Call the register function from `main.ts`.
 5. Write `routes.test.ts` next to it (see Tests).
@@ -160,7 +164,7 @@ A new scope is a new value in the `token_scope` enum in `modules/tokens/schema.t
 - Vitest, with tests next to the code as `*.test.ts`. There is no vitest config file in the backend.
 - Tests need the compose Postgres. `createTestDb()` from `infra/testing.ts` creates a fresh migrated database per test file and drops it after, so files run in parallel. Set `TEST_DATABASE_URL` to use another server.
 - The rate limit tests also need the compose Redis. Set `TEST_REDIS_URL` to use another server.
-- Tests do not need RabbitMQ, ldap-rest, the SSO or Matrix. Handlers are called directly, and the directory and Matrix are passed in as fakes.
+- Tests do not need RabbitMQ, ldap-rest or the SSO. Handlers are called directly, and the directory is passed in as a fake.
 - Route tests build a server with `createServer` from `infra/http.ts` and use `fakeAuth`, `anIdentity` and `aTokenCaller` from `modules/auth/testing.ts`, then call `app.inject`.
 
 ## Check before you push
@@ -169,4 +173,4 @@ A new scope is a new value in the `token_scope` enum in `modules/tokens/schema.t
 npm run check -w @twake-space/backend
 ```
 
-It runs ESLint, Prettier, the type check, the tests and the build. CI runs `npm audit` and then the same command, with a Postgres 18 container, so start `docker compose up -d` first. `npm run format -w @twake-space/backend` fixes the formatting.
+It runs ESLint, Prettier, the type check, the tests and the build. CI runs `npm audit` and then the same command, with a Postgres 18 and a Redis 7 container, so start `docker compose up -d` first. `npm run format -w @twake-space/backend` fixes the formatting.

@@ -8,7 +8,7 @@ How Twake Space fits among the Twake apps: what each side owns, and how they tal
 - App: Twake Chat, Tasks, Drive, Mail or Calendar. Each one prepares a resource for every space.
 - Resource: what an app prepared for a space, such as a Matrix space, a Tasks project or a team mailbox. The space's tab for that app shows it.
 - Platform: each person's Twake Workplace instance, which serves the top bar, their Drive and their assistant.
-- Copy: the backend's Postgres copy of spaces, members and resources, built from events.
+- Copy: the backend's Postgres copy of spaces, members and resources, built from events and repaired once a night from ldap-rest.
 
 ## The pieces
 
@@ -24,6 +24,7 @@ flowchart LR
   be[Twake Space backend]
   pg[(Postgres)]
   mq[(RabbitMQ)]
+  redis[(Redis, optional)]
   ldap[ldap-rest]
   sso[SSO]
   apps[Apps' backends]
@@ -40,13 +41,14 @@ flowchart LR
   fe -->|approve, refuse| harness
   fe & frames -->|sign in| sso
   be --> pg
-  be -->|reads, space writes| ldap
+  be -.->|rate limit counts| redis
+  be -->|reads, space writes, nightly reconciliation| ldap
   be -->|introspection, userinfo| sso
   ldap -->|space, b2b events| mq
   apps -->|activity events| mq
   settings -->|settings events| mq
   mq --> be
-  be -->|meeting requests, drive commands| mq
+  be -->|meeting requests, drive commands, mentions| mq
   mq --> apps
   sso -->|back-channel logout| be
   harness -->|suggestions, API token| be
@@ -54,6 +56,7 @@ flowchart LR
 
 - The frontend draws the shell, the home, the feed and the members, and frames each app in its tab. It never calls an app's backend.
 - The backend serves the spaces, the feed, the notifications and the API tokens. It never calls an app either: apps reach it through RabbitMQ.
+- Postgres holds all the backend's state. Redis, when set, holds only the rate limit counts, shared by every replica; without it each replica counts in memory.
 - Other servers call the backend's HTTP API in two cases only: the SSO for back-channel logout, and API token holders, Twake Harness among them.
 
 ## Who owns what
@@ -114,6 +117,7 @@ sequenceDiagram
 
 - Drive is the exception: it answers a `drive.org_drive.ensure` command for the space with `com.twake.drive.org_drive.ready.v1`, which carries the drive id ([ADR 009](https://github.com/linagora/cozy-stack/blob/addefe293/docs/adr/009-adr-org-drive-provisioning.md)).
 - Members, groups and renames go the same way: ldap-rest first, then its event to the backend and every app.
+- Once a night the backend reads each organization's spaces, members and groups from ldap-rest and repairs what lost events left in the copy.
 - A tab shows as being prepared until its resource arrives, and as stalled after 2 minutes. Chat also needs the organization's homeserver.
 - `SPACE_APPS` and the space's own `apps` decide which tabs exist. Chat and mail also depend on the organization: the chat control plane and `dns.validated` tell.
 

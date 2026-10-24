@@ -23,7 +23,7 @@ flowchart LR
   end
   P --> Q
   A -->|provisioned events, drive replies| Q
-  A -->|every other event| AQ
+  A -->|every event| AQ
   Q --> R[Router]
   AQ --> R
   R -->|dedupe + handler, one transaction| PG[(Postgres)]
@@ -44,7 +44,7 @@ flowchart LR
 The backend consumes two queues through [@linagora/rabbitmq-client](https://github.com/linagora/rabbitmq-client/tree/v0.7.1), each on its own connection:
 
 - `twake-space` takes the events whose order matters: the platform events, the apps' provisioned events, which follow the space's creation, and Drive's replies.
-- `twake-space.activity` takes every other activity event. Each one stands alone, so every replica consumes it.
+- `twake-space.activity` takes every activity event, and handles all but the provisioned events and Drive's replies, which it leaves unrouted. Each one stands alone, so every replica consumes it.
 
 At startup the backend declares `twake-space` and binds it to each platform event it handles, routing key equal to the event name:
 
@@ -58,14 +58,14 @@ It declares `twake-space.activity` with one binding, `#` on `activity`. Older ve
 
 Both queues:
 
-- Are quorum queues with a delivery limit of 20.
+- Are quorum queues with a delivery limit of 20 (`AMQP_DELIVERY_LIMIT`).
 - Dead-letter to their own exchange, which routes to their own queue: `twake-space.dlx` to `twake-space.dlq`, and `twake-space.activity.dlx` to `twake-space.activity.dlq`. The backend declares them. The dead letter routing key is the queue's first binding, with `.dead` appended (`twake.space.created.dead` and `#.dead`).
 - Have the client's other arguments, `x-overflow: reject-publish` and `x-dead-letter-strategy: at-least-once`.
 - Get each message acknowledged only after its Postgres transaction commits.
 
 `twake-space` has a single active consumer, with prefetch 1, so its messages are handled one at a time, in the order they were published. Each replica consumes `twake-space.activity` with prefetch 10 (`AMQP_ACTIVITY_CONCURRENCY`), and handles up to 10 of its messages at once.
 
-Startup fails when `space`, `b2b` or `admin-panel` is missing, since other services own them. The backend declares `activity` and `settings` itself, as durable topic exchanges: the apps declare `activity` the same way, and declaring `settings` lets the backend run on a platform without common settings.
+Startup fails when `space`, `b2b`, `admin-panel`, or an exchange `AMQP_EVENTS` moves an event to, is missing, since other services own them. The backend declares `activity` and `settings` itself, as durable topic exchanges: the apps declare `activity` the same way, and declaring `settings` lets the backend run on a platform without common settings.
 
 Every name above is a setting, listed in [Deploying](deploy.md#rabbitmq-names). The router and the handlers always see the default routing keys and the default `activity` name: the consumer translates them back before routing. A renamed platform exchange is kept as is, so `parked_events` rows and log lines show the deployment's name.
 
@@ -85,12 +85,12 @@ Each message ends in one outcome:
 - unrouted: no handler for the key. Logged at debug and acknowledged.
 - malformed: a CloudEvent that does not parse, a platform event without a message id (nor a `request_id` in its body, which stands in for it), or a handler threw `MalformedEventError`. Logged and acknowledged. A body that is not JSON goes to the dead letter queue.
 - rejected: a handler threw `RejectedEventError`, or Postgres refused the event's data (an error of class 22, 23 or 54, such as a NUL byte in a preview or a key too long for its index). The message is dead-lettered to its queue's dead letter queue. It carries RabbitMQ's `x-death` header but no reason: the `event rejected` log line has it.
-- parked: a handler threw `NotYetKnownError`, because the event is about a space or member the copy does not hold yet. The event goes to the `parked_events` table and is acknowledged. One replica at a time (under an advisory lock) retries parked events, 5 seconds after its previous pass ended. One still waiting after 30 minutes, RabbitMQ's default `consumer_timeout`, is published through `twake-space.dlx` to `twake-space.dlq`, with its message id and the headers `x-twake-space-exchange`, `x-twake-space-routing-key` and `x-twake-space-reason`; the row stays when that publish fails. A retry that throws keeps the row for the next pass. Any other outcome of a retry, rejected included, deletes the row without a dead letter: only the log line tells.
+- parked: a handler threw `NotYetKnownError`, because the event is about a space or member the copy does not hold yet. The event goes to the `parked_events` table and is acknowledged. One replica at a time (under an advisory lock) retries parked events, oldest first and up to 100 per pass, 5 seconds after its previous pass ended. One still waiting after 30 minutes, RabbitMQ's default `consumer_timeout`, is published through `twake-space.dlx` to `twake-space.dlq`, whichever queue it came from, with its message id and the headers `x-twake-space-exchange`, `x-twake-space-routing-key` and `x-twake-space-reason`; the row stays when that publish fails. A retry that throws keeps the row for the next pass. Any other outcome of a retry, rejected included, deletes the row without a dead letter: only the log line tells.
 - failed: any other error, such as Postgres being down. The message stays unacknowledged and is retried in the process, 1 second after the first failure, doubling up to a minute. It holds one of its queue's prefetch slots meanwhile, so on `twake-space` nothing behind it is handled. After 25 minutes of failures the backend logs an error, because RabbitMQ's `consumer_timeout` (30 minutes by default) then closes the channel and delivers the message again. Each such redelivery, like one after a restart, counts toward the delivery limit: once a message has been delivered 21 times (about 10 hours of failures), RabbitMQ sends it to its queue's dead letter queue and the queue moves on.
 
 The dedupe claim and the handler run in the same Postgres transaction, so a handler failure releases the claim.
 
-To replay a platform event by hand, such as one from `twake-space.dlq`, publish it with its original AMQP `message_id` property. Without one, the backend logs `missing message id` and drops it. A message that was rejected, parked or dead-lettered never kept its claim, so the original id is not seen as a duplicate.
+To replay a platform event by hand, such as one from `twake-space.dlq`, publish it with its original AMQP `message_id` property. Without one, and without a `request_id` in its body, the backend logs `missing message id` and drops it. A message that was rejected, parked or dead-lettered never kept its claim, so the original id is not seen as a duplicate.
 
 ## Ordering
 
@@ -113,7 +113,7 @@ Every platform handler is wrapped: when the body has an `organizationId` the cop
 
 ### Organization availability
 
-- `chat.deployment.completed`: sets chat available at `deployment.completedAt`, then refreshes the tenant's homeserver. A missing `status` counts as success. Another `status` leaves chat as it is, but the homeserver is still refreshed.
+- `chat.deployment.completed`: sets chat available at `deployment.completedAt`, then refreshes the tenant's homeserver. A `status` of `succeeded`, or none, counts as success. Another `status` leaves chat as it is, but the homeserver is still refreshed.
 - `chat.deployment.updated`: refreshes the tenant's homeserver, and with it its `chatUrl`. It leaves chat availability as it is, so an update of a tenant being deprovisioned does not turn its chat back on.
 - `chat.deprovision`: sets chat unavailable at `timestamp`.
 - `dns.validated`: sets mail available to `mailDnsConfigurationValidated`. It has no time, so the last one handled wins.
@@ -124,7 +124,7 @@ Every platform handler is wrapped: when the body has an `organizationId` the cop
 
 - It is stored by the person's lowercased `payload.email`, the only key common settings and TwakeSpace share. A message without an email is dropped.
 - A `version` at or below the stored one is dropped. A newer one replaces the stored settings whole. Versions count per common settings account, so a message from another `nickname` behind the same email replaces them whatever its version.
-- Only what the UI applies is kept: `language`, `timezone`, `theme` (`light`, `dark` or `auto`), `avatar` and `display_name`. A value of another type is left out.
+- Only what the UI applies is kept: `language`, `timezone`, `theme` (`light`, `dark` or `auto`), `avatar` and `display_name`. A value of another type, or an `avatar` that is not an http(s) URL, is left out.
 - Common settings publishes without a message id, so the body's `request_id` stands in for it. A republish of the same version gets a new `request_id`, and the version check drops it.
 - `GET /settings` gives the caller theirs, with `null` for anything not set.
 - TwakeSpace never calls the common settings API. A person it has had no message about gets the browser's defaults until their settings change, or until an admin republishes everyone with common settings' `POST /api/admin/user/settings/sync`.
@@ -148,7 +148,7 @@ The browser reads `GET /settings` once signed in and again each time the tab com
 - `b2b.group.updated`: renames the group in every space.
 - `b2b.member.role.changed`: upserts the person's organization role.
 - `b2b.member.disabled`: revokes the account's tokens in that organization.
-- `domain.user.deleted`: names the person by `uuid` or `internalEmail`. Deletes their notifications, reactions, pins and visits, turns them into `deleted_user` on stored cards and posts, revokes their tokens, removes them from every space and organization, and forgets them as the creator of their spaces, so whoever gets the address next does not manage them. Its time is `timestamp`, or `deletedAt` (ISO 8601 or LDAP generalized time) when it has none, as ldap-rest sends it. An unreadable `deletedAt` leaves it without a time.
+- `domain.user.deleted`: names the person by `uuid` or `internalEmail`. Deletes their notifications, reactions, poll votes, feed reads, pins and visits, turns them into `deleted_user` on stored cards and posts, revokes their tokens, removes them from every space and organization, and forgets them as the creator of their spaces, so whoever gets the address next does not manage them. Its time is `timestamp`, or `deletedAt` (ISO 8601 or LDAP generalized time) when it has none, as ldap-rest sends it. An unreadable `deletedAt` leaves it without a time.
 - `domain.organization.deleted`: revokes the organization's tokens.
 
 A person sent without a `uuid` (a deletion ldap-rest replays carries none) is matched in the copy by email, among space members and then among the organization roles (in the event's organization when it names one). `b2b.member.disabled` also falls back to the username, among space members only: organization roles hold no username.
@@ -159,7 +159,7 @@ The [space write routes](api.md#space-writes) apply their change to the copy the
 
 ## Meeting requests
 
-[`POST /spaces/:spaceId/meetings`](api.md#post-spacesspaceidmeetings) publishes a `com.twake.space.meeting.requested.v1` CloudEvent on the `twake-space` topic exchange, routing key equal to the type. The message is persistent, sent with publisher confirms and `mandatory`, so the route fails when no queue is bound. The calendar side service consumes it, creates the Meet room and the event as the organizer, and its `event.created` activity event brings the card.
+[`POST /spaces/:spaceId/meetings`](api.md#post-spacesspaceidmeetings) publishes a `com.twake.space.meeting.requested.v1` CloudEvent on the `twake-space` topic exchange, routing key equal to the type. The message is persistent, carries the CloudEvent `id` as its AMQP message id, and is sent with publisher confirms and `mandatory`, so the route fails when no queue is bound. The route answers 503 when RabbitMQ is disconnected, refuses the message, or does not confirm it within 10 s. The calendar side service consumes it, creates the Meet room and the event as the organizer, and its `event.created` activity event brings the card.
 
 ```json
 {
@@ -221,12 +221,12 @@ sequenceDiagram
 - `revision` lives per space in `drive_commands`, a row never deleted. The next one is the greater of the last one plus 1 and the current time in milliseconds, so it keeps increasing after the table is restored or rebuilt.
 - A transaction stores at most one command per space, once all its changes are applied. It locks the drive rows last, in space id order, and holds them until the commit, so the changes to one space take turns and a higher revision always carries a newer state.
 - The command waits in the same row until the broker confirms it, so a process stopping after the commit loses nothing. A command stays stored while the broker refuses it, or while no queue is bound, and the next pass sends it again. A pass stops at its first failure and logs it once.
-- The backend declares the `drive` exchange, durable topic, when it is missing. A publish fails at once while the broker is unreachable: the next pass connects again.
+- The backend declares the `drive` exchange, durable topic, when it is missing. A publish fails at once while the broker is unreachable, and after 10 s without a confirm: the next pass connects again.
 - Each replica locks the command it publishes and skips the ones another replica holds. A replica stopping between the publish and the commit leaves the command to send again, so the stack may get a command twice. It applies a revision it already applied again, and ignores a lower one.
 
 ## Mentions in posts
 
-A post names the members it mentions by id ([API](api.md#post-spacesspaceidfeedposts)). Each member of the space it mentions, its author aside, gets a `card_mention` notification, and the mention is published on `activity` for their assistant ([ADR 006](https://github.com/linagora/twake-space-architecture/blob/3f3fb07b23f135113e168d081364a5dcd961e848/ADR006.md)).
+A post names the members it mentions by id ([API](api.md#post-spacesspaceidfeedposts)). Mentions come from a person: an organization token, which acts for no account, is refused a post with mentions. Each member of the space it mentions, its author aside, gets a `card_mention` notification, and the mention is published on `activity` for their assistant ([ADR 006](https://github.com/linagora/twake-space-architecture/blob/3f3fb07b23f135113e168d081364a5dcd961e848/ADR006.md)).
 
 ```json
 {
@@ -262,7 +262,8 @@ A post names the members it mentions by id ([API](api.md#post-spacesspaceidfeedp
 - Each mention is stored in `activity_events`, with no card, so its notification counts in the feed's unread mentions and reads like any other. Deleting the post deletes those rows, their notifications and the events not published yet.
 - A member who turned `card_mention` off gets no notification in Space, and the mention is published all the same: their assistant has its own settings.
 - An edit that drops a mention leaves its notification.
-- The event waits in `outgoing_activity`, written in the post's transaction, until the broker confirms it, as the drive commands do: after the commit and every 10 s, a replica locks the oldest row, skipping locked ones, publishes it (confirmed, mandatory) and deletes it. A refused publish keeps it for the next pass.
+- One author notifies one member at most 20 times an hour, across posts (the `mention` limit in `RATE_LIMITS`). Past it, the post still names the member and the mention is stored, so an edit does not notify them later, but they get no notification and nothing is published. Deleting posts does not give the count back.
+- The event waits in `outgoing_activity`, written in the post's transaction, until the broker confirms it, as the drive commands do: after the commit and every 10 s, a replica locks the oldest row, skipping locked ones, publishes it on `activity` with the type as routing key (persistent, confirmed, mandatory) and deletes it. A refused publish, or one not confirmed within 10 s, keeps it for the next pass.
 - The backend's own activity queue receives the event too, and leaves it unrouted.
 
 ## Approval requests
@@ -298,7 +299,8 @@ A post can ask members of the space to approve it ([API](api.md#post-spacesspace
 }
 ```
 
-- One event per request and approver, sent once, when the request is posted. The approvers never change. An approver the post also mentions gets this event only, not a mention.
+- One event per request and approver, sent once, when the request is posted. The approvers never change. An approver the post also mentions gets this event only, not a mention. The `mention` limit never holds a request back.
+- An organization token is refused a post that asks for approval, as for mentions.
 - `data.object` and `data.preview` read as for a mention, and the event is stored, counted in the feed's unread mentions, deleted with the post and sent through `outgoing_activity` the same way.
 - A member who turned `approval_request` off gets no notification in Space, and the request is published all the same.
 - A decision publishes nothing: the author sees it on the card.
@@ -318,7 +320,7 @@ A post can ask members of the space to approve it ([API](api.md#post-spacesspace
 - A space the copy does not have was deleted after the app provisioned it, since the app provisions on the space's created event, which reaches the queue first. The event is logged and dropped, and the app's next sync removes the resource.
 - It upserts `space_resources`, so a new id replaces the old one, and sends a `spaces` live event to the space's members.
 - It moves into the space the activity events on that resource stored without a space in the last 30 minutes (as long as a parked event waits), and shows their cards. An older event on it belonged to a person before the space had the resource.
-- It ignores an event for a space deleted after the event's `time`.
+- It ignores an event for a space deleted after the event's `time`, and one older than the last one applied for that space and kind (`space:<id>:resource:<kind>`).
 
 ### The space's drive
 
@@ -396,7 +398,7 @@ sequenceDiagram
 flowchart LR
   AE[Activity event data.recipients] --> NR[notifyRecipients]
   AS[POST /notifications/suggestions] --> NU[notifyUsers]
-  PM[Post mention] --> NU
+  PM[Post mention or approval request] --> NU
   NR --> NU
   NU -->|per user settings| N[(notifications)]
   N -->|live: notification| SSE[GET /stream]
@@ -418,12 +420,12 @@ Each entry in `data.recipients` is `{ uuid?, email, reason }`. The reason sets t
 
 ### From the assistant
 
-`POST /notifications/suggestions` (a technical account's API token with `notifications:write`) creates an `assistant_suggestion` for one user, found by Matrix id as for mentions, with `{ text, pendingCallId, matrixRoomId }` as payload. It follows the user's settings and sends the `notification` live event like the others.
+`POST /notifications/suggestions` (a technical account's API token with `notifications:write`) creates an `assistant_suggestion` for one user, found by Matrix id (the one space member of the token's organization whose username or email gives the localpart, on the organization's homeserver), with `{ text, pendingCallId, matrixRoomId }` as payload. It follows the user's settings and sends the `notification` live event like the others.
 
 ### Settings and delivery
 
 - Every type is on by default except `space_change`. A row in `notification_settings` is the user's choice.
-- A notification row has exactly one source: an activity event, a Matrix event or an `external_id` pushed through the API. A user gets one notification per type and source (per `external_id` for the last).
+- A notification row has exactly one source: an activity event or an `external_id` pushed through the API. A user gets one notification per type and source (per `external_id` for the last).
 - Each inserted notification sends a `notification` live event to its user.
 - The API: `GET /notifications` (paged, with the unread count and the card's type, category, actor, content and time), `POST /notifications/read`, `POST /notifications/:id/read`, `GET` and `PUT /notifications/settings`.
 
@@ -446,7 +448,7 @@ sequenceDiagram
 
 - Handlers and routes call `tell` inside their transaction. The message is published to RabbitMQ only after the commit, so replicas only hear about committed changes, and never about a rolled back one.
 - The data of each event is in the [HTTP API](api.md#get-stream): `spaces` carries `{spaceId}`, `notification` carries `{}`, and `feed` carries `{spaceId, itemId, change}`.
-- Every replica consumes from its own exclusive, auto-deleted queue on the live exchange, `twake-space.live.replica.<uuid>`, bound to `live.update` and `session.revoked`, and writes the event to each open stream of the listed users. The queue lives as long as the replica's connection, so a message published while a replica is disconnected is lost; its browsers catch up when their stream reopens. A replica that is disconnected itself publishes nothing, and a failed publish is not retried.
+- Every replica consumes from its own exclusive, auto-deleted queue on the live exchange, `twake-space.live.replica.<uuid>`, bound to `live.update` and `session.revoked`, and writes the event to each open stream of the listed users. The queue lives as long as the replica's connection, so a message published while a replica is disconnected is lost; its browsers catch up when their stream reopens. Each publish gets one attempt: a failed one is logged and not retried.
 - A revoked session goes over the same exchange, as `session.revoked`, so every replica closes that session's streams. Every minute, each replica also closes the streams of sessions revoked meanwhile, for a revocation it missed.
 - `GET /stream` needs a session. It is `text/event-stream`, sends a heartbeat comment every 25 seconds, and closes when the session expires, when the session is revoked, or when the server stops. A person keeps at most 10 streams per replica, and an eleventh closes the oldest.
 - The frontend reads it with `fetch` (EventSource cannot send the bearer token) and reconnects with a backoff from 1 to 30 seconds.

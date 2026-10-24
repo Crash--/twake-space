@@ -9,14 +9,14 @@ The backend runs two HTTP servers.
 - The API server listens on `HTTP_HOST:HTTP_PORT` (default `0.0.0.0:8080`) and serves every route below except `/metrics`.
 - The metrics server listens on `HTTP_HOST:METRICS_PORT` (default `9464`) and serves `/metrics` plus its own `/health/live` and `/health/ready`.
 
-Request logging skips every path under `/health/`.
+Request logging skips every path under `/health/`, and logs a request's path without its query string, which can carry search terms and shared links.
 
 ## Authentication
 
 Every route behind `authorize` reads `Authorization: Bearer <token>`. The token's prefix picks how it is checked.
 
 - A token starting with `tws_` is an API token. Its SHA-256 hash is looked up among tokens that are not revoked and not expired, and its `lastUsedAt` is stamped (at most once a minute). An account token also needs its account to still be in the organization in ldap-rest, as a member or as a technical account (checked at most every 5 minutes per account and replica).
-- Any other token is an OIDC access token. The backend introspects it and fetches userinfo in parallel. It refuses a token that is inactive, expired or without an expiry, missing the configured audience, whose userinfo lacks `sub`, `uuid`, `email` or `sid`, whose `uuid` is not a UUID or `email` not an address, or whose `sub` differs between introspection and userinfo. A valid identity is cached for 60 seconds (never past the token's expiry), and its session id is checked against revoked sessions on every request. A refused token is remembered for 60 seconds too (up to 10,000 of them per replica), so sending it again costs no provider call. A provider error is not a refusal and is never remembered.
+- Any other token is an OIDC access token. The backend introspects it and fetches userinfo in parallel. It refuses a token that is inactive, expired or without an expiry, missing the configured audience, whose userinfo lacks `sub`, `uuid`, `email` or `sid`, whose `uuid` is not a UUID or `email` not an address, or whose `sub` differs between introspection and userinfo. A valid identity is cached for 60 seconds (never past the token's expiry), and its session id is checked against revoked sessions on every request. A refused token is remembered for 60 seconds too (up to 10,000 of them per replica), so sending it again costs no provider call. A provider error is not a refusal and is never remembered. A token never seen before waits its turn: each replica checks at most `NEW_TOKEN_CHECKS` of them at once with `NEW_TOKENS_WAITING` more in line ([Deploying](deploy.md#configuration)), and answers any further new token `503 {"error":"unavailable"}`. Requests that send one token at once share one check.
 
 This gives two kinds of caller.
 
@@ -38,11 +38,13 @@ flowchart TD
   T -->|not found, revoked, expired| I401[401 invalid_token]
   O -->|refused or session revoked| I401
   T -->|check throws| S503[503 unavailable]
-  O -->|check throws| S503
+  O -->|check throws, or too many new tokens waiting| S503
   T -->|route has no scope, or token lacks it| F403s[403 insufficient_scope]
-  T -->|holds the scope| OK[handler]
+  T -->|holds the scope| L{rate limit}
   O -->|no org_id| F403[403 forbidden]
-  O -->|org_id present| OK
+  O -->|org_id present| L
+  L -->|over| R429[429 rate_limited]
+  L -->|under| OK[handler]
 ```
 
 The refusals look like this.
@@ -51,7 +53,34 @@ The refusals look like this.
 - `401 {"error":"unauthorized"}` with `WWW-Authenticate: Bearer error="invalid_token"` when the token is refused.
 - `403 {"error":"insufficient_scope"}` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="<scope>"` for a token caller (the `scope` part is absent on a route with no scope).
 - `403 {"error":"forbidden"}` for a session caller with no organization.
-- `503 {"error":"unavailable"}` when the identity provider or the database fails during the check.
+- `503 {"error":"unavailable"}` when the identity provider or the database fails during the check, or when too many new tokens wait for a check.
+- `429 {"error":"rate_limited"}` past a rate limit, below.
+
+## Rate limits
+
+Once `authorize` lets a caller in, it counts the request against one named limit. Routes without `authorize` (back-channel logout, health, metrics) count nothing.
+
+- Counts are per signed-in person (their user id) or per API token, never per address, and per limit name. A fixed window starts with the first request.
+- Past the limit: `429 {"error":"rate_limited"}` with `Retry-After`, the seconds until the window ends.
+- With `REDIS_URL`, the replicas share the counts. Without it, or while Redis does not answer, each replica counts on its own. `RATE_LIMITS` overrides any default by name ([Deploying](deploy.md#configuration)).
+
+A route counts against its own limit only, or against `any` when it names none. The defaults:
+
+- `any`: 600 a minute.
+- `feedRead`: 120 a minute, `GET /spaces/:spaceId/feed`.
+- `feedPost`: 10 a minute, `POST /spaces/:spaceId/feed/posts`.
+- `feedEdit`: 30 a minute, `PATCH /spaces/:spaceId/feed/posts/:itemId`.
+- `feedVote`: 30 a minute, `PUT` and `DELETE /spaces/:spaceId/feed/posts/:itemId/vote`.
+- `feedAnswer`: 30 a minute, `PUT /spaces/:spaceId/feed/posts/:itemId/answer`.
+- `feedDecision`: 30 a minute, `PUT /spaces/:spaceId/feed/posts/:itemId/decision`.
+- `feedReaction`: 60 a minute, `PUT` and `DELETE /spaces/:spaceId/feed/items/:itemId/reactions/:key`.
+- `meetingCreate`: 30 an hour, `POST /spaces/:spaceId/meetings`.
+- `spaceCreate`: 20 an hour, `POST /spaces`.
+- `spaceBanner`: 20 an hour, `PUT /spaces/:id/banner`.
+- `spaceMembers`: 20 a minute, `POST /spaces/:id/members` and `POST /spaces/:id/groups`.
+- `tokenCreate`: 20 an hour, `POST {prefix}` on the three token prefixes.
+
+Two more limits count something other than requests: `linkFetch` (30 a minute) the [link previews](#get-link-preview) not cached yet, and `mention` (20 an hour) the [mention notifications](#post-spacesspaceidfeedposts) one author sends one member.
 
 ## Errors
 
@@ -71,7 +100,7 @@ The refusals look like this.
 - A session caller or an account token reaches the spaces its account is a member of. An organization token reaches every space of the organization and acts with its own role. A token that covers a list of spaces reaches only those.
 - `pinnedAt` is when the caller's account pinned the space and `openedAt` when it last opened it, both null when it did not. They are null for an organization token.
 - `manages` tells whether the caller manages the space: it is its admin, an owner or admin of the organization, or the person who created it. An organization token manages the spaces it covers when its role is `admin`.
-- Only active spaces are listed, and `GET /spaces/:id` answers 404 for the others. `?state=archived` or `?state=trashed` lists instead the archived spaces, or those in the Bin, that the caller manages, member or not. There, `role` is null when the caller's account is not a member (an organization token keeps its own role), `manages` is always true, and `pinnedAt` and `openedAt` are always null. Any other `state` answers `400 {"error":"invalid_request"}`.
+- Only active spaces are listed, and `GET /spaces/:id` answers 404 for the others. `?state=archived` or `?state=trashed` lists instead the archived spaces, or those in the Bin, that the caller manages, member or not. There, `role` is null when the caller's account is not a member (an organization token keeps its own role), `manages` is always true, and `pinnedAt` and `openedAt` are always null. The caller's organization role is read from ldap-rest on each such call. Any other `state` answers `400 {"error":"invalid_request"}`.
 
 ```json
 {
@@ -306,14 +335,14 @@ For the user's assistant (Twake Harness), through an API token of a technical ac
 
 A space's feed holds cards and posts. A card shows the activity on one object (a file, a calendar event, a task): the apps' later events about the object change the card instead of adding one. Members post, react, vote on polls and yes/no questions, decide on the approval requests asked of them and answer feedback requests. A poll, a yes/no question, an approval or a feedback request is a post whose body is the question. An announcement is a post pinned at the top of the feed until its author unpins it.
 
-`GET /spaces/:spaceId/feed`, `GET /spaces/:spaceId/feed/pinned` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes but the vote, decision and answer ones holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
+`GET /spaces/:spaceId/feed`, `GET /spaces/:spaceId/feed/pinned` and `GET /spaces/:spaceId/feed/items/:itemId` also take an API token holding `feed:read`, and the post routes but the vote, decision and answer ones holding `feed:write`, on a space the token reaches. A token signs its posts itself, as `{type: "token", id, name}`, never as its account. The other feed routes are for session callers only, and the caller must be a member of the space. The space must be active. Otherwise, when the space or item does not exist, or when an id in the path is not a UUID: `404 {"error":"not_found"}`. A failed query or body, or a malformed reaction key: `400 {"error":"invalid_request"}`.
 
 A feed item:
 
 - `id`, `kind` (`card` or `post`), `category` (`messages`, `files`, `activities` or `events`; a post is a message), `time`, `updatedAt`, and `reactions`, a list of `{key, userIds}` in the order they were first added.
-- A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`), `state` (an object the app sends, such as a calendar event's time) and `files` (`{created, updated, deleted, samples}` for a Drive folder digest, or `null`). `time` is the object's first event, so the card keeps its place, except for a folder digest, whose `time` is its latest window; everything else comes from its latest event.
+- A card adds `type` (the activity event type), `actor` (`null` when the event names no one), `object` (`{type, id, title, container}`, where `container` is `{kind, id}` or `null`), `preview` (a string or `null`), `state` (an object the app sends, such as a calendar event's time) and `files` (`{created, updated, deleted, samples}` for a Drive folder digest, `samples` being up to 5 strings, or `null`). `time` is the object's first event, so the card keeps its place, except for a folder digest, whose `time` is its latest window; everything else comes from its latest event.
 - A post adds `author`, `body` (plain text), `editedAt` (`null` until edited), `poll`, `approval`, `announcement` and `feedback` (each `null` unless the post is one).
-- A poll is `{kind, options, closedAt}`. `kind` is `choice`, or `yes_no` for a yes/no question, whose options are labelled `yes` and `no` for the reader's language. `options` lists `{label, userIds}` in the order they were given, `userIds` being the members who chose it in the order they voted, and `closedAt` is `null` while it is open.
+- A poll is `{kind, options, closedAt}`. `kind` is `choice`, or `yes_no` for a yes/no question, whose options are labelled `yes` and `no`, for the client to word in the reader's language. `options` lists `{label, userIds}` in the order they were given, `userIds` being the members who chose it in the order they voted, and `closedAt` is `null` while it is open.
 - An approval request is `{state, approvers, closedAt}`. `approvers` lists `{id, name, decision, comment, decidedAt}` in the order the author picked them, `decision` being `approved`, `rejected`, or `null` until they decide. `state` is `rejected` once one approver rejects, `approved` once they all approve, `pending` otherwise. An approver who left the space without deciding (`name` is `null`) no longer counts.
 - An announcement is `{pinnedAt}`, `null` once unpinned.
 - A feedback request is `{count, mine, answers, closedAt}`. `count` is how many members answered, `mine` the caller's own answer or `null`. `answers` lists `{userId, name, text, answeredAt}`, oldest first, for the author only: it is `null` for anyone else, the author's own tokens included.
@@ -379,9 +408,10 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 
 ### POST /spaces/:spaceId/feed/posts
 
-- Body: `{"body": "...", "mentions": ["<user uuid>"]}`. `body` is 1 to 4000 characters once trimmed. `mentions` is optional, up to 50 member ids. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed. A yes/no question adds `"poll": {"kind": "yes_no"}`, with no options. An approval request adds `"approval": {"approvers": ["<user uuid>"]}`: 1 to 20 different members of the space other than the author, otherwise `400 {"error":"invalid_approvers"}`. An announcement adds `"announcement": true` and is pinned. A feedback request adds `"feedback": true`; its answers go to a person, so a token cannot ask for one: `403 {"error":"cannot_ask_feedback"}`. A post is one of these at most.
+- Body: `{"body": "...", "mentions": ["<user uuid>"]}`. `body` is 1 to 4000 characters once trimmed. `mentions` is optional, up to 50 member ids. A poll adds `"poll": {"options": ["...", "..."]}`: 2 to 10 options that differ beyond letter case, 1 to 200 characters each once trimmed. A yes/no question adds `"poll": {"kind": "yes_no"}`, with no options. An approval request adds `"approval": {"approvers": ["<user uuid>"]}`: 1 to 20 different ids (otherwise `400 {"error":"invalid_request"}`), each of a member of the space other than the author (otherwise `400 {"error":"invalid_approvers"}`). An announcement adds `"announcement": true` and is pinned. A feedback request adds `"feedback": true`; its answers go to a person, so a token cannot ask for one: `403 {"error":"cannot_ask_feedback"}`. A post is one of these at most.
 - Each approver gets an `approval_request` notification, and the request is published on `activity` ([Events](events.md#approval-requests)). An organization token speaks for no person, so its request answers `403 {"error":"cannot_request_approval"}`.
-- Each mentioned member of the space other than the author gets a `card_mention` notification, and the mention is published on `activity` ([Events](events.md#mentions-in-posts)). An id that is no member of the space is left out.
+- Each mentioned member of the space other than the author gets a `card_mention` notification, and the mention is published on `activity` ([Events](events.md#mentions-in-posts)). An id that is no member of the space is left out. An approver also mentioned hears once, of the request.
+- An author sends one member at most 20 mention notifications an hour by default, across posts (the `mention` [rate limit](#rate-limits)). Past that, the post still names the member, without a notification or a published mention. Approval requests are never limited.
 - Editors and admins only, otherwise `403 {"error":"cannot_post"}`. An account token posts with its account's role, an organization token with its own.
 - An account token mentions as its account. An organization token speaks for no person, so its mentions answer `403 {"error":"cannot_mention"}`.
 - Answers `201` with the post.
@@ -391,6 +421,7 @@ Answers `{"readAt": "<time>"}`, the `time` of the newest item the caller has see
 - Body: `{"body": "...", "mentions": [...]}`, as for a new post without the poll or the approval. Answers the post. A poll keeps its options and votes. An approval request cannot be edited, the approvers decide on its text: `409 {"error":"cannot_edit_approval"}`. Neither can a feedback request, the members answer its question: `409 {"error":"cannot_edit_feedback"}`.
 - Only the members the post did not mention before are notified and published.
 - Its author only, otherwise `403 {"error":"not_author"}`. A token's post belongs to that token, and to the person of its account, from a session, even once the token is revoked.
+- An author who is a viewer of the space by now gets `403 {"error":"cannot_post"}`, here and on the pin. They can still delete, close or unpin their post.
 
 ### DELETE /spaces/:spaceId/feed/posts/:itemId
 
@@ -400,7 +431,7 @@ Deletes the post, its reactions, its votes or decisions, and the notifications o
 
 - Body: `{"option": 0}`, the index of the option in `poll.options`: on a yes/no question, 0 for yes and 1 for no.
 - Any member, viewers included, from a session only: a vote is a person's own, so no token gets it. A member has one vote per poll: voting again moves it, and voting again for the same option changes nothing. Answers `204`.
-- `404 {"error":"not_found"}` on a post with no poll, `409 {"error":"poll_closed"}` once it is closed.
+- `404 {"error":"not_found"}` on a post with no poll, `409 {"error":"poll_closed"}` once it is closed, `400 {"error":"invalid_request"}` for an index past the last option.
 
 ### DELETE /spaces/:spaceId/feed/posts/:itemId/vote
 
@@ -434,10 +465,11 @@ Takes the caller's vote back. Answers `204`, `404 {"error":"not_found"}` on a po
 
 - `key` is the reaction, URL-encoded, 1 to 16 characters, such as an emoji.
 - Any member, viewers included. Adding the same reaction again changes nothing. Answers `204`.
+- An `itemId` that is not a UUID answers `400 {"error":"invalid_request"}` here, like a malformed key.
 
 ### DELETE /spaces/:spaceId/feed/items/:itemId/reactions/:key
 
-Takes the caller's reaction back. Answers `204`.
+Takes the caller's reaction back. Answers `204`, also when the item or the reaction does not exist.
 
 ### GET /link-preview
 
@@ -445,8 +477,11 @@ The card a post shows for the first link in its body. Session callers only.
 
 - Query: `url`, an `http` or `https` URL of up to 2048 characters. Its fragment is left out.
 - Answers `{url, title, description, image, site}`. `url` is the page reached after redirects, `description` is `null` when the page has none, `site` falls back on the host name, and `image` is a `data:` URL of a PNG, JPEG, GIF or WebP image, or `null`.
+- `title` is cut at 200 characters, `description` at 300 and `site` at 100.
+- A found preview carries `Cache-Control: private, max-age=3600`.
 - `404 {"error":"no_preview"}` when the page cannot be read, is not HTML or has no title.
-- The backend fetches the page itself: only public addresses on ports 80 and 443, checked after DNS resolution and on every redirect (three at most), the first 512 KiB of the page, an image of up to 200 KiB, five seconds in all. It keeps a preview for an hour, and tries a link with none again after five minutes.
+- The backend fetches the page itself: only public addresses on ports 80 and 443, checked after DNS resolution and on every redirect (three at most), the first 512 KiB of the page, an image of up to 200 KiB, five seconds in all. Each replica keeps a preview for an hour, up to 200 links whoever asked, and tries a link with none again after five minutes.
+- Only a link not cached yet counts against the caller's `linkFetch` [rate limit](#rate-limits). Past it: `429 {"error":"rate_limited"}` with `Retry-After`, while cached links still answer.
 
 ## Meetings
 
@@ -454,8 +489,8 @@ The card a post shows for the first link in its body. Session callers only.
 
 Asks the calendar to schedule a video meeting in the space's team calendar, as described in [Events](events.md#meeting-requests).
 
-- Body: `title` (1 to 255 characters, trimmed), `start` and `end` (ISO 8601 with an offset, `end` after `start` and at most 24 hours later), `timezone` (IANA name), `description` (up to 4000 characters, optional) and `uid` (UUID, optional).
-- A session only. Editors and admins, otherwise `403 {"error":"cannot_schedule"}`.
+- Body: `title` (1 to 255 characters, trimmed), `start` and `end` (ISO 8601 with an offset, `end` after `start` and at most 24 hours later), `timezone` (IANA name in any letter case, passed on as its canonical name; an offset such as `+02:00` is refused), `description` (up to 4000 characters, optional) and `uid` (UUID, optional).
+- A session only. Editors and admins, otherwise `403 {"error":"cannot_schedule"}`. `404 {"error":"not_found"}` when the caller does not reach the space, and `400 {"error":"invalid_request"}` when the body fails.
 - `409 {"error":"no_calendar"}` when the calendar has not provisioned the space yet.
 - `503 {"error":"unavailable"}` when RabbitMQ does not confirm the request, or no consumer is bound to it.
 - Answers `202 {"uid":"<uuid>"}`. The meeting shows up as the feed card of the calendar event with that UID. A retry sends the same `uid`, so the calendar creates one meeting.
@@ -471,9 +506,9 @@ Asks the calendar to schedule a video meeting in the space's team calendar, as d
 
 The events carry no state; they tell the client what to reload.
 
-- `notification` with data `{}`, sent to each user who just got a new notification.
+- `notification` with data `{}`, sent to each user who just got a new notification, or lost one when the post behind it was deleted.
 - `spaces` with data `{"spaceId":"<uuid>"}`, sent when a space changes for the user. Who gets it depends on the change:
-  - every member, when the space is renamed, its apps or banner change, its groups change (a linked group renamed included), or a resource is provisioned;
+  - every member, when the space is renamed, its description, apps or banner change, its groups change (a linked group renamed included), a resource is provisioned, or its drive is removed;
   - the added or updated members, when members are added or change role;
   - the removed members, when members are removed;
   - every member and the organization's owners and admins, when the space is archived, moved to the Bin or restored;
@@ -638,7 +673,7 @@ Revokes the token and the tokens it created, down the line. Answers `204`, or `4
 
 ### GET /health/live
 
-On the API server, answers `503 {"status":"unavailable"}` when the RabbitMQ connection is down, or when one message has been in its handler for over 5 minutes, and `200 {"status":"ok"}` otherwise. An idle consumer is alive. On the metrics server it always answers `200`.
+On the API server, answers `503 {"status":"unavailable"}` when a consumer's RabbitMQ connection has been down for over a minute, when one message has been in its handler for over 5 minutes, or when a queue's subscription was not restored after a reconnect, and `200 {"status":"ok"}` otherwise. An idle consumer is alive. On the metrics server it always answers `200`.
 
 ### GET /health/ready
 
@@ -692,8 +727,8 @@ Shared rules:
 
 ### PUT /spaces/:id/banner
 
-- Body: the image itself, `image/png`, `image/jpeg`, `image/webp` or `image/gif`, up to 5 MiB. The caller is checked before the body is read.
-- `415 {"error":"not_an_image"}` for an empty body or another content type, and `413` (in Fastify's shape) over 5 MiB.
+- Body: the image itself, `image/png`, `image/jpeg`, `image/webp` or `image/gif`, up to 5 MiB. The bearer token is checked before the body is read, whether the caller administers the space after.
+- `415 {"error":"not_an_image"}` for an empty body or another content type the backend parses (JSON, plain text, `application/x-www-form-urlencoded`). Any other type gets Fastify's `415`, and over 5 MiB Fastify's `413` (see [Errors](#errors)).
 - Replaces the banner and sends `spaces` on the live stream to the members. Answers `204`.
 
 ### PUT /spaces/:id/state

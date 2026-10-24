@@ -18,6 +18,8 @@ Open http://localhost:3000 (or set `PORT`). You're signed in as Alice Martin, an
 - B2B Admin Panel: admin, every app ready, with one feed item of every kind
 - Handover: viewer, chat and mail turned off
 
+Two more spaces, both admin, are off the list: Launch 2025 is archived and Team Offsite is in the Bin.
+
 The organization has four people (alice, bob, carol, dave) and one group, Designers. Each space has direct members and the Designers group with their own roles. The seed lives in `apps/frontend/src/adapters/memory/seed.ts`, and uses the same organization, people and roles as the local SSO stack, so the screens look the same on the real backend.
 
 Writes behave like the backend's: only a space admin can rename a space, change its apps or change its members, and anyone else gets a 403 refusal.
