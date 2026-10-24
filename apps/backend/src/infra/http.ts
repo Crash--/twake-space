@@ -1,6 +1,16 @@
 import Fastify, { LogController, type FastifyRequest } from 'fastify'
 import type { Logger } from 'pino'
 
+// The query string can carry search terms and the links people share.
+const pathOf = (request: FastifyRequest) => request.url.replace(/\?.*/s, '')
+
+class PathOnlyLogController extends LogController {
+  override routeNotFound(request: FastifyRequest) {
+    if (this.isLogDisabled(request)) return
+    request.log.info(`Route ${request.method}:${pathOf(request)} not found`)
+  }
+}
+
 export function createServer(deps: {
   logger: Logger
   isReady: () => Promise<boolean>
@@ -13,14 +23,14 @@ export function createServer(deps: {
         serializers: {
           req: (request: FastifyRequest) => ({
             method: request.method,
-            url: request.url,
+            url: pathOf(request),
             host: request.host,
             remoteAddress: request.ip
           })
         }
       }
     ),
-    logController: new LogController({
+    logController: new PathOnlyLogController({
       disableRequestLogging: request => request.url.startsWith('/health/')
     })
   })

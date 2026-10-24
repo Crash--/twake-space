@@ -29,6 +29,34 @@ it('answers a bare 500 and logs the error behind it', async () => {
   expect(JSON.stringify(lines)).toContain('ECONNREFUSED 10.0.0.7')
 })
 
+it('logs the path of a request without its query string', async () => {
+  const { lines, logger } = capturedLogs()
+  const app = createServer({ logger, isReady: () => Promise.resolve(true) })
+  app.get('/link-preview', () => 'ok')
+
+  await app.inject({
+    method: 'GET',
+    url: '/link-preview?url=https%3A%2F%2Fexample.com%2Fprivate'
+  })
+
+  expect(JSON.stringify(lines)).toContain('"url":"/link-preview"')
+  expect(JSON.stringify(lines)).not.toContain('example.com')
+})
+
+it('logs an unknown route without its query string', async () => {
+  const { lines, logger } = capturedLogs()
+  const app = createServer({ logger, isReady: () => Promise.resolve(true) })
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/nowhere?q=private'
+  })
+
+  expect(response.statusCode).toBe(404)
+  expect(JSON.stringify(lines)).toContain('Route GET:/nowhere not found')
+  expect(JSON.stringify(lines)).not.toContain('private')
+})
+
 it('keeps the answer of an error made for the client', async () => {
   const app = createServer({
     logger: pino({ level: 'silent' }),

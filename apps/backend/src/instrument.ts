@@ -5,6 +5,17 @@ import * as Sentry from '@sentry/node'
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
   environment: process.env.SENTRY_ENVIRONMENT,
+  // Sentry collects all of these by default: client IPs (also in forwarding
+  // headers), search terms and link-preview URLs in query strings, post
+  // bodies, and database query parameters.
+  dataCollection: {
+    userInfo: false,
+    cookies: false,
+    httpHeaders: false,
+    httpBodies: [],
+    urlQueryParams: false,
+    databaseQueryData: false
+  },
   integrations: [
     Sentry.pinoIntegration({ error: { levels: ['error', 'fatal'] } }),
     // Sentry's default only warns, where Node would stop the process.
