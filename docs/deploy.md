@@ -228,7 +228,7 @@ Neither checks Redis. Health requests are not logged. The metrics port answers `
 ### Logs and Sentry
 
 - Logs are JSON lines from pino on stdout, at `LOG_LEVEL`. RabbitMQ client logs carry `component: "amqp"`, at `warn` and above. Logged request URLs leave out the query string, which can carry search terms and shared links. Redis is logged once when it becomes unavailable and once when it is back, at `warn` and `info`.
-- Sentry is initialised before the app loads, so it instruments Fastify and pino. Log lines at `error` and `fatal` go to Sentry as errors. An unhandled promise rejection stops the process, as it does without Sentry.
+- Sentry is initialised before the app loads, so it instruments Fastify and pino. Log lines at `error` and `fatal` go to Sentry as errors. A job that retries on its own (parked events, revocation sweep, reconciliation, purge, access token checks) logs a warning when it starts failing, and one error once it has kept failing for 25 minutes. An unhandled promise rejection stops the process, as it does without Sentry.
 - ldap-rest calls time out after 5 seconds, control plane calls after 10.
 
 ## What the backend reaches

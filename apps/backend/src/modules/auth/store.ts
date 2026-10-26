@@ -1,6 +1,7 @@
 import { eq, inArray, lt } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { Db } from '../../infra/db.ts'
+import { failureStreak } from '../../infra/failing.ts'
 import { tellRevoked } from '../live/notify.ts'
 import { oidcRevokedSessions } from './schema.ts'
 
@@ -54,10 +55,16 @@ export function scheduleRevocationSweep(
       .where(inArray(oidcRevokedSessions.sid, open))
     for (const { sid } of revoked) streams.closeSession(sid)
   }
+  const sweeps = failureStreak(logger, 'revocation sweep failed')
   const timer = setInterval(() => {
-    sweep().catch((error: unknown) => {
-      logger.error({ err: error }, 'revocation sweep failed')
-    })
+    sweep().then(
+      () => {
+        sweeps.succeeded()
+      },
+      (error: unknown) => {
+        sweeps.failed({ err: error })
+      }
+    )
   }, SWEEP_EVERY_MS)
   return () => {
     clearInterval(timer)

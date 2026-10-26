@@ -329,15 +329,32 @@ describe('reconcileDue', () => {
   })
 
   it('tries an organization again on the next pass when it fails', async () => {
+    await testDb.db
+      .insert(organizations)
+      .values({ organizationId: 'org-1', domain: 'org-1.example.com' })
     const { directory } = ldapRest([])
-    const failing = {
-      ...directory,
-      list: () => Promise.reject(new Error('ldap-rest is down'))
-    }
+    const down = new Error('ldap-rest is down')
+    const failing = { ...directory, list: () => Promise.reject(down) }
 
-    await reconcileDue(testDb.db, failing, log, night)
+    const first = await reconcileDue(testDb.db, failing, log, night)
+    const second = await reconcileDue(testDb.db, directory, log, night)
+
+    expect(first).toEqual({ attempted: 1, failures: [down] })
+    expect(second).toEqual({ attempted: 1, failures: [] })
+    expect(await spaceNames()).toEqual([])
+  })
+
+  it('attempts nothing once every organization has run tonight', async () => {
+    await testDb.db
+      .insert(organizations)
+      .values({ organizationId: 'org-1', domain: 'org-1.example.com' })
+    const { directory } = ldapRest([])
+
     await reconcileDue(testDb.db, directory, log, night)
 
-    expect(await spaceNames()).toEqual([])
+    expect(await reconcileDue(testDb.db, directory, log, night)).toEqual({
+      attempted: 0,
+      failures: []
+    })
   })
 })

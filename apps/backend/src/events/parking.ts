@@ -1,6 +1,7 @@
 import { and, eq, lt, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { Db } from '../infra/db.ts'
+import { failureStreak } from '../infra/failing.ts'
 import type { DeadLetter, IncomingMessage, Outcome, Park } from './router.ts'
 import { parkedEvents } from './schema.ts'
 
@@ -31,7 +32,9 @@ export async function retryParked(
   handle: (message: IncomingMessage) => Promise<Outcome>,
   deadLetter: DeadLetter,
   log: Logger
-): Promise<void> {
+): Promise<unknown[]> {
+  // What kept each expired event out of the dead letter queue.
+  const undelivered: unknown[] = []
   const rows = await db
     .select()
     .from(parkedEvents)
@@ -80,7 +83,8 @@ export async function retryParked(
           )
         })
         .catch((error: unknown) => {
-          log.error(
+          undelivered.push(error)
+          log.warn(
             { err: error, ...context },
             'parked event could not reach the dead letter queue'
           )
@@ -89,9 +93,25 @@ export async function retryParked(
     }
     await db.delete(parkedEvents).where(done)
   }
+  return undelivered
 }
 
-// One replica retries at a time, so a parked event is handled once.
+// One replica retries at a time, so a parked event is handled once. Without
+// the turn, undefined: another replica's outcome is not this one's to count.
+export function retryParkedInTurn(
+  db: Db,
+  handle: (message: IncomingMessage) => Promise<Outcome>,
+  deadLetter: DeadLetter,
+  log: Logger
+): Promise<unknown[] | undefined> {
+  return db.transaction(async tx => {
+    const [lock] = await tx.execute<{ locked: boolean }>(
+      sql`select pg_try_advisory_xact_lock(hashtext('parked_events')) as locked`
+    )
+    return lock?.locked ? retryParked(db, handle, deadLetter, log) : undefined
+  })
+}
+
 export function scheduleParkedRetries(
   db: Db,
   handle: (message: IncomingMessage) => Promise<Outcome>,
@@ -101,18 +121,29 @@ export function scheduleParkedRetries(
   let timer: NodeJS.Timeout | undefined
   let stopped = false
   let running: Promise<void> = Promise.resolve()
-  const pass = () =>
-    db.transaction(async tx => {
-      const [lock] = await tx.execute<{ locked: boolean }>(
-        sql`select pg_try_advisory_xact_lock(hashtext('parked_events')) as locked`
-      )
-      if (lock?.locked) await retryParked(db, handle, deadLetter, log)
-    })
+  const passes = failureStreak(log, 'retrying parked events failed')
+  const deadLetters = failureStreak(
+    log,
+    'parked events could not reach the dead letter queue'
+  )
   const loop = () => {
-    running = pass()
-      .catch((error: unknown) => {
-        log.error({ err: error }, 'retrying parked events failed')
-      })
+    running = retryParkedInTurn(db, handle, deadLetter, log)
+      .then(
+        undelivered => {
+          if (!undelivered) return
+          passes.succeeded()
+          if (undelivered.length === 0) deadLetters.succeeded()
+          else {
+            deadLetters.failed({
+              err: undelivered.at(-1),
+              undelivered: undelivered.length
+            })
+          }
+        },
+        (error: unknown) => {
+          passes.failed({ err: error })
+        }
+      )
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, RETRY_EVERY_MS)
       })

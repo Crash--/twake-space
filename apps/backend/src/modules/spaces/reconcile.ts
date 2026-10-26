@@ -1,6 +1,7 @@
 import { and, eq, lt } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { Db } from '../../infra/db.ts'
+import { failureStreak } from '../../infra/failing.ts'
 import type { ListedMember, SpaceDirectory } from '../../infra/ldap-rest.ts'
 import { organizations } from '../organizations/schema.ts'
 import { ensureDrive } from './drives.ts'
@@ -51,7 +52,7 @@ export async function reconcileOrganization(
       await reconcileSpace(db, directory, log, organizationId, listedAt, space)
     } catch (error) {
       failed++
-      log.error(
+      log.warn(
         { err: error, organizationId, spaceId: space.id },
         'reconciling a space failed'
       )
@@ -208,18 +209,22 @@ export async function reconcileDue(
   log: Logger,
   now = new Date(),
   stopped = () => false
-) {
+): Promise<{ attempted: number; failures: unknown[] }> {
+  let attempted = 0
+  const failures: unknown[] = []
   const known = await db
     .select({ id: organizations.organizationId })
     .from(organizations)
     .union(db.selectDistinct({ id: spaces.organizationId }).from(spaces))
   for (const { id } of known) {
-    if (stopped()) return
+    if (stopped()) break
     if (!(await claim(db, id, now))) continue
+    attempted++
     try {
       await reconcileOrganization(db, directory, log, id)
     } catch (error) {
-      log.error({ err: error, organizationId: id }, 'reconciliation failed')
+      failures.push(error)
+      log.warn({ err: error, organizationId: id }, 'reconciliation failed')
       // So the next pass tries again.
       await db
         .delete(spaceReconciliations)
@@ -231,6 +236,7 @@ export async function reconcileDue(
         )
     }
   }
+  return { attempted, failures }
 }
 
 export function scheduleReconciliation(
@@ -240,11 +246,25 @@ export function scheduleReconciliation(
 ): () => Promise<void> {
   let stopped = false
   let running: Promise<void> | undefined
+  const passes = failureStreak(logger, 'reconciliation failed')
   const reconcile = () => {
     running ??= reconcileDue(db, directory, logger, new Date(), () => stopped)
-      .catch((error: unknown) => {
-        logger.error({ err: error }, 'reconciliation failed')
-      })
+      .then(
+        ({ attempted, failures }) => {
+          // A pass with nothing due says nothing about the last failure.
+          if (attempted === 0) return
+          if (failures.length === 0) passes.succeeded()
+          else {
+            passes.failed({
+              err: failures.at(-1),
+              organizations: failures.length
+            })
+          }
+        },
+        (error: unknown) => {
+          passes.failed({ err: error })
+        }
+      )
       .finally(() => {
         running = undefined
       })

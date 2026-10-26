@@ -11,10 +11,11 @@ import type { TokenCaller } from '../tokens/authenticator.ts'
 function setUp(
   authenticate: Authenticate = () => Promise.resolve(anIdentity()),
   authenticateToken: (token: string) => Promise<TokenCaller | null> = () =>
-    Promise.resolve(null)
+    Promise.resolve(null),
+  logger = pino({ level: 'silent' })
 ) {
   const app = createServer({
-    logger: pino({ level: 'silent' }),
+    logger,
     isReady: () => Promise.resolve(true)
   })
   const provider: IdentityProvider = {
@@ -92,6 +93,51 @@ describe('requireIdentity', () => {
     })
 
     expect(response.statusCode).toBe(503)
+  })
+
+  it('reports one error when OIDC stays down, whatever API tokens do', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const levels: { level: number; msg: string }[] = []
+      const logger = pino(
+        {},
+        {
+          write: (line: string) => {
+            levels.push(JSON.parse(line) as { level: number; msg: string })
+          }
+        }
+      )
+      const { app } = setUp(
+        () => Promise.reject(new Error('oidc down')),
+        () => Promise.resolve(null),
+        logger
+      )
+
+      for (const minute of [0, 10, 20, 30]) {
+        vi.setSystemTime(minute * 60_000)
+        for (const token of ['session-token', 'tws_unknown']) {
+          await app.inject({
+            method: 'GET',
+            url: '/me',
+            headers: { authorization: `Bearer ${token}` }
+          })
+        }
+      }
+
+      const failures = levels.filter(line => line.msg.includes('check failed'))
+      expect(failures).toEqual([
+        expect.objectContaining({
+          level: 40,
+          msg: 'access token check failed'
+        }),
+        expect.objectContaining({
+          level: 50,
+          msg: 'access token check failed for over 25 minutes'
+        })
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('refuses a user outside any organization', async () => {

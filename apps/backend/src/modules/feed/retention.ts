@@ -1,6 +1,7 @@
 import { and, eq, lt, notExists, or, sql } from 'drizzle-orm'
 import type { Logger } from 'pino'
 import type { Db } from '../../infra/db.ts'
+import { failureStreak } from '../../infra/failing.ts'
 import { notifications } from '../notifications/schema.ts'
 import {
   activityEvents,
@@ -56,10 +57,16 @@ export function purgeExpired(db: Db, now = new Date()): Promise<boolean> {
 }
 
 export function schedulePurge(db: Db, logger: Logger): () => void {
+  const purges = failureStreak(logger, 'purge failed')
   const purge = () => {
-    purgeExpired(db).catch((error: unknown) => {
-      logger.error({ err: error }, 'purge failed')
-    })
+    purgeExpired(db).then(
+      () => {
+        purges.succeeded()
+      },
+      (error: unknown) => {
+        purges.failed({ err: error })
+      }
+    )
   }
   // Also at startup, so pods restarted more often than hourly still purge.
   purge()
