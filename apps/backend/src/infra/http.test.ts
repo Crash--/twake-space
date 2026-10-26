@@ -29,6 +29,23 @@ it('answers a bare 500 and logs the error behind it', async () => {
   expect(JSON.stringify(lines)).toContain('ECONNREFUSED 10.0.0.7')
 })
 
+it("logs the request id from the caller's X-Request-Id", async () => {
+  const { lines, logger } = capturedLogs()
+  const app = createServer({ logger, isReady: () => Promise.resolve(true) })
+  app.get('/ping', () => 'ok')
+
+  await app.inject({
+    method: 'GET',
+    url: '/ping',
+    headers: { 'x-request-id': 'from-proxy-1' }
+  })
+
+  expect(lines.map(line => line.reqId)).toEqual([
+    'from-proxy-1',
+    'from-proxy-1'
+  ])
+})
+
 it('logs the path of a request without its query string', async () => {
   const { lines, logger } = capturedLogs()
   const app = createServer({ logger, isReady: () => Promise.resolve(true) })
