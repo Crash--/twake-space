@@ -18,6 +18,7 @@
   "dependencies": {
     "@linagora/ldap-rest-client": "1.6.0",
     "@linagora/rabbitmq-client": "^0.7.1",
+    "@linagora/twake-node-telemetry": "^1.1.0",
     "@sentry/node": "^11.4.0",
     "amqplib": "^0.10.9",
     "drizzle-orm": "1.0.0-rc.4",

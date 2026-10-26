@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
+import { createLogger } from '@linagora/twake-node-telemetry'
 import * as Sentry from '@sentry/node'
 import amqplib from 'amqplib'
-import { pino } from 'pino'
 import { loadConfig } from './config.ts'
 import { postgresDeduplicator } from './events/dedupe.ts'
 import { scheduleActivity } from './events/outbox.ts'
@@ -72,7 +72,10 @@ const SHUTDOWN_DEADLINE_MS = 25_000
 const PUBLISH_TIMEOUT_MS = 10_000
 
 const config = loadConfig()
-const logger = pino({ level: config.LOG_LEVEL })
+const logger = createLogger({
+  service: 'twake-space-backend',
+  level: config.LOG_LEVEL
+})
 const lifecycle = handleSignals({
   log: logger,
   deadlineMs: SHUTDOWN_DEADLINE_MS
