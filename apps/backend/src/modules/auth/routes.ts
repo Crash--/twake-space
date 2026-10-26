@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import { failureStreak } from '../../infra/failing.ts'
 import type { HttpServer } from '../../infra/http.ts'
 import {
   API_TOKEN_PREFIX,
@@ -71,25 +72,32 @@ export function registerAuth(
     }
   )
 
+  // Sessions are checked against OIDC, API tokens against the database.
+  const sessionChecks = failureStreak(app.log, 'access token check failed')
+  const apiTokenChecks = failureStreak(app.log, 'API token check failed')
   const authorize: Authorize = scope => async (request, reply) => {
     const [scheme, token] = request.headers.authorization?.split(' ') ?? []
     if (scheme?.toLowerCase() !== 'bearer' || !token) {
       return unauthorized(reply, null)
     }
 
+    const isApiToken = token.startsWith(API_TOKEN_PREFIX)
+    const checks = isApiToken ? apiTokenChecks : sessionChecks
     let identity: Identity | TokenCaller | null
     try {
-      identity = token.startsWith(API_TOKEN_PREFIX)
+      identity = isApiToken
         ? await deps.authenticateToken(token)
         : await deps.authenticate(token)
     } catch (error) {
       // A full gate means a flood of made-up tokens: not one error report each.
       if (error instanceof GateFullError) {
         request.log.warn('too many new tokens waiting for a check')
-      } else request.log.error({ err: error }, 'access token check failed')
+      } else checks.failed({ err: error, reqId: request.id })
       return reply.code(503).send({ error: 'unavailable' })
     }
+    // A refused token may come from a cache, without reaching OIDC or the database.
     if (!identity) return unauthorized(reply, 'invalid_token')
+    checks.succeeded()
 
     if ('kind' in identity) {
       if (!scope || (scope !== 'any' && !identity.scopes.includes(scope))) {

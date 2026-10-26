@@ -73,9 +73,17 @@ const PUBLISH_TIMEOUT_MS = 10_000
 
 const config = loadConfig()
 const logger = pino({ level: config.LOG_LEVEL })
+let exiting = false
 const lifecycle = handleSignals({
   log: logger,
-  deadlineMs: SHUTDOWN_DEADLINE_MS
+  deadlineMs: SHUTDOWN_DEADLINE_MS,
+  // process.exit drops what Sentry has not sent yet. The deadline and the end
+  // of the shutdown can both ask to exit: the first one decides the code.
+  exit: code => {
+    if (exiting) return
+    exiting = true
+    void Sentry.close(2000).then(() => process.exit(code))
+  }
 })
 
 const { sql, db } = createDb(config.DATABASE_URL)
@@ -267,27 +275,23 @@ lifecycle.started(async () => {
   const reconciliationStopped = stopReconciliation()
   const driveCommandsStopped = stopDriveCommands()
   const activityStopped = stopActivity()
-  try {
-    await Promise.all([
-      parkedStopped,
-      reconciliationStopped,
-      driveCommandsStopped,
-      activityStopped
-    ])
-    await Promise.all([
-      consumers.space.close(),
-      consumers.activity.close(),
-      live.close(),
-      drives.close(),
-      activity.close()
-    ])
-    await delay(DRAIN_MS)
-    await server.close()
-    await metrics.close()
-    redis?.destroy()
-    await sql.end({ timeout: 5 })
-  } finally {
-    await Sentry.close(2000)
-  }
+  await Promise.all([
+    parkedStopped,
+    reconciliationStopped,
+    driveCommandsStopped,
+    activityStopped
+  ])
+  await Promise.all([
+    consumers.space.close(),
+    consumers.activity.close(),
+    live.close(),
+    drives.close(),
+    activity.close()
+  ])
+  await delay(DRAIN_MS)
+  await server.close()
+  await metrics.close()
+  redis?.destroy()
+  await sql.end({ timeout: 5 })
 })
 logger.info('twake-space backend started')

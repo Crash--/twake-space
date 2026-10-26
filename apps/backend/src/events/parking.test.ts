@@ -12,7 +12,12 @@ import {
 import { createTestDb, type TestDb } from '../infra/testing.ts'
 import { postgresDeduplicator } from './dedupe.ts'
 import type { PlatformEvent } from './envelope.ts'
-import { parkIn, retryParked, scheduleParkedRetries } from './parking.ts'
+import {
+  parkIn,
+  retryParked,
+  retryParkedInTurn,
+  scheduleParkedRetries
+} from './parking.ts'
 import {
   createMessageHandler,
   NotYetKnownError,
@@ -133,11 +138,40 @@ describe('parked events', () => {
     await testDb.db.execute(
       sql`update parked_events set parked_at = now() - interval '31 minutes'`
     )
-    deadLetter.mockRejectedValueOnce(new Error('broker down'))
+    const brokerDown = new Error('broker down')
+    deadLetter.mockRejectedValueOnce(brokerDown)
 
-    await retry()
+    const undelivered = await retry()
 
+    expect(undelivered).toEqual([brokerDown])
     expect(deadLetter).toHaveBeenCalledTimes(2)
+    expect(await parked()).toHaveLength(1)
+  })
+
+  it('leaves the pass to the replica that holds the turn', async () => {
+    const { handle, deadLetter } = setup()
+    await handle(memberAdded())
+    let release: () => void = () => undefined
+    let held: () => void = () => undefined
+    const holding = new Promise<void>(resolve => {
+      held = resolve
+    })
+    const other = testDb.db.transaction(async tx => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext('parked_events'))`
+      )
+      held()
+      await new Promise<void>(resolve => {
+        release = resolve
+      })
+    })
+    await holding
+
+    const outcome = await retryParkedInTurn(testDb.db, handle, deadLetter, log)
+
+    release()
+    await other
+    expect(outcome).toBeUndefined()
     expect(await parked()).toHaveLength(1)
   })
 
