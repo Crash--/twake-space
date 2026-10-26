@@ -1,24 +1,10 @@
-import * as Sentry from '@sentry/node'
+import { readFileSync } from 'node:fs'
+import { initSentry } from '@linagora/twake-node-telemetry/sentry'
 
-// Loaded with --import: in ESM, pino and Fastify are only instrumented when
-// Sentry is initialised before they are imported. Unset SENTRY_DSN disables it.
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.SENTRY_ENVIRONMENT,
-  // Sentry collects all of these by default: client IPs (also in forwarding
-  // headers), search terms and link-preview URLs in query strings, post
-  // bodies, and database query parameters.
-  dataCollection: {
-    userInfo: false,
-    cookies: false,
-    httpHeaders: false,
-    httpBodies: [],
-    urlQueryParams: false,
-    databaseQueryData: false
-  },
-  integrations: [
-    Sentry.pinoIntegration({ error: { levels: ['error', 'fatal'] } }),
-    // Sentry's default only warns, where Node would stop the process.
-    Sentry.onUnhandledRejectionIntegration({ mode: 'strict' })
-  ]
-})
+const { version } = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8')
+) as { version: string }
+
+// Loaded with --import, so Sentry can instrument the modules main.ts loads
+// (http, Fastify, postgres). Unset SENTRY_DSN disables it.
+initSentry({ service: 'twake-space-backend', version })
