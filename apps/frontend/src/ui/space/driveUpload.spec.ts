@@ -32,11 +32,12 @@ function serviceFrame(): Promise<{ frame: HTMLIFrameElement; inside: Window }> {
 function receive(
   frame: HTMLIFrameElement,
   type: string,
-  origin = ORIGIN
+  origin = ORIGIN,
+  extra: object = {}
 ): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type },
+      data: { type, ...extra },
       origin,
       source: frame.contentWindow
     })
@@ -56,12 +57,93 @@ describe('uploadToDrive', () => {
     expect(postMessage).not.toHaveBeenCalled()
     receive(frame, 'intent-i1:ready')
     expect(postMessage).toHaveBeenCalledExactlyOnceWith(
-      { driveId: 'drive-1', files: [file] },
+      { driveId: 'drive-1', files: [file], progress: true },
       ORIGIN
     )
     receive(frame, 'intent-i1:ready')
 
     receive(frame, 'intent-i1:done')
+    await expect(done).resolves.toBeUndefined()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('reports the progress Drive sends for each file', async () => {
+    const onProgress = vi.fn()
+    const done = uploadToDrive(sdk, 'drive-1', [file, file], { onProgress })
+    const { frame } = await serviceFrame()
+    receive(frame, 'intent-i1:ready')
+
+    const result = (result: unknown) => {
+      receive(frame, 'intent-i1:result', ORIGIN, { result })
+    }
+    result({ index: 0, loaded: 1, total: 2 })
+    result({ index: 1, loaded: 2, total: 2 })
+    result({ index: 2, loaded: 1, total: 2 })
+    result({ index: 0.5, loaded: 1, total: 2 })
+    result({ index: 0, loaded: '1', total: 2 })
+    result({ index: 0, loaded: Number.NaN, total: 2 })
+    result({ index: 0, loaded: 1, total: Number.POSITIVE_INFINITY })
+    result({ index: 0, loaded: -1, total: 2 })
+    result({ index: 0, loaded: 1, total: -2 })
+    result('progress')
+    receive(frame, 'intent-i1:result', 'https://elsewhere.test', {
+      result: { index: 0, loaded: 2, total: 2 }
+    })
+    // The right origin, from another window than the frame
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'intent-i1:result',
+          result: { index: 0, loaded: 2, total: 2 }
+        },
+        origin: ORIGIN,
+        source: window
+      })
+    )
+    receive(frame, 'intent-i1:done')
+
+    await done
+    expect(onProgress.mock.calls).toEqual([
+      [{ index: 0, loaded: 1, total: 2 }],
+      [{ index: 1, loaded: 2, total: 2 }]
+    ])
+  })
+
+  it('stops without failing once aborted, and drops the frame', async () => {
+    const stop = new AbortController()
+    const done = uploadToDrive(sdk, 'drive-1', [file], { signal: stop.signal })
+    const { frame } = await serviceFrame()
+    receive(frame, 'intent-i1:ready')
+
+    stop.abort()
+
+    await expect(done).resolves.toBeUndefined()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('opens no frame when aborted while the intent is being created', async () => {
+    let created: (
+      intent: Awaited<ReturnType<Sdk['createIntent']>>
+    ) => void = () => undefined
+    createIntent.mockReturnValueOnce(
+      new Promise(resolve => {
+        created = resolve
+      })
+    )
+    const stop = new AbortController()
+    const done = uploadToDrive(sdk, 'drive-1', [file], { signal: stop.signal })
+    await vi.waitFor(() => {
+      expect(createIntent).toHaveBeenCalled()
+    })
+
+    stop.abort()
+    created({
+      id: 'i1',
+      action: 'UPLOAD',
+      type: 'io.cozy.files',
+      services: [{ slug: 'drive', href: `${ORIGIN}/intents?intent=i1` }]
+    })
+
     await expect(done).resolves.toBeUndefined()
     expect(document.querySelector('iframe')).toBeNull()
   })
