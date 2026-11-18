@@ -92,6 +92,7 @@ import {
   FeedYesNo,
   FeedTitle,
   FeedToolbar,
+  FeedUploads,
   FeedWithSide,
   JoinButton,
   type MentionablePerson,
@@ -116,7 +117,7 @@ import { ConnectionDetailsDialog } from '@/ui/call/ConnectionDetailsDialog'
 import { useI18n, type TranslationKey } from '@/ui/i18n/useI18n'
 import { useServices } from '@/ui/services/Services'
 import { useSession } from '@/ui/session/SessionGate'
-import { uploadToDrive } from '@/ui/space/driveUpload'
+import { uploadToDrive, type UploadProgress } from '@/ui/space/driveUpload'
 import {
   FEED_NEWS,
   useFeed,
@@ -537,6 +538,18 @@ function useMentionable(space: Space): MentionablePerson[] {
     }))
 }
 
+// Drive sends the files one at a time, in order: before the one it reports,
+// all are over (stored or failed); after it, none has started.
+function uploadPercent(
+  progress: UploadProgress | null,
+  index: number
+): number | null {
+  if (!progress) return null
+  if (index !== progress.index) return index < progress.index ? 100 : 0
+  if (progress.total === 0) return null
+  return Math.min(100, (progress.loaded / progress.total) * 100)
+}
+
 function Composer({ space }: { space: Space }): ReactElement {
   const { t } = useI18n()
   const { feed } = useServices()
@@ -550,9 +563,18 @@ function Composer({ space }: { space: Space }): ReactElement {
     : undefined
   // Picked files go to the space's Drive, through its Upload intent: Drive's
   // activity brings them into the feed
+  const [progress, setProgress] = useState<UploadProgress | null>(null)
+  const stopUpload = useRef<AbortController | null>(null)
   const upload = useMutation({
-    mutationFn: ({ drive, files }: { drive: string; files: File[] }) =>
-      uploadToDrive(sdk, drive, files)
+    mutationFn: ({ drive, files }: { drive: string; files: File[] }) => {
+      const stop = new AbortController()
+      stopUpload.current = stop
+      setProgress(null)
+      return uploadToDrive(sdk, drive, files, {
+        onProgress: setProgress,
+        signal: stop.signal
+      })
+    }
   })
   const [filePicker, setFilePicker] = useState<HTMLInputElement | null>(null)
   const [mediaPicker, setMediaPicker] = useState<HTMLInputElement | null>(null)
@@ -595,7 +617,17 @@ function Composer({ space }: { space: Space }): ReactElement {
         message={t('feed.compose.uploadFailed')}
       />
       {upload.isPending && (
-        <Alert severity="info">{t('feed.compose.uploading')}</Alert>
+        <FeedUploads
+          label={t('feed.compose.uploading')}
+          files={upload.variables.files.map((file, index) => ({
+            name: file.name,
+            percent: uploadPercent(progress, index)
+          }))}
+          cancelLabel={t('common.cancel')}
+          onCancel={() => {
+            stopUpload.current?.abort()
+          }}
+        />
       )}
       {picker(undefined, setFilePicker)}
       {picker('image/*,video/*', setMediaPicker)}
@@ -623,14 +655,16 @@ function Composer({ space }: { space: Space }): ReactElement {
                       icon: Upload,
                       onClick: () => {
                         filePicker?.click()
-                      }
+                      },
+                      disabled: upload.isPending
                     },
                     {
                       label: t('feed.compose.media'),
                       icon: Image,
                       onClick: () => {
                         mediaPicker?.click()
-                      }
+                      },
+                      disabled: upload.isPending
                     }
                   ]
                 : []

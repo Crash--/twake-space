@@ -13,6 +13,7 @@ import {
   type IconProps
 } from '@linagora/twake-icons'
 import {
+  Alert,
   Avatar,
   Badge,
   Box,
@@ -22,6 +23,7 @@ import {
   Divider,
   IconButton,
   InputBase,
+  LinearProgress,
   List,
   ListItemButton,
   ListItemIcon,
@@ -1427,6 +1429,7 @@ interface MenuEntry {
   label: string
   icon: IconProps['icon']
   onClick: () => void
+  disabled?: boolean
 }
 
 /**
@@ -1449,6 +1452,7 @@ export function FeedComposerMenu({
     <MenuItem
       key={item.label}
       aria-haspopup={dialog ? 'dialog' : undefined}
+      disabled={item.disabled}
       onClick={() => {
         setAnchor(null)
         item.onClick()
@@ -1516,6 +1520,65 @@ export function FeedComposerMenu({
         {items.map(item => entry(item, true))}
       </Menu>
     </>
+  )
+}
+
+/**
+ * Files on their way to the space's Drive, each with its bar: without a
+ * percent (null), the bar runs without one.
+ */
+export function FeedUploads({
+  label,
+  files,
+  cancelLabel,
+  onCancel
+}: {
+  label: string
+  files: { name: string; percent: number | null }[]
+  cancelLabel: string
+  onCancel: () => void
+}): ReactElement {
+  const id = useId()
+  return (
+    <Alert
+      severity="info"
+      action={
+        <Button color="inherit" size="small" onClick={onCancel}>
+          {cancelLabel}
+        </Button>
+      }
+    >
+      {label}
+      <Box
+        component="ul"
+        sx={{
+          width: 1,
+          maxHeight: 240,
+          overflowY: 'auto',
+          listStyle: 'none',
+          m: 0,
+          mt: 1,
+          p: 0,
+          display: 'grid',
+          // A long name would widen an auto column past the alert
+          gridTemplateColumns: 'minmax(0, 1fr)',
+          gap: 1
+        }}
+      >
+        {files.map((file, index) => (
+          <li key={index}>
+            <Typography id={id + String(index)} variant="body2" noWrap>
+              {file.name}
+            </Typography>
+            <LinearProgress
+              aria-labelledby={id + String(index)}
+              variant={file.percent === null ? 'indeterminate' : 'determinate'}
+              value={file.percent ?? undefined}
+            />
+          </li>
+        ))}
+      </Box>
+    </Alert>
   )
 }
 

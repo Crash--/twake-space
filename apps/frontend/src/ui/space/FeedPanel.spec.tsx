@@ -1348,7 +1348,12 @@ describe('FeedPanel', () => {
       fireEvent.change(picker, { target: { files: [photo] } })
 
       await waitFor(() => {
-        expect(uploadToDrive).toHaveBeenCalledWith(null, 'drive-1', [photo])
+        expect(uploadToDrive).toHaveBeenCalledWith(
+          null,
+          'drive-1',
+          [photo],
+          expect.anything()
+        )
       })
       expect(composer).toHaveValue('Draft')
       expect(
@@ -1379,6 +1384,101 @@ describe('FeedPanel', () => {
       expect(
         await screen.findByText('Your files could not be added to the Drive.')
       ).toBeInTheDocument()
+    })
+
+    async function uploadFiles(files: File[]) {
+      let options: NonNullable<Parameters<typeof uploadToDrive>[3]> = {}
+      let finish: () => void = () => undefined
+      vi.mocked(uploadToDrive).mockImplementationOnce(
+        (_sdk, _drive, _files, given = {}) => {
+          options = given
+          return new Promise<void>(resolve => {
+            finish = resolve
+            given.signal?.addEventListener('abort', () => {
+              resolve()
+            })
+          })
+        }
+      )
+      renderFeed([post(0)], {
+        space: {
+          ...roadmap,
+          apps: [...roadmap.apps, 'drive'],
+          resources: [...roadmap.resources, { kind: 'drive', id: 'drive-1' }]
+        }
+      })
+      fireEvent.click(await screen.findByRole('button', { name: 'Add' }))
+      const opened = vi.spyOn(HTMLInputElement.prototype, 'click')
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Upload files' }))
+      const picker = opened.mock.contexts[0] as HTMLInputElement
+      opened.mockRestore()
+      fireEvent.change(picker, { target: { files } })
+      await screen.findByText('Adding your files to the Drive…')
+      return {
+        progress: (index: number, loaded: number, total: number) => {
+          act(() => {
+            options.onProgress?.({ index, loaded, total })
+          })
+        },
+        finish: () => {
+          act(finish)
+        }
+      }
+    }
+
+    it('shows a bar per file, filled as Drive reports each file', async () => {
+      const upload = await uploadFiles([
+        new File(['a'], 'notes.txt'),
+        new File(['b'], 'plan.pdf')
+      ])
+      const notes = screen.getByRole('progressbar', { name: 'notes.txt' })
+      const plan = screen.getByRole('progressbar', { name: 'plan.pdf' })
+      // jsdom lays nothing out: the column that keeps long names in the alert
+      expect(
+        getComputedStyle(screen.getByRole('list')).gridTemplateColumns
+      ).toBe('minmax(0, 1fr)')
+      // A Drive that reports no progress leaves the bars without a value
+      expect(notes).not.toHaveAttribute('aria-valuenow')
+      expect(plan).not.toHaveAttribute('aria-valuenow')
+
+      upload.progress(0, 30, 120)
+      expect(notes).toHaveAttribute('aria-valuenow', '25')
+      expect(plan).toHaveAttribute('aria-valuenow', '0')
+
+      upload.progress(1, 10, 20)
+      expect(notes).toHaveAttribute('aria-valuenow', '100')
+      expect(plan).toHaveAttribute('aria-valuenow', '50')
+
+      // An empty file has no share to show
+      upload.progress(1, 0, 0)
+      expect(plan).not.toHaveAttribute('aria-valuenow')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      expect(
+        screen.getByRole('menuitem', { name: 'Upload files' })
+      ).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+
+      upload.finish()
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).toBeNull()
+      })
+      expect(
+        screen.queryByText('Your files could not be added to the Drive.')
+      ).toBeNull()
+    })
+
+    it('stops the upload on cancel, without calling it a failure', async () => {
+      await uploadFiles([new File(['a'], 'notes.txt')])
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('progressbar')).toBeNull()
+      })
+      expect(
+        screen.queryByText('Your files could not be added to the Drive.')
+      ).toBeNull()
     })
 
     it('says who requested it, and lets an approver approve once', async () => {
